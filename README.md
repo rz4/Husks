@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo/husks-banner-4x1.png" alt="Husks" width="900">
+  <img src="assets/logo/husks-banner.png" alt="Husks" width="900">
 </p>
 
 # Husks
