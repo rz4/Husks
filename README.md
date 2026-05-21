@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo/husks-banner.png" alt="Husks" width="900">
+  <img src="assets/logo/husks-banner-4x1.png" alt="Husks" width="900">
 </p>
 
 # Husks
@@ -8,13 +8,9 @@
 
 Husks is a small build calculus for nondeterministic work.
 
-Most agent frameworks start with a chatbot, give it tools, let it improvise, then bolt guardrails onto the chaos. Husks starts with the artifact. The model does not own control flow. The build graph does.
+A build declares artifacts, dependencies, recipes, fuel, and terminal targets. Deterministic recipes run as `action`. Model calls run as bounded `oracle` recipes. Speculative candidates run as `trial`. The runtime walks the graph, records residue, seals artifacts, and emits a trace.
 
-A model call is an `oracle`: a bounded, nondeterministic recipe inside a declared rule. The oracle receives inputs, tools, and fuel. It leaves residue on disk. Husks checks, hashes, seals, reuses, or rejects that residue.
-
-The plan is a Husk.
-
-Not prose. Not vibes. A build contract.
+The plan is a Husk: a machine-checkable build contract.
 
 ---
 
@@ -34,9 +30,9 @@ A build declares:
 - validation,
 - traces.
 
-The runtime walks the build graph. Fresh outputs are sealed and reused. Missing or stale outputs cause rules to fire. Oracle calls record prompts, tools, timing, cost, and produced artifacts. A committed build leaves a trace, not a story.
+The runtime walks the build graph. Fresh outputs are sealed and reused. Missing or stale outputs cause rules to fire. Oracle calls record prompts, tools, timing, cost, and produced artifacts. A committed build leaves sealed residue and a trace.
 
-Husks makes no claim about the inner life of the model. It observes the husk: the residue left behind.
+The observable unit is the artifact left behind.
 
 ---
 
@@ -64,14 +60,14 @@ commit   success + value
 halt     failure + reason
 ```
 
-The composition rule:
+Composition:
 
 ```text
-nesting means dependency
-let means sharing
-recipe means production
-commit means accepted residue
-halt means failed residue
+nesting expresses dependency
+let expresses sharing
+recipe expresses production
+commit records accepted residue
+halt records failed residue
 ```
 
 ---
@@ -103,37 +99,23 @@ An `action` performs deterministic work.
 
 An `oracle` performs bounded nondeterministic work.
 
-A `trial` runs candidate recipes in isolated scratch spaces, applies a verdict, and commits only the winning residue.
+A `trial` runs candidate recipes in isolated scratch spaces, applies a verdict, and commits the winning residue.
 
 ---
 
-## Not an agent framework
+## Execution model
 
-Agent frameworks center the loop.
+The build graph owns control flow.
 
-```text
-observe → think → choose tool → act → observe
-```
+Each rule has declared inputs and outputs. Each recipe receives a bounded workspace. Each oracle receives an explicit tool allowlist and local fuel budget. The runtime records reads, writes, hashes, cost, timing, stale causes, reused seals, and terminal status.
 
-Husks centers the artifact.
+A build proceeds through artifacts:
 
 ```text
-inputs → rule → outputs
+inputs → rules → outputs → seals → trace
 ```
 
-In agent loops, the model often owns control flow. It chooses tools, invents subgoals, decides progress, and narrates completion.
-
-In Husks, the build graph owns control flow. The model appears only inside an `oracle` recipe. It receives a bounded task and a declared output contract. It produces residue. The runtime judges the residue.
-
-```text
-agent framework:
-  trust the plan
-
-Husks:
-  inspect the graph
-  run the build
-  read the trace
-```
+The terminal target names completion.
 
 ---
 
@@ -221,9 +203,9 @@ This plan builds a tiny Python CLI package. The CLI reads a text file and prints
 }
 ```
 
-The plan names the target, fuel, rules, inputs, outputs, oracle prompts, and tools. The graph exists before execution. The user sees the artifact contract before the model touches the filesystem.
+The plan names the target, fuel, rules, inputs, outputs, oracle prompts, and tools. The graph exists before execution. The user reviews the artifact contract before the model touches the filesystem.
 
-The checker reads the plan and verifies:
+The checker verifies:
 
 - each rule has outputs,
 - each input exists at build start or comes from an earlier rule,
@@ -306,13 +288,13 @@ The JSON plan lowers to a Lisp-shaped build expression.
 
 `complete` depends on every required artifact.
 
-The README cannot silently disappear from the build. The terminal rule names it as an input.
+The terminal rule names every artifact required for completion.
 
 ---
 
 ## Diamonds
 
-`let` gives the tree one structural liberty: shared subtrees.
+`let` gives the tree shared subtrees.
 
 ```hy
 (build "train-and-deploy" 100
@@ -368,13 +350,13 @@ The first reference produces and seals `clean.json`.
 
 The second reference reuses the seal.
 
-A tree becomes a DAG without a global registry.
+A tree gains DAG structure through lexical binding.
 
 ---
 
 ## Trials
 
-A `trial` is a recipe, not a structural node.
+A `trial` is a recipe.
 
 The graph sees one rule:
 
@@ -404,9 +386,7 @@ The recipe explores candidate producers:
 
 Each branch receives a scratch store. The verdict selects a winner. The winning branch contributes the declared outputs. The losing branches vanish.
 
-The uncertainty stays inside the recipe.
-
-The graph remains stable.
+The graph remains stable. The uncertainty stays inside the recipe.
 
 ---
 
@@ -491,7 +471,7 @@ The trace records:
 - fuel,
 - wall time.
 
-The model does not summarize success. The trace shows the work.
+The trace shows the work.
 
 ---
 
@@ -515,8 +495,6 @@ Seals make reruns cheap.
 ```text
 ● scaffold-package  sealed
 ```
-
-This is not chatbot memory.
 
 This is artifact memory.
 
@@ -558,7 +536,7 @@ trial(branch₁, ..., branchₙ, verdict) → winning residue
 
 Evaluation consumes fuel and terminates by `commit` or `halt`.
 
-The model receives no metaphysical privilege. The language gives uncertainty one explicit form: `oracle`.
+The language gives uncertainty one explicit form: `oracle`.
 
 Everything else is structure.
 
