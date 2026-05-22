@@ -61,7 +61,7 @@ _rule_timers   = {}     # name → start time
 _rule_stack    = []     # parent tracking for diamond annotations
 _node_events   = []     # (name, status, elapsed)   status: fired|reused|failed
 _oracle_events = []     # (rule, name, tok_in, tok_out, cost, elapsed)
-_tool_events   = []     # (rule, name, args_str, result_str)
+_tool_events   = []     # (rule, name, args_str, result_str, raw_args)
 _artifacts     = {}     # path → {"hash": str, "rule": str, "status": sealed|produced}
 
 
@@ -254,7 +254,7 @@ def tool_call(rule_name, name, args):
     args_str = str(args)
     if len(args_str) > 80:
         args_str = args_str[:77] + "..."
-    _tool_events.append((rule_name, name, args_str, None))
+    _tool_events.append((rule_name, name, args_str, None, args))
     _emit({"event": "tool_call", "rule": rule_name, "tool": name, "args": args})
     print(f"    {CYAN}→{RESET} {name}  {DIM}{args_str}{RESET}", flush=True)
 
@@ -266,7 +266,7 @@ def tool_result(name, result):
     # update last matching tool event with result
     for i in range(len(_tool_events) - 1, -1, -1):
         if _tool_events[i][1] == name and _tool_events[i][3] is None:
-            _tool_events[i] = (*_tool_events[i][:3], out_str)
+            _tool_events[i] = (*_tool_events[i][:3], out_str, _tool_events[i][4])
             break
     _emit({"event": "tool_result", "tool": name, "result_preview": out_str})
     print(f"      {DIM}{out_str}{RESET}", flush=True)
@@ -285,6 +285,12 @@ def trial_branch(rule_name, branch_name, score=None,
     if elapsed > 0: parts.append(_dur(elapsed))
     if cost_usd > 0: parts.append(_cost(cost_usd))
     print(f"    {DIM}{' · '.join(parts)}{RESET}", flush=True)
+
+
+def trial_note(rule_name, message):
+    """Lightweight informational event for trial-level decisions."""
+    _emit({"event": "trial_note", "rule": rule_name, "message": message})
+    print(f"    {DIM}{message}{RESET}", flush=True)
 
 
 def trial_verdict(rule_name, winner_name, scores=None):
@@ -342,3 +348,104 @@ def to_dict():
             "cost_usd":   round(sum(e[4] for e in _oracle_events), 6),
         },
     }
+
+
+# ── Convergence diagnostics ──────────────────────────────
+
+def _read_history(site, rule_name):
+    """Read JSONL history entries for a rule. Returns list of dicts."""
+    from pathlib import Path
+    p = Path(site) / ".traces" / f"{rule_name}.history.jsonl"
+    if not p.exists():
+        return []
+    entries = []
+    for line in p.read_text().strip().splitlines():
+        if line.strip():
+            entries.append(json.loads(line))
+    return entries
+
+
+def declared_vs_traced(plan, site):
+    """Diff declared inputs against traced_reads from the most recent history.
+
+    Returns a dict: {rule_name: [paths in traces but not in declared inputs]}.
+    """
+    result = {}
+    for r in plan.get("rules", []):
+        rname = r["name"]
+        declared = set(r.get("inputs", []))
+        entries = _read_history(site, rname)
+        if not entries:
+            continue
+        latest = entries[-1]
+        traced = set(latest.get("traced_reads", []))
+        undeclared = sorted(traced - declared)
+        if undeclared:
+            result[rname] = undeclared
+    return result
+
+
+def convergence_summary(rule_name, site, n=5):
+    """Analyze the last N history entries for a rule.
+
+    Returns a dict with:
+      - fuel_trend: "falling", "flat", or "rising"
+      - prompt_trend: "falling", "flat", "rising", or null
+      - output_stable: bool (all output hashes identical across N runs)
+      - classification: "converging", "prompt-loading", "stable", or "volatile"
+      - entries: the raw entries used
+    """
+    entries = _read_history(site, rule_name)
+    if not entries:
+        return {"fuel_trend": None, "prompt_trend": None,
+                "output_stable": None, "classification": "no-data",
+                "entries": []}
+
+    recent = entries[-n:]
+
+    # fuel trend
+    fuels = [e.get("fuel_consumed", 0) for e in recent]
+    fuel_trend = _trend(fuels)
+
+    # prompt length trend
+    prompts = [e.get("prompt_length") for e in recent]
+    if all(p is None for p in prompts):
+        prompt_trend = None
+    else:
+        prompt_trend = _trend([p or 0 for p in prompts])
+
+    # output stability
+    hashes = [tuple(e.get("output_hashes", [])) for e in recent]
+    output_stable = len(set(hashes)) <= 1 if hashes else False
+
+    # classification
+    if output_stable and len(recent) > 1:
+        classification = "stable"
+    elif fuel_trend in ("falling", "flat") and prompt_trend in ("falling", "flat", None):
+        classification = "converging"
+    elif fuel_trend in ("falling", "flat") and prompt_trend == "rising":
+        classification = "prompt-loading"
+    else:
+        classification = "volatile"
+
+    return {
+        "fuel_trend": fuel_trend,
+        "prompt_trend": prompt_trend,
+        "output_stable": output_stable,
+        "classification": classification,
+        "entries": recent,
+    }
+
+
+def _trend(values):
+    """Classify a sequence as 'falling', 'rising', or 'flat'."""
+    if len(values) <= 1:
+        return "flat"
+    diffs = [values[i+1] - values[i] for i in range(len(values) - 1)]
+    if all(d <= 0 for d in diffs):
+        if all(d == 0 for d in diffs):
+            return "flat"
+        return "falling"
+    if all(d >= 0 for d in diffs):
+        return "rising"
+    return "flat"  # mixed — no clear direction

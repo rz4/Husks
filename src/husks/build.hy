@@ -53,7 +53,8 @@
    "status"          "running"
    "value"           None
    "trace"           []
-   "oracle-backend"  (.get kw "oracle_backend" None)})
+   "oracle-backend"  (.get kw "oracle_backend" None)
+   "run-id"          (str (uuid.uuid4))})
 
 
 ;; ═══════════════════════════════════════════════════════════════
@@ -160,6 +161,38 @@
 
 
 ;; ═══════════════════════════════════════════════════════════════
+;; Convergence history
+;; ═══════════════════════════════════════════════════════════════
+
+(defn history-file [S rule-name]
+  (site-path S (+ ".traces/" rule-name ".history.jsonl")))
+
+(defn append-history [S rule-name recipe outputs #** kw]
+  "Append one convergence record to the rule's history log."
+  (setv prompt-length
+    (when (and recipe (= (get recipe "type") "oracle"))
+      (len (.get recipe "prompt" ""))))
+  (setv traced-reads
+    (lfor e T._tool-events
+      :if (and (= (get e 1) "read-file") (= (get e 0) rule-name))
+      (if (and (isinstance (get e 4) dict) (in "path" (get e 4)))
+          (get (get e 4) "path")
+          (get e 2))))
+  (setv record
+    {"run_id"         (get S "run-id")
+     "ts"             (time.time)
+     "fuel_consumed"  1
+     "prompt_length"  prompt-length
+     "satisfaction"   (.get kw "satisfaction" None)
+     "traced_reads"   traced-reads
+     "output_hashes"  (output-hashes S outputs)})
+  (setv hp (history-file S rule-name))
+  (ensure-dir (str (.parent (Path hp))))
+  (with [f (open hp "a")]
+    (.write f (+ (json.dumps record :default str) "\n"))))
+
+
+;; ═══════════════════════════════════════════════════════════════
 ;; Node constructors
 ;; ═══════════════════════════════════════════════════════════════
 
@@ -235,6 +268,7 @@
   (try
     (eval-recipe S name recipe inputs outputs)
     (seal! S name inputs recipe)
+    (append-history S name recipe outputs)
     (.append (get S "trace") {"event" "fired" "rule" name "outputs" outputs})
     (T.rule-done name
       :outputs outputs
@@ -281,9 +315,15 @@
 
 ;; ── trial ───────────────────────────────────────────────────
 
-(defn default-verdict [results]
+(defn first-valid [results]
   (setv valid (lfor r results :if (not (in "error" r)) r))
   (when (not valid) (raise (ValueError "trial: all branches failed")))
+  ;; note when choosing arbitrarily among multiple survivors
+  (when (> (len valid) 1)
+    (setv rule-name (.get (get valid 0) "name" "?"))
+    (T.trial-note rule-name
+      (+ "first-valid: chose " (get (get valid 0) "name")
+         " among " (str (len valid)) " viable branches")))
   ;; return winner + scores if available
   (setv scores {})
   (for [r valid]
@@ -293,17 +333,19 @@
 
 (defn eval-trial [S rule-name recipe outputs]
   (setv branches (get recipe "branches"))
-  (setv verdict-fn (or (get recipe "verdict") default-verdict))
+  (setv verdict-fn (or (get recipe "verdict") first-valid))
   (setv results [])
   (setv fuel-spent 0)
+  (setv remaining (get S "fuel"))
 
   (for [branch branches]
+    (when (<= remaining 0) (break))
     (setv bname (or (.get branch "name") (+ "branch-" (str (len results)))))
     (setv tmp (tempfile.mkdtemp :prefix (+ "trial-" bname "-")))
     (setv t0 (time.time))
     (try
       (shutil.copytree (get S "site") tmp :dirs-exist-ok True)
-      (setv BS (fresh-store tmp (get S "fuel")
+      (setv BS (fresh-store tmp remaining
                             :oracle_backend (get S "oracle-backend")))
       ;; fire branch
       (eval-recipe BS bname branch [] outputs)
@@ -314,7 +356,9 @@
         (setv op (site-path BS o))
         (when (exists? op)
           (setv (get out-data o) (read-text op))))
-      (+= fuel-spent (- (get S "fuel") (get BS "fuel")))
+      (setv branch-spend (- remaining (get BS "fuel")))
+      (+= fuel-spent branch-spend)
+      (setv remaining (- remaining branch-spend))
       ;; collect oracle cost for this branch
       (setv branch-cost (sum (gfor e T._oracle-events
                                :if (= (get e 1) bname)
@@ -358,6 +402,39 @@
 
   (setv wname (get winner "name"))
   (T.trial-verdict rule-name wname :scores scores)
+
+  ;; record convergence history for each branch
+  (setv branch-by-name
+    (dfor b branches
+      [(or (.get b "name") "") b]))
+  (for [r results]
+    (setv rname (get r "name"))
+    (setv is-winner (= rname wname))
+    (setv has-error (in "error" r))
+    (setv satisfaction
+      (cond
+        is-winner True
+        has-error None
+        True False))
+    (setv branch-recipe (.get branch-by-name rname None))
+    (setv prompt-length
+      (when (and branch-recipe (= (.get branch-recipe "type" "") "oracle"))
+        (len (.get branch-recipe "prompt" ""))))
+    (setv record
+      {"run_id"         (get S "run-id")
+       "ts"             (time.time)
+       "fuel_consumed"  1
+       "prompt_length"  prompt-length
+       "satisfaction"   satisfaction
+       "traced_reads"   []
+       "output_hashes"  (lfor o outputs
+                          :if (in o (.get r "outputs" {}))
+                          (.hexdigest (hashlib.sha256
+                            (.encode (get (get r "outputs") o)))))})
+    (setv hp (history-file S (+ rule-name "." rname)))
+    (ensure-dir (str (.parent (Path hp))))
+    (with [f (open hp "a")]
+      (.write f (+ (json.dumps record :default str) "\n"))))
 
   ;; copy winner outputs
   (for [o outputs]

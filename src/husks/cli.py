@@ -9,8 +9,10 @@
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from husks.plan import check, show, run, from_json
+from husks.trace import _read_history, convergence_summary, _shorthash
 
 
 def main():
@@ -33,6 +35,15 @@ def main():
                    default="anthropic/claude-haiku-4-5-20251001")
     r.add_argument("--stub", action="store_true",
                    help="Use stub oracle (no LLM, placeholder outputs)")
+
+    # history
+    h = sub.add_parser("history", help="Show convergence history for rules")
+    h.add_argument("plan", help="Path to plan JSON file")
+    h.add_argument("rule", nargs="?", default=None,
+                   help="Rule name (omit for summary of all rules)")
+    h.add_argument("--site", help="Override site directory")
+    h.add_argument("-n", type=int, default=5,
+                   help="Number of recent entries to show (default: 5)")
 
     args = p.parse_args()
 
@@ -79,6 +90,64 @@ def main():
             "fuel_remaining": S["fuel"],
             "site": S["site"],
         }, indent=2))
+
+    elif args.cmd == "history":
+        site = args.site or plan.get("site")
+        if not site:
+            print("error: no site directory. Use --site or set 'site' in plan.",
+                  file=sys.stderr)
+            sys.exit(1)
+
+        if args.rule:
+            # detailed history for one rule
+            entries = _read_history(site, args.rule)
+            if not entries:
+                print(f"  no history for '{args.rule}' in {site}")
+                sys.exit(0)
+            recent = entries[-args.n:]
+            print(f"\n  history: {args.rule}  ({len(entries)} total, showing last {len(recent)})")
+            print(f"  {'─' * 72}")
+            print(f"  {'run_id':<12s} {'fuel':>4s} {'prompt':>6s} {'sat':>5s} {'reads':>5s} {'output hash':<12s}")
+            print(f"  {'─' * 72}")
+            for e in recent:
+                rid = e.get("run_id", "?")[:10]
+                fuel = str(e.get("fuel_consumed", "?"))
+                pl = e.get("prompt_length")
+                prompt = str(pl) if pl is not None else "–"
+                sat = e.get("satisfaction")
+                sat_str = "true" if sat is True else ("false" if sat is False else "–")
+                reads = str(len(e.get("traced_reads", [])))
+                hashes = e.get("output_hashes", [])
+                ohash = _shorthash(hashes[0]) if hashes else "–"
+                print(f"  {rid:<12s} {fuel:>4s} {prompt:>6s} {sat_str:>5s} {reads:>5s} {ohash:<12s}")
+            print(f"  {'─' * 72}")
+
+            # convergence summary
+            cs = convergence_summary(args.rule, site, n=args.n)
+            print(f"\n  convergence: {cs['classification']}")
+            if cs["fuel_trend"]:
+                print(f"    fuel:   {cs['fuel_trend']}")
+            if cs["prompt_trend"]:
+                print(f"    prompt: {cs['prompt_trend']}")
+            if cs["output_stable"] is not None:
+                print(f"    output: {'stable' if cs['output_stable'] else 'varying'}")
+            print()
+        else:
+            # summary for all rules
+            rules = plan.get("rules", [])
+            print(f"\n  convergence history summary  (site: {site})")
+            print(f"  {'─' * 60}")
+            for r in rules:
+                rname = r["name"]
+                entries = _read_history(site, rname)
+                if not entries:
+                    print(f"  {rname:<24s} no history")
+                    continue
+                n = min(args.n, len(entries))
+                cs = convergence_summary(rname, site, n=n)
+                fuels = [e.get("fuel_consumed", 0) for e in entries[-n:]]
+                print(f"  {rname:<24s} {len(entries)} runs  {cs['classification']}")
+            print(f"  {'─' * 60}\n")
 
 
 if __name__ == "__main__":

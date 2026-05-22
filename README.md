@@ -205,10 +205,29 @@ This plan builds a tiny Python CLI package. The CLI reads a text file and prints
 
 The plan names the target, fuel, rules, inputs, outputs, oracle prompts, and tools. The graph exists before execution. The user reviews the artifact contract before the model touches the filesystem.
 
+The plan may declare `"site_inputs"` — a list of paths that exist on the site before the build starts. The checker treats site inputs as pre-produced, so rules may declare them as inputs without a prior rule producing them.
+
+```json
+{
+  "name": "my-build",
+  "fuel": 20,
+  "target": "process",
+  "site_inputs": ["raw-data.csv", "config.yaml"],
+  "rules": [
+    {
+      "name": "process",
+      "kind": "action",
+      "inputs": ["raw-data.csv", "config.yaml"],
+      "outputs": ["output.json"]
+    }
+  ]
+}
+```
+
 The checker verifies:
 
 - each rule has outputs,
-- each input exists at build start or comes from an earlier rule,
+- each input exists as a site input or comes from an earlier rule,
 - each oracle has prompt, tools, and fuel,
 - total oracle fuel fits the build budget,
 - the terminal target has a declared output.
@@ -384,7 +403,7 @@ The recipe explores candidate producers:
   :verdict score-fn)
 ```
 
-Each branch receives a scratch store. The verdict selects a winner. The winning branch contributes the declared outputs. The losing branches vanish.
+Each branch receives a scratch store. The default strategy (`first-valid`) picks the first non-errored branch. Supply a custom `:verdict` function for deliberate selection. The winning branch contributes the declared outputs. The losing branches vanish.
 
 The graph remains stable. The uncertainty stays inside the recipe.
 
@@ -539,6 +558,45 @@ Evaluation consumes fuel and terminates by `commit` or `halt`.
 The language gives uncertainty one explicit form: `oracle`.
 
 Everything else is structure.
+
+---
+
+## Convergence log
+
+Each rule records a per-node convergence history at `.traces/<rule-name>.history.jsonl`. One JSONL record per rule fire:
+
+```json
+{
+  "run_id": "uuid",
+  "ts": 1716300000.0,
+  "fuel_consumed": 1,
+  "prompt_length": 342,
+  "satisfaction": null,
+  "traced_reads": ["clean.json", "config.yaml"],
+  "output_hashes": ["a1b2c3..."]
+}
+```
+
+Fields:
+
+- `run_id` — unique per build invocation.
+- `fuel_consumed` — local fuel this rule burned.
+- `prompt_length` — `len(prompt)` for oracles, `null` for actions.
+- `satisfaction` — `true` (trial winner, gate pass), `false` (trial loser, gate throw), `null` (nobody looked).
+- `traced_reads` — file paths read by the rule's tool calls.
+- `output_hashes` — SHA-256 hashes of declared outputs at seal time.
+
+View history from the CLI:
+
+```bash
+python -m husks.cli history plan.json step-1 --site /tmp/my-build
+python -m husks.cli history plan.json --site /tmp/my-build
+```
+
+Two diagnostic functions read the history:
+
+- `declared_vs_traced(plan, site)` — diffs declared inputs against traced reads. Returns undeclared paths per rule.
+- `convergence_summary(rule_name, site, n=5)` — classifies the last N runs as "converging", "prompt-loading", "stable", or "volatile" based on fuel trend, prompt-length trend, and output stability.
 
 ---
 

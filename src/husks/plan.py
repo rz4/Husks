@@ -14,14 +14,20 @@
 #     "name": "my-build",
 #     "fuel": 40,
 #     "target": "final-step",
+#     "site_inputs": ["existing.txt"],
 #     "rules": [
-#       {"name": "step-1", "kind": "action", "outputs": ["a.txt"]},
+#       {"name": "step-1", "kind": "action",
+#        "inputs": ["existing.txt"], "outputs": ["a.txt"]},
 #       {"name": "step-2", "kind": "oracle", "inputs": ["a.txt"],
 #        "outputs": ["b.txt"], "prompt": "...", "tools": [...], "fuel": 5},
 #       {"name": "final-step", "kind": "action",
 #        "inputs": ["a.txt", "b.txt"], "outputs": [".complete"]}
 #     ]
 #   }
+#
+# "site_inputs" lists paths that exist on the site before the build
+# starts. The checker treats them as pre-produced so rules may
+# declare them as inputs without a prior rule producing them.
 
 import json
 import subprocess
@@ -47,7 +53,7 @@ def check(plan):
         return errors
 
     names = set()
-    produced = set()
+    produced = set(plan.get("site_inputs", []))
     oracle_fuel = 0
 
     for i, r in enumerate(rules):
@@ -113,8 +119,14 @@ def show(plan):
     target = plan.get("target", "?")
     rules = plan.get("rules", [])
 
+    site_inputs = plan.get("site_inputs", [])
+
     print(f"\n  plan: {name}  (fuel {fuel})  target: {target}")
     print(f"  {'─' * 50}")
+
+    if site_inputs:
+        print(f"  site inputs: {', '.join(site_inputs)}")
+        print()
 
     for r in rules:
         kind = r.get("kind", "?")
