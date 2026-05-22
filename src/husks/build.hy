@@ -181,7 +181,7 @@
   (setv record
     {"run_id"         (get S "run-id")
      "ts"             (time.time)
-     "fuel_consumed"  1
+     "fuel_consumed"  (.get kw "fuel_consumed" 1)
      "prompt_length"  prompt-length
      "satisfaction"   (.get kw "satisfaction" None)
      "traced_reads"   traced-reads
@@ -266,9 +266,13 @@
   (burn S name)
   (T.rule-start name :stale-reason reason)
   (try
-    (eval-recipe S name recipe inputs outputs)
+    (setv usage (eval-recipe S name recipe inputs outputs))
     (seal! S name inputs recipe)
-    (append-history S name recipe outputs)
+    (setv fuel-consumed
+      (if (and usage (.get usage "fuel_steps" 0))
+          (get usage "fuel_steps")
+          1))
+    (append-history S name recipe outputs :fuel-consumed fuel-consumed)
     (.append (get S "trace") {"event" "fired" "rule" name "outputs" outputs})
     (T.rule-done name
       :outputs outputs
@@ -280,12 +284,13 @@
 
 
 (defn eval-recipe [S rule-name recipe inputs outputs]
-  (when (is recipe None) (return))
+  "Evaluate a recipe. Returns usage dict with fuel_steps, or None."
+  (when (is recipe None) (return None))
   (setv kind (get recipe "type"))
   (cond
-    (= kind "action") ((get recipe "fn") S)
+    (= kind "action") (do ((get recipe "fn") S) None)
     (= kind "oracle") (eval-oracle S rule-name recipe outputs)
-    (= kind "trial")  (eval-trial S rule-name recipe outputs)
+    (= kind "trial")  (do (eval-trial S rule-name recipe outputs) None)
     True (raise (ValueError (+ "unknown recipe: " kind)))))
 
 
@@ -296,9 +301,10 @@
     (write-text (site-path S o)
                 (+ "# oracle output: " rule-name "\n"
                    "# prompt: " (.get recipe "prompt" "") "\n")))
-  {"tokens_in" 840 "tokens_out" 320 "cost_usd" 0.0008})
+  {"tokens_in" 840 "tokens_out" 320 "cost_usd" 0.0008 "fuel_steps" 1})
 
 (defn eval-oracle [S rule-name recipe outputs]
+  "Evaluate an oracle recipe. Returns usage dict."
   (setv oname (or (.get recipe "name") "oracle"))
   (T.oracle-start rule-name oname (.get recipe "prompt"))
   (setv t0 (time.time))
@@ -310,7 +316,8 @@
     :tokens-in  (.get u "tokens_in" 0)
     :tokens-out (.get u "tokens_out" 0)
     :cost-usd   (.get u "cost_usd" 0.0)
-    :elapsed    elapsed))
+    :elapsed    elapsed)
+  u)
 
 
 ;; ── trial ───────────────────────────────────────────────────
@@ -406,7 +413,7 @@
   ;; record convergence history for each branch
   (setv branch-by-name
     (dfor b branches
-      [(or (.get b "name") "") b]))
+      (or (.get b "name") "") b))
   (for [r results]
     (setv rname (get r "name"))
     (setv is-winner (= rname wname))

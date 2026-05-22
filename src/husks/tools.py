@@ -10,6 +10,28 @@ from pathlib import Path
 from typing import get_type_hints
 
 
+# ── Site sandbox ─────────────────────────────────────────────
+_site_root = None   # set before oracle dispatch, cleared after
+
+
+def set_site_root(path):
+    """Set the site root for path containment. All tool paths must resolve within it."""
+    global _site_root
+    _site_root = Path(path).resolve() if path else None
+
+
+def sandbox(path):
+    """Resolve a path against the site root. Raises ValueError if it escapes."""
+    p = Path(path).resolve()
+    if _site_root is not None:
+        try:
+            p.relative_to(_site_root)
+        except ValueError:
+            raise ValueError(
+                f"path '{path}' resolves to '{p}' which is outside the site root '{_site_root}'")
+    return p
+
+
 # ── Registry ─────────────────────────────────────────────────
 _REGISTRY = {}   # tool-name → {fn, schema}
 
@@ -64,7 +86,10 @@ def dispatch(name, args):
 @tool
 def read_file(path: str) -> str:
     """Return file contents as a string."""
-    p = Path(path)
+    try:
+        p = sandbox(path)
+    except ValueError as e:
+        return f"Error: {e}"
     if p.is_dir():
         return f"Error: '{path}' is a directory, not a file. Use list-dir instead."
     if not p.exists():
@@ -78,7 +103,10 @@ def read_file(path: str) -> str:
 @tool
 def write_file(path: str, content: str) -> str:
     """Write content to a file, creating parent directories as needed."""
-    p = Path(path)
+    try:
+        p = sandbox(path)
+    except ValueError as e:
+        return f"Error: {e}"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content)
     return "ok"
@@ -87,18 +115,24 @@ def write_file(path: str, content: str) -> str:
 @tool
 def list_dir(path: str) -> str:
     """Return a list of names in a directory (one level)."""
-    p = Path(path)
+    try:
+        p = sandbox(path)
+    except ValueError as e:
+        return f"Error: {e}"
     if not p.exists():
         return f"Error: '{path}' does not exist."
     if not p.is_dir():
         return f"Error: '{path}' is not a directory."
-    return "\n".join(sorted(os.listdir(path)))
+    return "\n".join(sorted(os.listdir(str(p))))
 
 
 @tool
 def tree(path: str, depth: int = 3) -> str:
     """Recursive directory listing. Returns an indented tree up to the given depth."""
-    root = Path(path)
+    try:
+        root = sandbox(path)
+    except ValueError as e:
+        return f"Error: {e}"
     if not root.exists():
         return f"Error: '{path}' does not exist."
     if not root.is_dir():

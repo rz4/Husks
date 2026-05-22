@@ -85,30 +85,33 @@
           kind (.get form "type")]
       (cond
         (<= fuel 0)
-        {"type" "halt" "C" C}
+        {"type" "halt" "C" C "fuel_steps" 0}
 
         (= kind "say")
-        {"type" "say" "text" (.get form "text") "C" C}
+        {"type" "say" "text" (.get form "text") "C" C "fuel_steps" 0}
 
         (= kind "stop")
-        {"type" "stop" "value" (.get form "value" C) "C" C}
+        {"type" "stop" "value" (.get form "value" C) "C" C "fuel_steps" 0}
 
         (= kind "act")
         (let [name (.get form "tool")
               args (.get form "args" {})]
           (if (not (allowed? C name))
-              {"type" "error" "error" (+ name " not in scope") "C" C}
+              {"type" "error" "error" (+ name " not in scope") "C" C "fuel_steps" 0}
               (do
                 (T.tool-call (.get C "rule" "agent") name args)
                 (let [out (tools.dispatch name args)
                       C2  (rebind C {"form" form "tool" name "out" out})]
                   (T.tool-result name out)
-                  (step M C2 tools-map (- fuel 1))))))
+                  (setv result (step M C2 tools-map (- fuel 1)))
+                  (setv (get result "fuel_steps")
+                        (+ 1 (.get result "fuel_steps" 0)))
+                  result))))
 
         True
-        {"type" "error" "error" (+ "bad form: " (str form)) "C" C}))
+        {"type" "error" "error" (+ "bad form: " (str form)) "C" C "fuel_steps" 0}))
     (except [KeyboardInterrupt]
-      {"type" "kill" "C" C})))
+      {"type" "kill" "C" C "fuel_steps" 0})))
 
 ;--
 (defn agent [C * [fuel 8] [M invoke-llm]]
@@ -135,6 +138,9 @@
   (setv tool-names (.get recipe "tools" ["read-file" "write-file" "list-dir" "tree"]))
   (setv fuel (.get recipe "fuel" 8))
 
+  ;; enforce site containment at the tool layer
+  (tools.set-site-root site)
+
   ;; tell the oracle where it is and what it must produce
   (setv system
     (+ "You are an oracle inside a build system.\n"
@@ -152,15 +158,20 @@
   (setv c0  (get before "cost_usd"))
 
   ;; run the kernel
-  (agent {"prompt" prompt
-          "tools"  tool-names
-          "system" system
-          "model"  _oracle-model
-          "rule"   rule-name}
-         :fuel fuel)
+  (setv result
+    (try
+      (agent {"prompt" prompt
+              "tools"  tool-names
+              "system" system
+              "model"  _oracle-model
+              "rule"   rule-name}
+             :fuel fuel)
+      (finally
+        (tools.set-site-root None))))
 
   ;; compute delta
   (setv after (llm.get-usage))
-  {"tokens_in"  (- (get after "input_tokens") ti0)
-   "tokens_out" (- (get after "output_tokens") to0)
-   "cost_usd"   (- (get after "cost_usd") c0)})
+  {"tokens_in"   (- (get after "input_tokens") ti0)
+   "tokens_out"  (- (get after "output_tokens") to0)
+   "cost_usd"    (- (get after "cost_usd") c0)
+   "fuel_steps"  (.get result "fuel_steps" 0)})

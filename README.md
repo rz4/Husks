@@ -8,6 +8,13 @@
 
 Husks is a small build calculus for nondeterministic work.
 
+```bash
+pip install -e .
+husks check plan.json
+husks run plan.json --site /tmp/my-build --stub
+husks history plan.json --site /tmp/my-build
+```
+
 ---
 
 ## The stance
@@ -580,7 +587,7 @@ python -m husks.cli history plan.json --site /tmp/husks-demo
 - **stable**: output hashes identical across runs. The residue is fixed. Strong signal the node has become deterministic and should be an action.
 - **volatile**: no settled trend. The node has not converged.
 
-`declared_vs_traced(plan, site)` diffs each rule's declared inputs against its traced reads. An oracle reaching for paths the plan did not declare is not an error (reads are site-scoped, so it is in bounds), but it is a signal: the contract and the residue have diverged, and the plan is due for its next revision. The gap between what you declared and what the event touched is the diagnostic for where the plan has not yet converged.
+`declared_vs_traced(plan, site)` diffs each rule's declared inputs against its traced reads. An oracle reaching for paths the plan did not declare is not an error (the tool layer enforces site containment, so all reads are structurally bounded to the site root), but it is a signal: the contract and the residue have diverged, and the plan is due for its next revision. The gap between what you declared and what the event touched is the diagnostic for where the plan has not yet converged.
 
 ### The fixed point
 
@@ -645,33 +652,31 @@ pip install -e .
 Check a plan:
 
 ```bash
-python -m husks.cli check plan.json
+husks check plan.json
 ```
 
 Show a plan:
 
 ```bash
-python -m husks.cli show plan.json
+husks show plan.json
 ```
 
-Run a plan:
+Run a plan (stub oracle, no LLM):
 
 ```bash
-python -m husks.cli run plan.json --site /tmp/husks-demo
+husks run plan.json --site /tmp/husks-demo --stub
 ```
 
-Run it again:
+Run it again — fresh seals skip completed work:
 
 ```bash
-python -m husks.cli run plan.json --site /tmp/husks-demo
+husks run plan.json --site /tmp/husks-demo --stub
 ```
-
-Fresh seals skip completed work.
 
 Inspect convergence across runs:
 
 ```bash
-python -m husks.cli history plan.json --site /tmp/husks-demo
+husks history plan.json --site /tmp/husks-demo
 ```
 
 ---
