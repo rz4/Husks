@@ -14,7 +14,7 @@ Husks is a small build calculus for nondeterministic work.
 
 A model call is an event. You do not get to inspect the event. You get what it leaves behind.
 
-Husks takes that literally. An `oracle` is a bounded, nondeterministic recipe whose internals the build never examines. The build does not read the model's reasoning, does not grade its confidence, does not trust its account of itself. It checks the residue — the artifacts left on disk, hashed and sealed.
+Husks takes that literally. An `oracle` is a bounded, nondeterministic recipe whose internals the build never examines. The build does not read the model's reasoning, does not grade its confidence, does not trust its account of itself. It checks the residue: the artifacts left on disk, hashed and sealed.
 
 Judgment is not *had* by the build. It *happens*, once, inside a bounded call, and what remains is a husk: the carcass of an event the build can inspect from the outside.
 
@@ -33,7 +33,7 @@ The observable unit is the artifact left behind. Everything else is an event you
 
 An agent loop runs the model until it decides it is done. The work and the judgment of the work live in the same opaque process. You see a transcript and a final state, and you trust both.
 
-A Husk inverts the order. The plan — the full build graph, every input, output, prompt, tool, and fuel bound — exists as a machine-checkable contract *before* the model touches the filesystem. You review the contract. The runtime then walks it, fires only stale rules, seals fresh residue, reuses sealed residue, and emits a trace of exactly what happened.
+A Husk inverts the order. The plan exists as a machine-checkable contract *before* the model touches the filesystem: the full build graph, every input, output, prompt, tool, and fuel bound. You review the contract. The runtime then walks it, fires only stale rules, seals fresh residue, reuses sealed residue, and emits a trace of exactly what happened.
 
 - **The contract precedes the work.** The graph is inspected before execution, not reconstructed from logs after.
 - **Fuel bounds everything.** A global budget and a per-oracle budget. No unbounded loops.
@@ -213,7 +213,7 @@ This plan builds a tiny Python CLI package. The CLI reads a text file and prints
 
 The plan names the target, fuel, rules, inputs, outputs, oracle prompts, and tools. The graph exists before execution. The user reviews the artifact contract before the model touches the filesystem.
 
-The plan may declare `"site_inputs"` — a list of paths that exist on the site before the build starts. The checker treats site inputs as pre-produced, so rules may declare them as inputs without a prior rule producing them.
+The plan may declare `"site_inputs"`, a list of paths that exist on the site before the build starts. The checker treats site inputs as pre-produced, so rules may declare them as inputs without a prior rule producing them.
 
 ```json
 {
@@ -525,7 +525,7 @@ Seals make reruns cheap.
 
 This is artifact memory.
 
-A seal keys on the recipe specification — the prompt, the sorted tool allowlist, the fuel — and the per-input hashes. It does not key on the oracle's output, because the oracle is nondeterministic and its output cannot be predicted. Sealing therefore freezes the *first* residue an event produced. Re-running does not re-enter the event; it reuses the husk. The one act that re-fires a sealed oracle is editing its recipe — and editing the recipe is what changes the seal key.
+A seal keys on the recipe specification (the prompt, the sorted tool allowlist, the fuel) and the per-input hashes. It does not key on the oracle's output, because the oracle is nondeterministic and its output cannot be predicted. Sealing therefore freezes the *first* residue an event produced. Re-running does not re-enter the event; it reuses the husk. The one act that re-fires a sealed oracle is editing its recipe, and editing the recipe is what changes the seal key.
 
 ---
 
@@ -537,9 +537,9 @@ You run it, read the trace, perturb the nodes that did not satisfy, pin the ones
 
 Two facts make this precise.
 
-**An oracle whose output is determined by its inputs is not an oracle.** If a node always produces the same residue from the same inputs, it is transcribing, not judging — and transcription is a deterministic `action` you have not extracted yet. The prompt is source code for a function. Leaving it as an oracle pays an API call to interpret that function at runtime. The end state of a converged node is to stop being an oracle and become an action.
+**An oracle whose output is determined by its inputs is not an oracle.** If a node always produces the same residue from the same inputs, it is transcribing, not judging. Transcription is a deterministic `action` you have not extracted yet. The prompt is source code for a function. Leaving it as an oracle pays an API call to interpret that function at runtime. The end state of a converged node is to stop being an oracle and become an action.
 
-**Satisfaction is exogenous.** Whether a residue is good is judged from outside the event: by a downstream `action` gate that validates it, by a `trial` verdict that selects among candidates, or by you. An oracle cannot certify its own residue — that would be the event grading its own carcass, which is the one move the framework forbids. So validation is always a deterministic action; oracles produce, actions verify.
+**Satisfaction is exogenous.** Whether a residue is good is judged from outside the event: by a downstream `action` gate that validates it, by a `trial` verdict that selects among candidates, or by you. An oracle cannot certify its own residue: that would be the event grading its own carcass, which is the one move the framework forbids. So validation is always a deterministic action; oracles produce, actions verify.
 
 ### The log
 
@@ -559,12 +559,12 @@ Each rule records a per-node convergence history at `.traces/<rule-name>.history
 
 Fields:
 
-- `run_id` — unique per build invocation.
-- `fuel_consumed` — local fuel this rule burned. Lower means the event was more tightly pinned: fewer tool calls, less groping for context.
-- `prompt_length` — `len(prompt)` for oracles, `null` for actions.
-- `satisfaction` — `true` (trial winner, gate pass), `false` (trial loser, gate throw), `null` (nobody looked). `null` is honest: it means unexamined, not fine.
-- `traced_reads` — file paths the rule's tool calls actually read.
-- `output_hashes` — SHA-256 of declared outputs at seal time.
+- `run_id`: unique per build invocation.
+- `fuel_consumed`: local fuel this rule burned. Lower means the event was more tightly pinned: fewer tool calls, less groping for context.
+- `prompt_length`: `len(prompt)` for oracles, `null` for actions.
+- `satisfaction`: `true` (trial winner, gate pass), `false` (trial loser, gate throw), `null` (nobody looked). `null` is honest: it means unexamined, not fine.
+- `traced_reads`: file paths the rule's tool calls actually read.
+- `output_hashes`: SHA-256 of declared outputs at seal time.
 
 ### Reading the descent
 
@@ -575,18 +575,18 @@ python -m husks.cli history plan.json --site /tmp/husks-demo
 
 `convergence_summary(rule, site, n)` classifies the last N runs of a node from its fuel trend, prompt-length trend, and output stability:
 
-- **converging** — fuel falling or flat, prompt flat or falling. Honest progress: the node is settling toward its minimal form, and may be a candidate to extract into an `action`.
-- **prompt-loading** — fuel falling, prompt *rising*. The alarm. Falling fuel looks like progress, but a growing prompt means you are hand-migrating the determined part of the computation into the prompt, one revision at a time — doing the extraction with your fingers and then paying the oracle to read your work back. The cost did not leave; it moved from the API bill to your labor.
-- **stable** — output hashes identical across runs. The residue is fixed. Strong signal the node has become deterministic and should be an action.
-- **volatile** — no settled trend. The node has not converged.
+- **converging**: fuel falling or flat, prompt flat or falling. Honest progress: the node is settling toward its minimal form, and may be a candidate to extract into an `action`.
+- **prompt-loading**: fuel falling, prompt *rising*. The alarm. Falling fuel looks like progress, but a growing prompt means you are hand-migrating the determined part of the computation into the prompt, one revision at a time, doing the extraction with your fingers and then paying the oracle to read your work back. The cost did not leave; it moved from the API bill to your labor.
+- **stable**: output hashes identical across runs. The residue is fixed. Strong signal the node has become deterministic and should be an action.
+- **volatile**: no settled trend. The node has not converged.
 
-`declared_vs_traced(plan, site)` diffs each rule's declared inputs against its traced reads. An oracle reaching for paths the plan did not declare is not an error — reads are site-scoped, so it is in bounds — but it is a signal: the contract and the residue have diverged, and the plan is due for its next revision. The gap between what you declared and what the event touched is the diagnostic for where the plan has not yet converged.
+`declared_vs_traced(plan, site)` diffs each rule's declared inputs against its traced reads. An oracle reaching for paths the plan did not declare is not an error (reads are site-scoped, so it is in bounds), but it is a signal: the contract and the residue have diverged, and the plan is due for its next revision. The gap between what you declared and what the event touched is the diagnostic for where the plan has not yet converged.
 
 ### The fixed point
 
-The thing you are converging toward is a plan whose every remaining oracle carries irreducible nondeterminism, and everything else is deterministic action: the **maximal deterministic skeleton with the genuine events isolated at named nodes**. A node that has sealed and not re-fired across many runs, with one-fuel completion and no traced reads, has become determined — it should be an action. What is left as an oracle is only the judgment that genuinely could not be written down in advance. Because if it could be written down, writing it down is the deterministic operation it should have been replaced by.
+The thing you are converging toward is a plan whose every remaining oracle carries irreducible nondeterminism, and everything else is deterministic action: the **maximal deterministic skeleton with the genuine events isolated at named nodes**. A node that has sealed and not re-fired across many runs, with one-fuel completion and no traced reads, has become determined, so it should be an action. What is left as an oracle is only the judgment that genuinely could not be written down in advance. Because if it could be written down, writing it down is the deterministic operation it should have been replaced by.
 
-There is a floor. Past a point, driving an oracle's fuel to one is no longer efficiency — it is you absorbing the nondeterminism into the prompt until the oracle is transcribing. The efficient point is the lowest fuel at which the oracle is still doing the judgment you actually meant to delegate. Below that, the event has nothing left to be.
+There is a floor. Past a point, driving an oracle's fuel to one is no longer efficiency. It is you absorbing the nondeterminism into the prompt until the oracle is transcribing. The efficient point is the lowest fuel at which the oracle is still doing the judgment you actually meant to delegate. Below that, the event has nothing left to be.
 
 ---
 
