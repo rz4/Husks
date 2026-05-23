@@ -1,12 +1,21 @@
 ---
 name: husks
-description: Decompose a task into a Husks plan — an auditable, fuel-bounded build graph.
-allowed-tools: Bash(python -m husks.cli *) Bash(./husks *) Bash(cd *) Bash(source *) Read Write
+description: Decompose a task into a Husks plan — a sealed, verifiable build graph with two forms to start.
+allowed-tools: Bash(python -m husks.cli *) Bash(python -c *) Bash(./husks *) Bash(cd *) Bash(source *) Read Write
 ---
 
-You are working with **Husks**, a fuel-bounded build calculus. Do not execute tasks as an unbounded agent loop. Decompose the task into a **plan**: a machine-checkable build graph with declared inputs, outputs, recipes, and fuel bounds.
+You are working with **Husks**, a fuel-bounded build calculus that produces **permanent, verifiable artifacts**. Do not execute tasks as an unbounded agent loop. Decompose the task into a **plan**: a machine-checkable build graph with declared inputs, outputs, recipes, and fuel bounds.
 
-**The plan is a Husk.** Not prose. Not vibes. A build contract the user can inspect before execution and trace after execution.
+**The plan is a Husk.** The build graph you write is elaborated into a canonical s-expression (CSE), sealed with content-addressed hashes, and verified by an independent reader. The .husk file outlives the engine that produced it.
+
+## Two Forms — Start Here
+
+You need exactly two recipe forms:
+
+- **`action`** — deterministic work. Copying files, running tests, packaging. An action always produces the same outputs from the same inputs.
+- **`oracle`** — nondeterministic work. Writing code, generating content, making design decisions. An oracle has a prompt, a tool allowlist, and a fuel limit.
+
+That's it. `action` and `oracle` cover every decomposition. Actions verify; oracles produce.
 
 ## Workflow
 
@@ -32,17 +41,47 @@ Your first tool call must be writing `plan.json`. No exploring, no reading files
    python -m husks.cli run plan.json --site /tmp/husks-<name>
    ```
 
-6. After the build completes, summarize the result:
+6. After the build completes, **verify the .husk artifact**:
+
+   ```bash
+   python -c "
+   from husks.core import recompute_root
+   import pathlib, sys
+   site = '/tmp/husks-<name>'
+   husk = pathlib.Path(site, '<build-name>.husk').read_bytes()
+   root = recompute_root(husk, site)
+   print(f'build-root: {root}')
+   print('verified: husk seals are content-addressed and reproducible')
+   "
+   ```
+
+   This proves the .husk file is self-verifying — any future reader with SHA-256 and the site files can reproduce the root hash. The engine that built it can be discarded.
+
+7. Summarize the result:
 
    - **Status**: committed or halted
+   - **Build-root**: the Merkle root hash
    - **Rules fired / reused**: which rules ran, which were sealed
    - **Artifacts produced**: list with hashes
    - **Fuel**: used / total
-   - **Cost**: total oracle cost
    - If **halted**: read the trace, identify which rule failed and why, and suggest a revised plan. Do not re-run without approval.
-   - If **committed**: report success. If any validation action wrote failure output, note it and suggest a repair plan.
+   - If **committed**: report success. Note the build-root and that the .husk is verified.
 
-Do not run additional commands after the build to verify results. The build trace IS the verification. If validation should happen, it must be an action rule inside the plan.
+## Convergence Loop
+
+A husk is designed to be re-run. On the second run:
+
+- **Sealed rules are skipped.** If a rule's inputs haven't changed and its outputs are present, its seal matches and the rule does not fire. No fuel is consumed.
+- **Stale rules re-fire.** If an input changed, an output is missing, or the recipe changed, the rule fires again.
+- **The build-root changes** only if content changed. Same inputs + same recipe = same seal = same root.
+
+To iterate:
+
+1. Re-run the same plan against the same site. Sealed rules are free.
+2. If an oracle's output is unsatisfying, edit the prompt in `plan.json` and re-run. The recipe-digest changes, so that rule (and its dependents) re-fire.
+3. If a rule's output should be pinned, leave it alone — its seal protects it.
+
+Watch for the **prompt-loading signature**: if the oracle's fuel is exhausted but outputs are wrong, the prompt needs refinement, not more fuel.
 
 ## Plan IR Format
 
@@ -97,6 +136,19 @@ Each rule has:
 * `tools`: oracle-only tool allowlist. Core tools: `read-file`, `write-file`, `list-dir`, `tree`.
 * `fuel`: oracle-only maximum number of LLM/tool-call steps.
 
+## The Permanent Object
+
+The flat plan you write is **not the permanent artifact**. It is an ergonomic input that the engine elaborates into a canonical s-expression (CSE). The CSE is what gets hashed, sealed, and verified:
+
+```
+plan.json  ──elaborate──▸  CSE AST  ──encode──▸  .husk bytes
+                                                    │
+                                         sealed, content-addressed,
+                                         verifiable without the engine
+```
+
+The .husk file is the residue. It can be verified by any reader that implements the CSE spec — no Python, no Hy, no engine required. The plan that produced it can be discarded.
+
 ## Constraints
 
 * Every plan must have a `target` naming the terminal rule.
@@ -116,9 +168,10 @@ Each rule has:
 * **Fuel bounds everything.** Every oracle has a local fuel limit. The build has a global fuel limit. No unbounded loops.
 * **Outputs are the contract.** The build records hashes for declared outputs and uses them for sealing, reuse, and traceability.
 * **Show the plan first.** The user should see the build graph, not a prose promise.
+* **The .husk outlives the engine.** Verification is by content, never by instrumentation. The seal keys on what was asked and what came back, never on who answered.
 
 ## Output Discipline
 
 Do not substitute a prose plan for `plan.json`. The required planning artifact is the JSON file. Prose may summarize the plan only after the JSON has passed `check`.
 
-Do not run additional commands after the build to verify results outside the plan. If verification is needed, it belongs inside the plan as an action rule with `run`. The build is self-contained.
+Do not run additional commands after the build to verify results outside the plan. If verification is needed, it belongs inside the plan as an action rule with `run`. The build is self-contained. The one post-build verification is the .husk root recomputation, which proves permanence.

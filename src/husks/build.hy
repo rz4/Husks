@@ -13,6 +13,7 @@
 (import json hashlib shutil tempfile uuid time)
 (import pathlib [Path])
 (import husks.trace :as T)
+(import husks.core :as C)
 
 
 ;; ═══════════════════════════════════════════════════════════════
@@ -75,59 +76,58 @@
 ;; ═══════════════════════════════════════════════════════════════
 
 (defn file-sig [p]
+  "Return CSE bytes atom: content hash or ABSENT."
   (if (.exists (Path p))
-      (.hexdigest (hashlib.sha256 (.read-bytes (Path p))))
-      "0:absent"))
+      (C.content-hash (.read-bytes (Path p)))
+      C.ABSENT))
 
-(defn recipe-spec [recipe]
-  (when (is recipe None) (return "null"))
+(defn recipe-to-cse [recipe]
+  "Convert an engine recipe dict to a CSE-serializable form."
+  (when (is recipe None) (return C.NIL))
   (setv kind (get recipe "type"))
   (cond
     (= kind "action")
-    (json.dumps {"type" "action"
-                 "fn" (getattr (get recipe "fn") "__qualname__" "anon")}
-                :sort-keys True)
+    [(.encode "action")
+     (.encode (getattr (get recipe "fn") "__qualname__" "anon"))]
     (= kind "oracle")
-    (json.dumps {"type" "oracle"
-                 "prompt" (.get recipe "prompt" "")
-                 "tools" (sorted (.get recipe "tools" []))
-                 "fuel" (.get recipe "fuel" 8)}
-                :sort-keys True)
+    [(.encode "oracle")
+     (let [n (.get recipe "name")]
+       (if n (.encode n) C.NIL))
+     (.encode (.get recipe "prompt" ""))
+     (lfor t (sorted (.get recipe "tools" [])) (.encode t))
+     (.encode (str (.get recipe "fuel" 8)))]
     (= kind "trial")
-    (json.dumps {"type" "trial"
-                 "branches" (lfor b (get recipe "branches") (recipe-spec b))}
-                :sort-keys True)
-    True "unknown"))
+    (+ [(.encode "trial")]
+       (lfor b (get recipe "branches") (recipe-to-cse b)))
+    True C.NIL))
 
-(defn compute-trace-parts [S inputs recipe]
-  "Return the individual hash components (for staleness diagnosis)."
-  (setv input-sigs (dict (lfor i (sorted inputs)
-                           [i (file-sig (site-path S i))])))
-  (setv rspec (recipe-spec recipe))
-  {"inputs" input-sigs "recipe" rspec})
-
-(defn composite-hash [parts]
-  "Single hash over all trace parts."
-  (.hexdigest (hashlib.sha256
-    (.encode (json.dumps parts :sort-keys True)))))
+(defn compute-cse-seal [S inputs recipe]
+  "Compute a CSE-based seal hash. Returns hex string."
+  (setv recipe-form (recipe-to-cse recipe))
+  (setv bindings (lfor i (sorted inputs)
+                   [(C.atom i) (file-sig (site-path S i))]))
+  (C.compute-seal C.CSE-VERSION recipe-form bindings))
 
 (defn seal-file [S rule-name]
   (site-path S (+ ".traces/" rule-name ".seal")))
 
 (defn read-seal [S rule-name]
-  "Read the stored seal (rich JSON). Returns None if absent or corrupt."
+  "Read the stored seal (v1 JSON). Returns None if absent, corrupt, or old format."
   (setv sp (seal-file S rule-name))
   (when (not (exists? sp)) (return None))
   (try
-    (json.loads (read-text sp))
+    (setv data (json.loads (read-text sp)))
+    (when (not (.get data "v"))
+      (return None))
+    data
     (except [e Exception] None)))
 
 (defn all-outputs? [S outputs]
   (all (gfor o outputs (exists? (site-path S o)))))
 
 (defn output-hashes [S outputs]
-  "Compute hashes of the declared outputs."
-  (lfor o outputs (file-sig (site-path S o))))
+  "Compute hashes of the declared outputs (as hex strings)."
+  (lfor o outputs (.decode (file-sig (site-path S o)))))
 
 (defn freshness-check [S rule-name inputs outputs recipe]
   "Return None if sealed, or a reason string if stale."
@@ -135,29 +135,38 @@
   (for [o outputs]
     (when (not (exists? (site-path S o)))
       (return (+ o " missing"))))
-  ;; no prior seal
+  ;; no prior seal (includes old-format seals without "v")
   (setv prior (read-seal S rule-name))
   (when (is prior None)
     (return "no prior build"))
-  ;; compare per-input hashes
-  (setv current (compute-trace-parts S inputs recipe))
+  ;; compare per-input hashes (bytes decoded to strings)
   (setv prior-inputs (.get prior "inputs" {}))
   (for [i (sorted inputs)]
-    (setv cur-hash (get (get current "inputs") i))
+    (setv cur-hash (.decode (file-sig (site-path S i))))
     (setv old-hash (.get prior-inputs i ""))
     (when (!= cur-hash old-hash)
       (return (+ i " changed"))))
-  ;; compare recipe
-  (when (!= (get current "recipe") (.get prior "recipe" ""))
+  ;; compare recipe digest
+  (setv recipe-form (recipe-to-cse recipe))
+  (setv cur-rd (C.recipe-digest recipe-form))
+  (when (!= cur-rd (.get prior "recipe_digest" ""))
     (return "recipe changed"))
   ;; all match
   None)
 
 (defn seal! [S rule-name inputs recipe]
-  "Write the rich seal: per-input hashes + recipe spec."
-  (setv parts (compute-trace-parts S inputs recipe))
+  "Write the v1 seal: CSE seal + recipe digest + per-input hashes."
+  (setv seal (compute-cse-seal S inputs recipe))
+  (setv recipe-form (recipe-to-cse recipe))
+  (setv rd (C.recipe-digest recipe-form))
+  (setv input-sigs (dict (lfor i (sorted inputs)
+                           [i (.decode (file-sig (site-path S i)))])))
   (write-text (seal-file S rule-name)
-              (json.dumps parts :indent 2)))
+              (json.dumps {"v" 1
+                           "seal" seal
+                           "recipe_digest" rd
+                           "inputs" input-sigs}
+                          :indent 2)))
 
 
 ;; ═══════════════════════════════════════════════════════════════
@@ -187,7 +196,7 @@
      "traced_reads"   traced-reads
      "output_hashes"  (output-hashes S outputs)})
   (setv hp (history-file S rule-name))
-  (ensure-dir (str (.parent (Path hp))))
+  (ensure-dir (str (. (Path hp) parent)))
   (with [f (open hp "a")]
     (.write f (+ (json.dumps record :default str) "\n"))))
 
@@ -453,6 +462,44 @@
 
 
 ;; ═══════════════════════════════════════════════════════════════
+;; CSE husk serialization + Merkle root
+;; ═══════════════════════════════════════════════════════════════
+
+(defn node-to-cse [node]
+  "Serialize an engine node tree to CSE form."
+  (setv recipe-form (recipe-to-cse (get node "recipe")))
+  (setv inp-list (lfor i (get node "inputs") (C.atom i)))
+  (setv out-list (lfor o (get node "outputs") (C.atom o)))
+  (setv children (lfor c (get node "children") (node-to-cse c)))
+  (+ [(.encode "rule") (C.atom (get node "name"))
+      recipe-form inp-list out-list]
+     children))
+
+(defn compute-build-root [S node]
+  "Walk the node tree depth-first, computing seals and node digests bottom-up."
+  ;; Recurse children
+  (setv child-digests
+    (lfor c (get node "children")
+      (C.atom (compute-build-root S c))))
+  ;; Input bindings
+  (setv inp-bindings
+    (lfor i (sorted (get node "inputs"))
+      [(C.atom i) (file-sig (site-path S i))]))
+  ;; Seal
+  (setv seal (compute-cse-seal S (get node "inputs") (get node "recipe")))
+  ;; Output bindings
+  (setv out-bindings
+    (lfor o (get node "outputs")
+      [(C.atom o) (file-sig (site-path S o))]))
+  ;; Node digest
+  (C.compute-node-digest
+    (C.atom (get node "name"))
+    (C.atom seal)
+    out-bindings
+    child-digests))
+
+
+;; ═══════════════════════════════════════════════════════════════
 ;; build
 ;; ═══════════════════════════════════════════════════════════════
 
@@ -484,6 +531,21 @@
 
   ;; sealed artifact manifest
   (T.sealed-manifest)
+
+  ;; Compute build-root (Merkle DAG) and write .husk file
+  (when (and nodes (= (get S "status") "committed"))
+    (setv target (get nodes 0))
+    (try
+      (setv (get S "build-root") (compute-build-root S target))
+      ;; Write .husk file
+      (setv husk-form [(.encode "husk") C.CSE-VERSION
+                        [(.encode "build") (C.atom name)
+                         (C.atom (str fuel)) (node-to-cse target)]])
+      (setv husk-bytes (C.encode husk-form))
+      (setv husk-path (site-path S (+ name ".husk")))
+      (.write-bytes (Path husk-path) husk-bytes)
+      (except [e Exception]
+        (setv (get S "build-root") None))))
 
   (.append (get S "trace")
            {"event" "build-end" "status" (get S "status")})
