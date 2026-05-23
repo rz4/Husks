@@ -190,6 +190,8 @@ node spec/conformance/verify.mjs spec/conformance/demo.husk \
      spec/conformance/demo.site "$(cat spec/conformance/demo.root)"
 ```
 
+A third reader has since joined those two — written from cold by a model that had only the spec, and never the other two. That is the end of this story, and it belongs at the end.
+
 ---
 
 ## 7. Convergence and extraction
@@ -224,9 +226,65 @@ Evaluation consumes fuel and terminates by `commit` or `halt`. The language give
 
 ---
 
-## The claim, stated so it can be wrong
+## The claim, held to account
 
-A husk has object permanence when its verifier can be produced as residue, the producing event discarded, and the result confirmed by a reader that is not it. The cross-language readers and the frozen root are the first form of that proof. The sharpest form — having the framework emit its own verifier through an oracle and checking that residue against the bedrock — is a test the project sets for itself and has not yet passed. It is being built. When it passes, the claim stands on something colder than rhetoric. Until then it is a claim, and it is written here so you can hold it to account.
+A husk has object permanence when its verifier can be produced as residue, the producing event discarded, and the result confirmed by a reader that is not it. The cross-language readers and the frozen root are the first form of that proof. The sharpest form is harder: hand a model nothing but the spec, have it write a CSE reader from cold, and check whether that reader — which has never seen the engine, the shipped readers, or the answer — arrives at the same root hashes the bedrock already holds.
+
+We ran it. A small, cheap model, given only the spec and its errata, wrote a netstring parser, a seal preimage, and a Merkle node digest, and reproduced both frozen roots — `demo` at `9977239d…` and an adversarial fixture, built to break lazy parsers, at `5382838c…`. It rejected two malformed husks and agreed with the independent JavaScript reader. Judged by readers that are not it. Three cents, one call, twenty-five seconds.
+
+It did not pass on the first run, and that is the part worth reading. The first cold reader disagreed by a definite hash, and the disagreement located a real hole: the spec described how the *elaborator* orders a node's children, and a faithful reader implemented that as a verification rule, which it is not. A second gap surfaced next — whether a digest enters a parent form as a hex string or as raw bytes. Both were holes a careful independent implementer would also have fallen into. We closed them in an errata and ran again, cold. Then it clicked into the bedrock.
+
+That is the whole point of writing a claim so it can be wrong. The format was held to account by something with every reason to disagree, and the disagreement made it more precise rather than less true — two ambiguities in the permanent layer, found and closed, by the act of being checked.
+
+Deeper forms of the test remain: a Husk that emits its own verifier as residue, a Husk that emits the plan that builds Husks. Those are not done. The first and sharpest one is.
+
+---
+
+## Verify it yourself
+
+Every claim above rests on frozen files in this repo. You do not have to trust the prose — re-derive the roots from the raw bytes and compare.
+
+**Check the frozen roots against the two shipped readers:**
+
+```bash
+# Python reader
+python -c "
+import sys; sys.path.insert(0, 'src')
+from husks.core import recompute_root
+for name in ('demo', 'adversarial'):
+    husk = open(f'spec/conformance/{name}.husk', 'rb').read()
+    expected = open(f'spec/conformance/{name}.root').read().strip()
+    got = recompute_root(husk, f'spec/conformance/{name}.site')
+    status = 'PASS' if got == expected else 'FAIL'
+    print(f'  {name}: {got[:16]}... {status}')
+"
+
+# JavaScript reader (Node.js, zero dependencies)
+node spec/conformance/verify.mjs spec/conformance/demo.husk \
+     spec/conformance/demo.site "$(cat spec/conformance/demo.root)"
+node spec/conformance/verify.mjs spec/conformance/adversarial.husk \
+     spec/conformance/adversarial.site "$(cat spec/conformance/adversarial.root)"
+```
+
+Both readers must print `PASS`. They share no code — if they agree, the root is a property of the format, not of either implementation.
+
+**Run the full test suite:**
+
+```bash
+pip install -e .
+python -m pytest tests/ -v
+```
+
+**Re-run the Level-0 bootstrap from cold** (requires an API key and the `husks` CLI):
+
+```bash
+rm -rf /tmp/bootstrap-core && mkdir -p /tmp/bootstrap-core
+cp spec/CSE-v1.md /tmp/bootstrap-core/CSE-v1.md
+cp spec/CSE-v1-errata.md /tmp/bootstrap-core/CSE-v1-errata.md
+husks run plans/bootstrap-core.json --site /tmp/bootstrap-core
+```
+
+The oracle writes a reader from the spec alone. The gate checks it against both frozen roots, rejects both malformed fixtures, and cross-checks with the JS reader. If `readers/VERIFIED` exists and the gate prints `GATE PASS`, the spec bootstraps its own verifier.
 
 ---
 
