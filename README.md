@@ -13,11 +13,34 @@ It makes model calls inspectable from the outside by forcing them to leave seale
 The language gives uncertainty exactly one explicit form: `oracle`. 
 Everything else is structure.
 
+## Quickstart
+
 ```bash
+git clone [https://github.com/rz4/Husks.git](https://github.com/rz4/Husks.git)
+cd Husks
+python -m venv .venv
+source .venv/bin/activate
 pip install -e .
+```
+
+**Check a plan:**
+```bash
 husks check plan.json
-husks run plan.json --site /tmp/my-build --stub
-husks history plan.json --site /tmp/my-build
+```
+
+**Run a plan (stub oracle, no LLM):**
+```bash
+husks run plan.json --site /tmp/husks-demo --stub
+```
+
+**Run it again (fresh seals skip completed work):**
+```bash
+husks run plan.json --site /tmp/husks-demo --stub
+```
+
+**Inspect convergence across runs:**
+```bash
+husks history plan.json --site /tmp/husks-demo
 ```
 
 ---
@@ -28,7 +51,9 @@ A model call is an event. You do not get to inspect the event. You only get what
 
 Husks takes this literally. An `oracle` is a bounded, nondeterministic recipe. The build system never examines its internals. It does not read the model's reasoning, it does not grade its confidence, and it does not trust its account of itself. It checks the residue: the artifacts left on disk, hashed, and sealed.
 
-Judgment is not *had* by the build. It *happens*—once—inside a bounded call. What remains is a husk: the carcass of an event that the build can inspect objectively from the outside.
+Judgment is not *had* by the build. It *happens*—once—inside a bounded call. 
+
+> What remains is a husk: the carcass of an event that the build can inspect objectively from the outside.
 
 Every claim the system makes is a claim about this residue:
 * **A rule fired**, and these are the exact bytes it produced.
@@ -119,7 +144,7 @@ The **JSON plan** is the ergonomic input format. It names the target, fuel, rule
 
 This JSON plan lowers deterministically into the Husk AST. The AST can be rendered as a readable **Lisp-shaped surface form** for humans, but the permanent spine is much stricter: the **Canonical S-expression Encoding (CSE)**.
 
-CSE is a byte-level serialization used purely for hashing and cryptographic verification. It uses netstring atoms and fixed positional schemas with no whitespace, no keywords, and no implementation-defined behavior. 
+CSE is not the human authoring syntax. It is the byte-level form used for hashing, verification, and long-term replay by independent readers. It uses netstring atoms and fixed positional schemas with no whitespace, no keywords, and no implementation-defined behavior.
 
 **True CSE (The Permanent Object):**
 ```text
@@ -185,35 +210,5 @@ Husks is a small evaluator over symbolic build expressions.
 
 ---
 
-## 8. Quickstart
-
-```bash
-git clone [https://github.com/rz4/Husks.git](https://github.com/rz4/Husks.git)
-cd Husks
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-**Check a plan:**
-```bash
-husks check plan.json
-```
-
-**Run a plan (stub oracle, no LLM):**
-```bash
-husks run plan.json --site /tmp/husks-demo --stub
-```
-
-**Run it again (fresh seals skip completed work):**
-```bash
-husks run plan.json --site /tmp/husks-demo --stub
-```
-
-**Inspect convergence across runs:**
-```bash
-husks history plan.json --site /tmp/husks-demo
-```
-
----
 **License:** Apache-2.0
+
