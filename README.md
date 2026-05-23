@@ -6,7 +6,12 @@
 
 **Build Husks, not vibes.**
 
-Husks is a small, deterministic build calculus for nondeterministic work. 
+Husks is a deterministic build calculus for nondeterministic work. 
+
+It makes model calls inspectable from the outside by forcing them to leave sealed, content-addressed residue. The model call is an event. The Husk is what survives it.
+
+The language gives uncertainty exactly one explicit form: `oracle`. 
+Everything else is structure.
 
 ```bash
 pip install -e .
@@ -46,7 +51,7 @@ A Husk inverts the order. The plan exists as a machine-checkable contract *befor
 * **Residue is Reused:** A sealed artifact is never regenerated. Reruns are cheap.
 * **Nondeterminism is Boxed:** It has exactly one form: `oracle`. Everything else is deterministic structure.
 
-The plan is a Husk: a build contract you can read, edit, and re-run.
+A plan is the contract. The plan becomes a Husk when it is lowered, sealed, and verified.
 
 ---
 
@@ -86,9 +91,9 @@ A build proceeds strictly through artifacts:
 
 ---
 
-## 5. Transport vs. Spine (JSON vs. Lisp)
+## 5. Transport vs. Spine: JSON, Surface Lisp, and CSE
 
-The **JSON plan** is the practical, ergonomic interchange format. It names the target, fuel, rules, inputs, outputs, oracle prompts, and tools.
+The **JSON plan** is the ergonomic input format. It names the target, fuel, rules, inputs, outputs, oracle prompts, and tools.
 
 ```json
 {
@@ -112,8 +117,16 @@ The **JSON plan** is the practical, ergonomic interchange format. It names the t
 }
 ```
 
-However, this JSON plan lowers deterministically to a **Lisp-shaped build expression** (the Canonical S-expression Encoding, or CSE). This is the permanent spine of the architecture.
+This JSON plan lowers deterministically into the Husk AST. The AST can be rendered as a readable **Lisp-shaped surface form** for humans, but the permanent spine is much stricter: the **Canonical S-expression Encoding (CSE)**.
 
+CSE is a byte-level serialization used purely for hashing and cryptographic verification. It uses netstring atoms and fixed positional schemas with no whitespace, no keywords, and no implementation-defined behavior. 
+
+**True CSE (The Permanent Object):**
+```text
+(4:husk2:v1(5:build10:husks-demo2:30...))
+```
+
+**Readable Surface Form (For Humans):**
 ```hy
 (build "husks-demo" 30
   (let [package
@@ -154,7 +167,7 @@ husks history plan.json --site /tmp/husks-demo
 This classifies the health of your rules based on fuel and prompt trends:
 * **Converging:** Fuel is falling or flat; prompt is flat. Honest progress.
 * **Prompt-loading (The Alarm):** Fuel is falling, but the prompt is *rising*. You are hand-migrating the deterministic work into the prompt. The cost didn't vanish; it moved from the API to your labor.
-* **Stable:** Output hashes are identical across runs. The residue is fixed. Time to convert to an `action`.
+* **Stable:** Output hashes are identical across runs. The specimen is fixed. Time to convert to an `action`.
 * **Volatile:** No settled trend.
 
 The fixed point of a Husks plan is the maximal deterministic skeleton, with genuine intelligence events isolated at explicitly named, irreducible `oracle` nodes.
@@ -169,9 +182,6 @@ Husks is a small evaluator over symbolic build expressions.
 * `action : X → Y` (Deterministic)
 * `oracle(prompt, tools, fuel, X) ⇝ Y` (Nondeterministic and bounded)
 * `trial(branch₁, ..., branchₙ, verdict) → residue` (Speculative evaluation)
-
-The language gives uncertainty exactly one explicit form: `oracle`. 
-Everything else is structure.
 
 ---
 
