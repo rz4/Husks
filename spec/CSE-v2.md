@@ -1,7 +1,6 @@
-# CSE v1 — Reader Clarifications and Worked Examples
+# Canonical S-Expression Encoding (CSE) — v2
 
-**Status:** Frozen. Companion to CSE-v1.md. Both documents together define
-the v1 permanent layer. Neither is edited after its initial commit.
+**Status:** Frozen. This document is never edited after its initial commit.
 
 **Origin:** Level-0 self-hosting (bootstrap-core). A cold-start oracle,
 given only CSE-v1.md, produced a reader that parsed correctly but computed

@@ -214,7 +214,7 @@ Anything less is a reader that works on the easy cases and lies on the hard ones
 
 ## 8. Bootstrap validation
 
-`plans/bootstrap-core.json` turns that test on the framework itself. It has two nodes. An `oracle` reads the CSE spec and its errata — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate, `scripts/gate_level0.py`, judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
+`plans/bootstrap-core.json` turns that test on the framework itself. It has two nodes. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate, `scripts/gate_level0.py`, judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
 
 The shape is the whole thesis in miniature: the oracle produces, the gate verifies, and the gate is not the oracle. A model can write the verifier; it cannot grade its own verifier. The frozen roots do that — and the roots were computed by readers the model never saw. What happened the first time we ran this is at the end of the document, because it is the point of the whole exercise.
 
@@ -289,7 +289,7 @@ And run the cold bootstrap — a reader written from the spec alone, judged by t
 ```bash
 rm -rf /tmp/bootstrap-core && mkdir -p /tmp/bootstrap-core
 cp spec/CSE-v1.md        /tmp/bootstrap-core/CSE-v1.md
-cp spec/CSE-v1-errata.md /tmp/bootstrap-core/CSE-v1-errata.md
+cp spec/CSE-v2.md /tmp/bootstrap-core/CSE-v2.md
 husks run plans/bootstrap-core.json --site /tmp/bootstrap-core
 ```
 
@@ -303,7 +303,7 @@ What stands today:
 
 - JSON plans with deterministic lowering into the symbolic build form;
 - sealed artifact reuse and full trace recording;
-- CSE v1, frozen, with its reader errata alongside it;
+- CSE v1 and v2, both frozen;
 - independent Python and JavaScript readers;
 - frozen conformance vectors and adversarial parser fixtures;
 - Level 0 bootstrap validation, passing.
@@ -316,9 +316,9 @@ The next test is recursive: a Husk plan that builds more of Husks itself — inc
 
 A husk has object permanence when its verifier can be produced as residue, the producing event discarded, and the result confirmed by a reader that is not it. The cross-language readers and the frozen root are the first form of that proof. The sharpest form is harder: hand a model nothing but the spec, have it write a CSE reader from cold, and check whether that reader — which has never seen the engine, the shipped readers, or the answer — arrives at the same root hashes the bedrock already holds.
 
-We ran it. A small, cheap model, given only the spec and its errata, wrote a netstring parser, a seal preimage, and a Merkle node digest, and reproduced both frozen roots — `demo` at `9977239d…` and an adversarial fixture, built to break lazy parsers, at `5382838c…`. It rejected two malformed husks and agreed with the independent JavaScript reader. Judged by readers that are not it. Three cents, one call, twenty-five seconds.
+We ran it. A small, cheap model, given only CSE v1 and v2, wrote a netstring parser, a seal preimage, and a Merkle node digest, and reproduced both frozen roots — `demo` at `9977239d…` and an adversarial fixture, built to break lazy parsers, at `5382838c…`. It rejected two malformed husks and agreed with the independent JavaScript reader. Judged by readers that are not it. Three cents, one call, twenty-five seconds.
 
-It did not pass on the first run, and that is the part worth reading. The first cold reader disagreed by a definite hash, and the disagreement located a real hole: the spec described how the *elaborator* orders a node's children, and a faithful reader implemented that as a verification rule, which it is not. A second gap surfaced next — whether a digest enters a parent form as a hex string or as raw bytes. Both were holes a careful independent implementer would also have fallen into. We closed them in an errata and ran again, cold. Then it clicked into the bedrock.
+It did not pass on the first run, and that is the part worth reading. The first cold reader disagreed by a definite hash, and the disagreement located a real hole: the spec described how the *elaborator* orders a node's children, and a faithful reader implemented that as a verification rule, which it is not. A second gap surfaced next — whether a digest enters a parent form as a hex string or as raw bytes. Both were holes a careful independent implementer would also have fallen into. We closed them in CSE v2 and ran again, cold. Then it clicked into the bedrock.
 
 That is the whole point of writing a claim so it can be wrong. The format was held to account by something with every reason to disagree, and the disagreement made it more precise rather than less true — two ambiguities in the permanent layer, found and closed, by the act of being checked.
 
