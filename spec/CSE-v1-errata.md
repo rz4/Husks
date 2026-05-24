@@ -1,7 +1,7 @@
 # CSE v1 — Reader Clarifications and Worked Examples
 
-**Status:** Addendum to CSE-v1.md. The frozen spec text is unchanged; this
-document resolves ambiguities discovered by independent implementation.
+**Status:** Frozen. Companion to CSE-v1.md. Both documents together define
+the v1 permanent layer. Neither is edited after its initial commit.
 
 **Origin:** Level-0 self-hosting (bootstrap-core). A cold-start oracle,
 given only CSE-v1.md, produced a reader that parsed correctly but computed
