@@ -18,7 +18,7 @@
       "kind": "action",
       "inputs": ["readers/generated_reader.py"],
       "outputs": ["readers/gate-report.txt", "readers/VERIFIED"],
-      "run": "python3 /Users/rzamora/Desktop/LBNL/AMSC/repos/Husks/scripts/gate_level0.py ."
+      "run": "husks-gate ."
     }
   ]
 }

@@ -12,10 +12,9 @@ can reproduce. The import scan is a fast fail, not the real check.
 """
 import os, sys, subprocess
 
-REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Repo root is three levels up: src/husks/gate_level0.py -> src/husks -> src -> repo
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CONF = os.path.join(REPO, "spec", "conformance")
-SITE = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
-READER = os.path.join(SITE, "readers", "generated_reader.py")
 
 ALLOWED_IMPORTS = {"sys", "os", "hashlib", "io", "pathlib", "typing",
                    "__future__", "binascii"}
@@ -25,12 +24,12 @@ def fail(msg):
     print(f"GATE FAIL: {msg}")
     sys.exit(1)
 
-def run_reader(husk, site):
-    return subprocess.run([sys.executable, READER, husk, site],
+def run_reader(reader, husk, site):
+    return subprocess.run([sys.executable, reader, husk, site],
                           capture_output=True, text=True, timeout=60)
 
-def import_scan():
-    with open(READER) as f:
+def import_scan(reader):
+    with open(reader) as f:
         src = f.read()
     for ln in src.splitlines():
         s = ln.strip()
@@ -50,12 +49,12 @@ def import_scan():
                 fail(f"reader imports non-whitelisted module '{mod}'")
     print("  import scan: clean")
 
-def positive(name):
+def positive(reader, name):
     husk = os.path.join(CONF, f"{name}.husk")
     site = os.path.join(CONF, f"{name}.site")
     with open(os.path.join(CONF, f"{name}.root")) as f:
         expected = f.read().strip()
-    r = run_reader(husk, site)
+    r = run_reader(reader, husk, site)
     if r.returncode != 0:
         fail(f"{name}: reader exited {r.returncode}: {r.stderr[:300]}")
     got = r.stdout.strip()
@@ -63,8 +62,8 @@ def positive(name):
         fail(f"{name}: root mismatch\n    expected {expected}\n    got      {got}")
     print(f"  {name}: root matches {expected[:16]}…")
 
-def negative(fn):
-    r = run_reader(os.path.join(CONF, fn), CONF)
+def negative(reader, fn):
+    r = run_reader(reader, os.path.join(CONF, fn), CONF)
     if r.returncode == 0:
         fail(f"{fn}: reader accepted malformed input (printed {r.stdout.strip()[:32]})")
     print(f"  {fn}: correctly rejected")
@@ -81,20 +80,23 @@ def cross_check(name):
     print(f"  cross-check {name}: JS reader agrees")
 
 def main():
-    if not os.path.exists(READER):
-        fail(f"no generated reader at {READER}")
+    site = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
+    reader = os.path.join(site, "readers", "generated_reader.py")
+
+    if not os.path.exists(reader):
+        fail(f"no generated reader at {reader}")
     print("Level-0 gate:")
-    import_scan()
-    positive("demo")
-    positive("adversarial")
-    negative("malformed-leadingzero.husk")
-    negative("malformed-truncated.husk")
+    import_scan(reader)
+    positive(reader, "demo")
+    positive(reader, "adversarial")
+    negative(reader, "malformed-leadingzero.husk")
+    negative(reader, "malformed-truncated.husk")
     try:
         cross_check("demo"); cross_check("adversarial")
     except FileNotFoundError:
         print("  (node not found — skipping live JS cross-check; frozen roots stand)")
-    os.makedirs(os.path.join(SITE, "readers"), exist_ok=True)
-    with open(os.path.join(SITE, "readers", "VERIFIED"), "w") as f:
+    os.makedirs(os.path.join(site, "readers"), exist_ok=True)
+    with open(os.path.join(site, "readers", "VERIFIED"), "w") as f:
         f.write("PASS\n")
     print("GATE PASS")
 
