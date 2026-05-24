@@ -27,25 +27,25 @@ pip install -e .
 Check a plan against its contract:
 
 ```bash
-husks check plan.json
+husks check examples/husks-demo.plan.json
 ```
 
 Run it with a stub oracle — no model, no key, just the machinery:
 
 ```bash
-husks run plan.json --site /tmp/husks-demo --stub
+husks run examples/husks-demo.plan.json --site /tmp/husks-demo --stub
 ```
 
 Run it again. Fresh seals skip work already done:
 
 ```bash
-husks run plan.json --site /tmp/husks-demo --stub
+husks run examples/husks-demo.plan.json --site /tmp/husks-demo --stub
 ```
 
 Read how a node has moved across runs:
 
 ```bash
-husks history plan.json --site /tmp/husks-demo
+husks history examples/husks-demo.plan.json --site /tmp/husks-demo
 ```
 
 ---
@@ -96,6 +96,8 @@ Nine forms. That is the whole language.
 | | `halt` | Failed residue, with a reason. |
 
 Nesting expresses dependency. `let` expresses sharing. A recipe expresses production. `commit` and `halt` record which residue was kept and which was thrown away. You start with two — `action` and `oracle` — and reach for the rest only when the shape of the work demands it.
+
+The JSON plan IR is the current executable subset: it compiles `action` and `oracle` rules. The remaining forms — `let`, `cond`, `trial` — exist in the canonical AST and the Lisp surface form and are reached through that path, not through JSON today.
 
 ---
 

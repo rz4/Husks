@@ -1,0 +1,22 @@
+{
+  "name": "husks-demo",
+  "fuel": 30,
+  "target": "package-complete",
+  "rules": [
+    {
+      "name": "scaffold-package",
+      "kind": "oracle",
+      "inputs": [],
+      "outputs": ["husks-demo/pyproject.toml", "husks-demo/src/husks_demo/cli.py"],
+      "prompt": "Create a minimal Python package called husks-demo: a pyproject.toml and src/husks_demo/cli.py exposing a main() entry point that prints a greeting.",
+      "tools": ["read-file", "write-file"],
+      "fuel": 8
+    },
+    {
+      "name": "package-complete",
+      "kind": "action",
+      "inputs": ["husks-demo/pyproject.toml", "husks-demo/src/husks_demo/cli.py"],
+      "outputs": [".complete"]
+    }
+  ]
+}
