@@ -194,7 +194,31 @@ A third reader has since joined those two — written from cold by a model that 
 
 ---
 
-## 7. Convergence and extraction
+## 7. Conformance
+
+Verification is only as strong as what you test it against. The repo ships a frozen conformance demo and an adversarial fixture, and the adversarial one is nasty on purpose — filenames and byte patterns that a casual JSON, regex, or whitespace parser will mishandle, because the only reader that survives them is one that honors the length prefix and reads exactly the bytes it is told to. Two more fixtures must be *rejected*, not parsed: `malformed-leadingzero.husk` and `malformed-truncated.husk`.
+
+A reader clears Level 0 when all five hold:
+
+1. it computes the frozen demo root;
+2. it computes the frozen adversarial root;
+3. it rejects the leading-zero input;
+4. it rejects the truncated input;
+5. it agrees with the independent JavaScript reader.
+
+Anything less is a reader that works on the easy cases and lies on the hard ones. The point of the adversarial fixture is to make lying expensive: a parser that takes shortcuts produces a different root, and a different root is a failure you can see.
+
+---
+
+## 8. Bootstrap validation
+
+`plans/bootstrap-core.json` turns that test on the framework itself. It has two nodes. An `oracle` reads the CSE spec and its errata — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate, `scripts/gate_level0.py`, judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
+
+The shape is the whole thesis in miniature: the oracle produces, the gate verifies, and the gate is not the oracle. A model can write the verifier; it cannot grade its own verifier. The frozen roots do that — and the roots were computed by readers the model never saw. What happened the first time we ran this is at the end of the document, because it is the point of the whole exercise.
+
+---
+
+## 9. Convergence and extraction
 
 A plan is not written once. It is *worked*. You run it, read the trace, perturb the nodes that didn't satisfy, pin the ones that did, and run again. Across revisions this is not tuning a build. It is **program extraction against nondeterminism** — pulling apart the part of a task that is genuinely undetermined from the part that was determined all along and only wore the costume of judgment.
 
@@ -211,7 +235,7 @@ The fixed point you are working toward is the maximal deterministic skeleton wit
 
 ---
 
-## 8. The McCarthy version
+## 10. The McCarthy version
 
 Husks is a small evaluator over symbolic build expressions.
 
@@ -226,6 +250,66 @@ Evaluation consumes fuel and terminates by `commit` or `halt`. The language give
 
 ---
 
+## 11. Verify it yourself
+
+Nothing here asks for trust. Recompute the frozen roots with the shipped Python reader:
+
+```bash
+python -c "
+import sys; sys.path.insert(0, 'src')
+from husks.core import recompute_root
+for name in ('demo', 'adversarial'):
+    husk = open(f'spec/conformance/{name}.husk', 'rb').read()
+    want = open(f'spec/conformance/{name}.root').read().strip()
+    got  = recompute_root(husk, f'spec/conformance/{name}.site')
+    print(name, got[:16] + '...', 'PASS' if got == want else 'FAIL')
+"
+```
+
+Recompute them again with the independent JavaScript reader — different language, same bytes, same root:
+
+```bash
+node spec/conformance/verify.mjs spec/conformance/demo.husk \
+     spec/conformance/demo.site "$(cat spec/conformance/demo.root)"
+node spec/conformance/verify.mjs spec/conformance/adversarial.husk \
+     spec/conformance/adversarial.site "$(cat spec/conformance/adversarial.root)"
+```
+
+Run the suite:
+
+```bash
+pip install -e .
+python -m pytest tests/ -q
+```
+
+And run the cold bootstrap — a reader written from the spec alone, judged by the gate:
+
+```bash
+rm -rf /tmp/bootstrap-core && mkdir -p /tmp/bootstrap-core
+cp spec/CSE-v1.md        /tmp/bootstrap-core/CSE-v1.md
+cp spec/CSE-v1-errata.md /tmp/bootstrap-core/CSE-v1-errata.md
+husks run plans/bootstrap-core.json --site /tmp/bootstrap-core
+```
+
+A successful run writes `readers/VERIFIED` and prints `GATE PASS`.
+
+---
+
+## 12. Project status
+
+What stands today:
+
+- JSON plans with deterministic lowering into the symbolic build form;
+- sealed artifact reuse and full trace recording;
+- CSE v1, frozen, with its reader errata alongside it;
+- independent Python and JavaScript readers;
+- frozen conformance vectors and adversarial parser fixtures;
+- Level 0 bootstrap validation, passing.
+
+The next test is recursive: a Husk plan that builds more of Husks itself — including its own verifier — while the final root stays independently checkable. That is the work, and it is named at the end for a reason.
+
+---
+
 ## The claim, held to account
 
 A husk has object permanence when its verifier can be produced as residue, the producing event discarded, and the result confirmed by a reader that is not it. The cross-language readers and the frozen root are the first form of that proof. The sharpest form is harder: hand a model nothing but the spec, have it write a CSE reader from cold, and check whether that reader — which has never seen the engine, the shipped readers, or the answer — arrives at the same root hashes the bedrock already holds.
@@ -237,54 +321,6 @@ It did not pass on the first run, and that is the part worth reading. The first 
 That is the whole point of writing a claim so it can be wrong. The format was held to account by something with every reason to disagree, and the disagreement made it more precise rather than less true — two ambiguities in the permanent layer, found and closed, by the act of being checked.
 
 Deeper forms of the test remain: a Husk that emits its own verifier as residue, a Husk that emits the plan that builds Husks. Those are not done. The first and sharpest one is.
-
----
-
-## Verify it yourself
-
-Every claim above rests on frozen files in this repo. You do not have to trust the prose — re-derive the roots from the raw bytes and compare.
-
-**Check the frozen roots against the two shipped readers:**
-
-```bash
-# Python reader
-python -c "
-import sys; sys.path.insert(0, 'src')
-from husks.core import recompute_root
-for name in ('demo', 'adversarial'):
-    husk = open(f'spec/conformance/{name}.husk', 'rb').read()
-    expected = open(f'spec/conformance/{name}.root').read().strip()
-    got = recompute_root(husk, f'spec/conformance/{name}.site')
-    status = 'PASS' if got == expected else 'FAIL'
-    print(f'  {name}: {got[:16]}... {status}')
-"
-
-# JavaScript reader (Node.js, zero dependencies)
-node spec/conformance/verify.mjs spec/conformance/demo.husk \
-     spec/conformance/demo.site "$(cat spec/conformance/demo.root)"
-node spec/conformance/verify.mjs spec/conformance/adversarial.husk \
-     spec/conformance/adversarial.site "$(cat spec/conformance/adversarial.root)"
-```
-
-Both readers must print `PASS`. They share no code — if they agree, the root is a property of the format, not of either implementation.
-
-**Run the full test suite:**
-
-```bash
-pip install -e .
-python -m pytest tests/ -v
-```
-
-**Re-run the Level-0 bootstrap from cold** (requires an API key and the `husks` CLI):
-
-```bash
-rm -rf /tmp/bootstrap-core && mkdir -p /tmp/bootstrap-core
-cp spec/CSE-v1.md /tmp/bootstrap-core/CSE-v1.md
-cp spec/CSE-v1-errata.md /tmp/bootstrap-core/CSE-v1-errata.md
-husks run plans/bootstrap-core.json --site /tmp/bootstrap-core
-```
-
-The oracle writes a reader from the spec alone. The gate checks it against both frozen roots, rejects both malformed fixtures, and cross-checks with the JS reader. If `readers/VERIFIED` exists and the gate prints `GATE PASS`, the spec bootstraps its own verifier.
 
 ---
 
