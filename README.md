@@ -52,7 +52,7 @@ husks history examples/husks-demo.plan.json --site /tmp/husks-demo
 
 ## 1. The stance
 
-Intelligence is not *had* by a system. It *happens* — once, inside a bounded call — and the moment you go looking for it, it is already over. What you can examine is never the event. It is the residue: the carcass of an event you arrived too late to witness.
+Husks rests on a deliberate methodological choice, not a claim about cognition: treat a model call as an opaque event and verify only what it leaves behind. Whatever one believes about whether a system "has" intelligence, you cannot inspect the call as it happens — by the time you examine anything, the event is over and what you hold is its residue. Husks takes that posture as far as it will go and builds the rest of the system on it.
 
 Husks takes that literally and refuses to pretend otherwise. An `oracle` is a bounded, nondeterministic recipe whose insides the build never opens. It does not read the model's reasoning. It does not grade the model's confidence. It does not trust the model's account of itself. It checks the bytes left on disk — hashed, sealed, and inspectable from the outside, where you actually are.
 
@@ -63,7 +63,7 @@ So every claim the system makes is a claim about residue, and nothing else:
 - this artifact is sealed, and here is its hash;
 - the build committed, or it halted, and here is the reason.
 
-The observable unit is the thing left behind. Everything upstream of it is an event you weren't in the room for, and the framework will not let you talk as if you were.
+The observable unit is the thing left behind. The framework records only what it observed of that residue, so any claim that goes beyond it is visibly yours, not the system's — the system never vouches for the event it did not see.
 
 ---
 
@@ -183,9 +183,9 @@ Note what is **not** in there: the model, the cost, the token counts, the wall-c
 
 The seal does not key on the oracle's output, because the output cannot be predicted — that is what makes it an oracle. Sealing freezes the *first* residue an event produced. Rerunning does not re-enter the event; it reuses the husk. The only act that re-fires a sealed oracle is editing its recipe, and editing the recipe is precisely what changes the seal.
 
-Nodes hash their seal, their outputs, and their children's digests, so a build is a Merkle DAG and its root is one hash over the whole thing. A subtree shared by `let` is hashed once — the diamond is literally a shared hash. Clone a repo and you inherit the sealed residue; the expensive calls are already paid for.
+Nodes hash their seal, their outputs, and their children's digests, so a build is a Merkle DAG and its root is one hash over the whole thing. A `let`-shared subtree is hashed once, so shared structure is identical by construction — the diamond is one digest, not two that happen to match. Clone a repo and you inherit the sealed residue; the expensive calls are already paid for.
 
-And here is the test the whole design exists to pass. Throw the engine away. A small reader in a language that did not exist when the husk was sealed, given only the bytes and the inputs, must arrive at the same root. The repo ships two independent readers — `core.py` in Python and `verify.mjs` in JavaScript — and a frozen conformance vector. They agree on the root. If they ever stopped agreeing, the permanence was a story we were telling ourselves. They don't, so it isn't.
+Call a husk *permanent* in this operational sense: its root is reproducible from the bytes and inputs alone, by any conforming reader, with no access to the engine that produced it. That is a property you can test, not a quality you assert — and here is the test the whole design exists to pass. Throw the engine away. A small reader in a language that did not exist when the husk was sealed, given only the bytes and the inputs, must arrive at the same root. The repo ships two independent readers — `core.py` in Python and `verify.mjs` in JavaScript — and a frozen conformance vector. They agree on the root. If they ever stopped agreeing, the permanence claim would be false; they don't, so as far as it has been tested, it holds.
 
 ```bash
 node spec/conformance/verify.mjs spec/conformance/demo.husk \
@@ -222,7 +222,7 @@ The shape is the whole thesis in miniature: the oracle produces, the gate verifi
 
 ## 9. Convergence and extraction
 
-A plan is not written once. It is *worked*. You run it, read the trace, perturb the nodes that didn't satisfy, pin the ones that did, and run again. Across revisions this is not tuning a build. It is **program extraction against nondeterminism** — pulling apart the part of a task that is genuinely undetermined from the part that was determined all along and only wore the costume of judgment.
+A plan is not written once. It is *worked*. You run it, read the trace, perturb the nodes that didn't satisfy, pin the ones that did, and run again. Across revisions this is not tuning a build. It is **program extraction against nondeterminism** — separating the part of a task you have managed to reduce to a deterministic rule from the part that has, so far, resisted that reduction.
 
 An oracle whose output is fixed by its inputs is not an oracle. It is transcription, and transcription is a deterministic `action` you have not extracted yet. The prompt is source code for a function; leaving it as an oracle pays an API call to interpret that function at runtime. The end state of a converged node is to stop being an oracle.
 
@@ -233,7 +233,7 @@ An oracle whose output is fixed by its inputs is not an oracle. It is transcript
 - **Stable** — output hashes identical across runs. The specimen is fixed. Make it an action.
 - **Volatile** — no settled trend. Not converged.
 
-The fixed point you are working toward is the maximal deterministic skeleton with the genuine events isolated at named, irreducible `oracle` nodes — the parts that truly could not be written down in advance. Because anything that *could* be written down should have been the deterministic operation it was pretending not to be.
+The fixed point you are working toward is the maximal deterministic skeleton, with the remaining oracle nodes naming the parts that have so far resisted reduction to a deterministic action. That residue is empirical, not metaphysical: it marks what you have not yet extracted, not what is provably impossible to extract. Anything you *can* reduce should become the deterministic operation it was standing in for; what is left is simply where, for now, reduction has stopped.
 
 ---
 
@@ -249,6 +249,8 @@ trial  : (branch₁, …, branchₙ, verdict) → Y      speculative; one residu
 ```
 
 Evaluation consumes fuel and terminates by `commit` or `halt`. The language gives uncertainty one explicit form. Everything else is structure.
+
+This is an informal operational account, not a worked-out formal semantics. The reduction relation, a termination argument from the fuel bound, and any soundness statement relating seals to the artifacts they certify are not yet written down. "Calculus" here names the intent and the shape, not a completed formalization — that is work this document does not claim to have done.
 
 ---
 
