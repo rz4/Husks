@@ -36,6 +36,18 @@ def main():
     r.add_argument("--stub", action="store_true",
                    help="Use stub oracle (no LLM, placeholder outputs)")
 
+    # selftest
+    sub.add_parser("selftest", help="Verify engine against frozen conformance vectors")
+
+    # init
+    i = sub.add_parser("init", help="Wire a project to drive Husks from Claude Code")
+    i.add_argument("target", nargs="?", default=".",
+                   help="Target directory (default: .)")
+    i.add_argument("--no-claude-code", action="store_true",
+                   help="Skip Claude Code skill hookup")
+    i.add_argument("--force", action="store_true",
+                   help="Overwrite existing skill symlink and CLAUDE.md")
+
     # history
     h = sub.add_parser("history", help="Show convergence history for rules")
     h.add_argument("plan", help="Path to plan JSON file")
@@ -50,6 +62,15 @@ def main():
     if args.cmd is None:
         p.print_help()
         sys.exit(1)
+
+    # commands that take no plan file — dispatch before from_json()
+    if args.cmd == "selftest":
+        from husks.setup import selftest
+        sys.exit(0 if selftest() else 1)
+
+    if args.cmd == "init":
+        from husks.setup import init
+        sys.exit(init(args.target, claude_code=not args.no_claude_code, force=args.force))
 
     plan = from_json(args.plan)
 
