@@ -276,6 +276,13 @@
   (T.rule-start name :stale-reason reason)
   (try
     (setv usage (eval-recipe S name recipe inputs outputs))
+    ;; oracle output guard: missing or zero-byte outputs must halt
+    (when (and recipe (= (get recipe "type") "oracle"))
+      (for [o outputs]
+        (setv op (Path (site-path S o)))
+        (when (or (not (.exists op)) (= (. (.stat op) st_size) 0))
+          (setv msg (+ "oracle '" name "' produced empty or missing output: " o))
+          (raise (RuntimeError msg)))))
     (seal! S name inputs recipe)
     (setv fuel-consumed
       (if (and usage (.get usage "fuel_steps" 0))
