@@ -10,19 +10,9 @@ import sys
 from pathlib import Path
 
 from husks.core import recompute_root
-
-
-# ── locate the repo (editable install: src/husks/setup.py → repo root) ──
-def _repo_root():
-    return Path(__file__).resolve().parents[2]
-
-
-def _conformance_dir():
-    return _repo_root() / "spec" / "conformance"
-
-
-def _skill_dir():
-    return _repo_root() / "skills" / "husks"
+from husks.resources import conformance_dir as _conformance_dir
+from husks.resources import skill_dir as _skill_dir
+from husks.resources import skill_is_packaged
 
 
 # ── the canonical stance, versioned with the engine ─────────────────────
@@ -170,13 +160,18 @@ def init(target=".", claude_code=True, force=False):
                 print(f"        {link} exists (use --force to replace)")
                 link = None
         if link is not None:
-            try:
-                link.symlink_to(skill_src, target_is_directory=True)
-                print(f"        symlinked .claude/skills/husks → {skill_src}")
-            except OSError:
-                import shutil
+            import shutil
+            if skill_is_packaged():
+                # wheel install: copy out of site-packages (don't symlink into it)
                 shutil.copytree(skill_src, link)
-                print(f"        copied skill → .claude/skills/husks (symlink unavailable)")
+                print(f"        copied skill → .claude/skills/husks")
+            else:
+                try:
+                    link.symlink_to(skill_src, target_is_directory=True)
+                    print(f"        symlinked .claude/skills/husks → {skill_src}")
+                except OSError:
+                    shutil.copytree(skill_src, link)
+                    print(f"        copied skill → .claude/skills/husks (symlink unavailable)")
     else:
         print("        skipped (--no-claude-code)")
     print()

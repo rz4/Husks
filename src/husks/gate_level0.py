@@ -11,10 +11,11 @@ The gate's teeth are the adversarial root, which only a real netstring reader
 can reproduce. The import scan is a fast fail, not the real check.
 """
 import os, sys, subprocess
+from husks.resources import conformance_dir
 
-# Repo root is three levels up: src/husks/gate_level0.py -> src/husks -> src -> repo
+# Conformance vectors: packaged (wheel) or repo-root spec/conformance (source).
+CONF = str(conformance_dir())
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-CONF = os.path.join(REPO, "spec", "conformance")
 
 ALLOWED_IMPORTS = {"sys", "os", "hashlib", "io", "pathlib", "typing",
                    "__future__", "binascii"}
