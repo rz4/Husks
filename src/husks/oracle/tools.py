@@ -81,7 +81,16 @@ def get_site_root() -> Path | None:
     return _site_root
 
 
-def sandbox(path: str, *, write: bool = False) -> Path:
+_SENTINEL = object()
+
+
+def sandbox(
+    path: str,
+    *,
+    write: bool = False,
+    site_root: Path | None | object = _SENTINEL,
+    readonly_roots: set[Path] | None = None,
+) -> Path:
     """Resolve *path* within the site-root sandbox.
 
     Returns the resolved Path.  Raises ValueError if the resolved
@@ -95,20 +104,27 @@ def sandbox(path: str, *, write: bool = False) -> Path:
         If True, the path must resolve under the site root only.
         If False (default), the path may also resolve under any
         registered read-only root (import target).
+    site_root : Path or None, optional
+        When explicitly passed, use this instead of the module global.
+        When omitted (sentinel), fall back to the module global.
+    readonly_roots : set of Path, optional
+        When explicitly passed, use this instead of the module global.
     """
+    effective_root = _site_root if site_root is _SENTINEL else site_root
+    effective_readonly = _readonly_roots if readonly_roots is None else readonly_roots
     p = Path(path).resolve()
-    if _site_root is not None:
+    if effective_root is not None:
         try:
-            p.relative_to(_site_root)
+            p.relative_to(effective_root)
         except ValueError:
             # Write access: must be under site root only.
             if write:
                 raise ValueError(
                     f"path '{path}' resolves to '{p}' which is outside "
-                    f"the site root '{_site_root}' (write denied)"
+                    f"the site root '{effective_root}' (write denied)"
                 ) from None
             # Read access: also allow read-only roots.
-            for ro in _readonly_roots:
+            for ro in effective_readonly:
                 try:
                     p.relative_to(ro)
                     break
@@ -117,7 +133,7 @@ def sandbox(path: str, *, write: bool = False) -> Path:
             else:
                 raise ValueError(
                     f"path '{path}' resolves to '{p}' which is outside "
-                    f"the site root '{_site_root}'"
+                    f"the site root '{effective_root}'"
                 ) from None
     return p
 
@@ -139,7 +155,13 @@ def tool(fn):
     sig = inspect.signature(fn)
     props: dict[str, dict[str, str]] = {}
     required: list[str] = []
+    # Internal context parameters that should not appear in tool schemas.
+    _INTERNAL_PARAMS = frozenset({"site_root", "readonly_roots"})
     for pname, param in sig.parameters.items():
+        if pname in _INTERNAL_PARAMS:
+            continue
+        if param.kind == inspect.Parameter.KEYWORD_ONLY:
+            continue
         ptype = hints.get(pname, str)
         json_type = {str: "string", int: "integer", float: "number",
                      bool: "boolean"}.get(ptype, "string")
@@ -173,25 +195,46 @@ def schemas(names: list[str] | None = None) -> list[dict[str, Any]]:
     return [_REGISTRY[n]["schema"] for n in names if n in _REGISTRY]
 
 
-def dispatch(name: str, args: dict[str, Any]) -> str:
+def dispatch(name: str, args: dict[str, Any], *, context: dict[str, Any] | None = None) -> str:
     """Call a registered tool by name.
 
     Returns the tool's string output, or an error string if the
     tool is not found.
+
+    Parameters
+    ----------
+    context : dict, optional
+        Extra keyword arguments forwarded to the tool function.
+        Used to thread ``site_root`` and ``readonly_roots`` from
+        the kernel context without relying on module globals.
     """
     entry = _REGISTRY.get(name)
     if entry is None:
         return f"Error: unknown tool '{name}'"
+    if context:
+        return entry["fn"](**args, **context)
     return entry["fn"](**args)
 
 
 # ── Core tools ────────────────────────────────────────────────────
 
+def _sandbox_kwargs(site_root=None, readonly_roots=None):
+    """Build kwargs for sandbox() from optional context overrides."""
+    kw = {}
+    if site_root is not None:
+        kw["site_root"] = Path(site_root) if not isinstance(site_root, Path) else site_root
+    if readonly_roots is not None:
+        kw["readonly_roots"] = {
+            Path(p) if not isinstance(p, Path) else p for p in readonly_roots
+        }
+    return kw
+
+
 @tool
-def read_file(path: str) -> str:
+def read_file(path: str, *, site_root=None, readonly_roots=None) -> str:
     """Return file contents as a string."""
     try:
-        p = sandbox(path)
+        p = sandbox(path, **_sandbox_kwargs(site_root, readonly_roots))
     except ValueError as e:
         return f"Error: {e}"
     if p.is_dir():
@@ -205,10 +248,10 @@ def read_file(path: str) -> str:
 
 
 @tool
-def write_file(path: str, content: str) -> str:
+def write_file(path: str, content: str, *, site_root=None, readonly_roots=None) -> str:
     """Write content to a file, creating parent directories as needed."""
     try:
-        p = sandbox(path, write=True)
+        p = sandbox(path, write=True, **_sandbox_kwargs(site_root, readonly_roots))
     except ValueError as e:
         return f"Error: {e}"
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -217,10 +260,10 @@ def write_file(path: str, content: str) -> str:
 
 
 @tool
-def list_dir(path: str) -> str:
+def list_dir(path: str, *, site_root=None, readonly_roots=None) -> str:
     """Return a list of names in a directory (one level)."""
     try:
-        p = sandbox(path)
+        p = sandbox(path, **_sandbox_kwargs(site_root, readonly_roots))
     except ValueError as e:
         return f"Error: {e}"
     if not p.exists():
@@ -231,10 +274,10 @@ def list_dir(path: str) -> str:
 
 
 @tool
-def tree(path: str, depth: int = 3) -> str:
+def tree(path: str, depth: int = 3, *, site_root=None, readonly_roots=None) -> str:
     """Recursive directory listing up to the given depth."""
     try:
-        root = sandbox(path)
+        root = sandbox(path, **_sandbox_kwargs(site_root, readonly_roots))
     except ValueError as e:
         return f"Error: {e}"
     if not root.exists():

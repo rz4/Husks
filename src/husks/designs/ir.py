@@ -182,7 +182,6 @@ def check(design: Design) -> list[str]:
 
     names: set[str] = set()
     produced: set[str] = set(design.get("site_inputs", []))
-    oracle_fuel = 0
     predicates = design.get("predicates", {})
 
     for i, r in enumerate(rules):
@@ -224,7 +223,6 @@ def check(design: Design) -> list[str]:
             rf = r.get("fuel", 0)
             if rf <= 0:
                 errors.append(f"{tag}: oracle rule has no fuel")
-            oracle_fuel += rf
             if not r.get("prompt"):
                 errors.append(f"{tag}: oracle rule has no prompt")
 
@@ -311,12 +309,6 @@ def check(design: Design) -> list[str]:
         for t in targets:
             if t not in names:
                 errors.append(f"target '{t}' does not match any rule name")
-
-    # fuel budget
-    if fuel and oracle_fuel > fuel:
-        errors.append(
-            f"total oracle fuel ({oracle_fuel}) exceeds build fuel ({fuel})"
-        )
 
     return errors
 

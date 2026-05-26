@@ -970,7 +970,7 @@ def build(
     T.sealed_manifest()
 
     # Compute build-root (Merkle DAG) and write .husk file
-    if nodes and S["status"] == "committed":
+    if nodes and S["status"] in ("committed", "halted"):
         try:
             if len(nodes) == 1:
                 S["build-root"] = compute_build_root(S, nodes[0])

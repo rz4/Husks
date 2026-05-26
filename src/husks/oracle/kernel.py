@@ -76,6 +76,18 @@ from husks.utils import trace as T
 from husks.oracle import llm
 from husks.oracle import tools
 
+# Maximum characters kept from a tool output before truncation.
+MAX_TOOL_OUTPUT: int = 8000
+
+
+# ── Truncation helper ─────────────────────────────────────────────
+
+def _truncate(s: str) -> str:
+    """Truncate tool output with a marker if it exceeds MAX_TOOL_OUTPUT."""
+    if len(s) > MAX_TOOL_OUTPUT:
+        return s[:MAX_TOOL_OUTPUT] + "\n\n[... truncated ...]"
+    return s
+
 
 # ── Context helpers ───────────────────────────────────────────────
 
@@ -89,21 +101,51 @@ def _allowed(C: dict[str, Any], tool_name: str) -> bool:
     return tool_name in C.get("tools", [])
 
 
+def _dispatch_context(C: dict[str, Any]) -> dict[str, Any]:
+    """Build keyword arguments for tools.dispatch from the kernel context."""
+    ctx: dict[str, Any] = {}
+    sr = C.get("site_root")
+    ro = C.get("readonly_roots")
+    if sr is not None or ro is not None:
+        ctx["context"] = {}
+        if sr is not None:
+            ctx["context"]["site_root"] = sr
+        if ro is not None:
+            ctx["context"]["readonly_roots"] = ro
+    return ctx
+
+
 # ── Response parsing ──────────────────────────────────────────────
 
 def parse_response(r: Any) -> dict[str, Any]:
-    """Extract the first actionable block from a litellm response.
+    """Extract actionable blocks from a litellm response.
 
     Returns a dict with ``type`` key:
-      - ``"act"``  : tool call with name, args, tool_call_id
+      - ``"act"``  : single tool call with name, args, tool_call_id
+      - ``"acts"`` : multiple parallel tool calls (list of call dicts)
       - ``"stop"`` : the model finished (finish_reason == "stop")
       - ``"say"``  : text output that is neither a tool call nor a stop
     """
     msg = r.choices[0].message
     tc = getattr(msg, "tool_calls", None)
 
-    # Tool call present
-    if tc and len(tc) > 0:
+    # Multiple parallel tool calls
+    if tc and len(tc) > 1:
+        calls = []
+        for call in tc:
+            fn_obj = call.function
+            name = fn_obj.name.replace("_", "-")
+            try:
+                args = json.loads(fn_obj.arguments or "{}")
+            except Exception:
+                args = {}
+            calls.append({
+                "tool": name, "args": args, "tool_call_id": call.id,
+            })
+        return {"type": "acts", "calls": calls}
+
+    # Single tool call
+    if tc and len(tc) == 1:
         call = tc[0]
         fn_obj = call.function
         name = fn_obj.name.replace("_", "-")
@@ -160,8 +202,36 @@ def _build_messages(C: dict[str, Any]) -> list[dict[str, Any]]:
             msgs.append({
                 "role": "tool",
                 "tool_call_id": tid,
-                "content": out_str[:8000],
+                "content": _truncate(out_str),
             })
+        elif kind == "acts":
+            # Parallel tool calls: one assistant message with all calls,
+            # then one tool result message per call.
+            calls_data = event.get("calls", [])
+            results = event.get("results", [])
+            tool_calls_arr = []
+            for cd in calls_data:
+                fn_name = cd["tool"].replace("-", "_")
+                tool_calls_arr.append({
+                    "id": cd.get("tool_call_id", "t0"),
+                    "type": "function",
+                    "function": {
+                        "name": fn_name,
+                        "arguments": json.dumps(cd.get("args", {})),
+                    },
+                })
+            msgs.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": tool_calls_arr,
+            })
+            for cd, res in zip(calls_data, results):
+                out = res if isinstance(res, str) else json.dumps(res, default=str)
+                msgs.append({
+                    "role": "tool",
+                    "tool_call_id": cd.get("tool_call_id", "t0"),
+                    "content": _truncate(out),
+                })
     return msgs
 
 
@@ -176,6 +246,9 @@ def invoke_llm(C: dict[str, Any]) -> dict[str, Any]:
         "max_tokens": C.get("max-tokens", 4096),
         "rule": C.get("rule"),
     }
+    tracker = C.get("tracker")
+    if tracker is not None:
+        kwargs["tracker"] = tracker
     system = C.get("system")
     if system:
         kwargs["system"] = system
@@ -216,15 +289,15 @@ def step(
     fuel_used = 0
 
     while True:
+        if fuel <= 0:
+            return {"type": "halt", "C": C, "fuel_steps": fuel_used}
+
         try:
             form = M(C)
         except KeyboardInterrupt:
             return {"type": "kill", "C": C, "fuel_steps": fuel_used}
 
         kind = form.get("type")
-
-        if fuel <= 0:
-            return {"type": "halt", "C": C, "fuel_steps": fuel_used}
 
         if kind == "say":
             return {
@@ -255,12 +328,44 @@ def step(
                 }
 
             T.tool_call(C.get("rule", "agent"), name, args)
-            out = tools.dispatch(name, args)
+            ctx = _dispatch_context(C)
+            out = tools.dispatch(name, args, **ctx)
             C = _rebind(C, {"form": form, "tool": name, "out": out})
             T.tool_result(name, out)
 
             fuel -= 1
             fuel_used += 1
+            continue
+
+        if kind == "acts":
+            calls = form.get("calls", [])
+            results = []
+            for cd in calls:
+                name = cd["tool"]
+                args = cd.get("args", {})
+
+                if not _allowed(C, name):
+                    return {
+                        "type": "error",
+                        "error": f"{name} not in scope",
+                        "C": C,
+                        "fuel_steps": fuel_used,
+                    }
+
+                T.tool_call(C.get("rule", "agent"), name, args)
+                ctx = _dispatch_context(C)
+                out = tools.dispatch(name, args, **ctx)
+                T.tool_result(name, out)
+                results.append(out)
+
+                fuel -= 1
+                fuel_used += 1
+
+            C = _rebind(C, {
+                "form": form,
+                "calls": calls,
+                "results": results,
+            })
             continue
 
         # Unknown form
@@ -353,6 +458,8 @@ def live_oracle(
         Usage dict with keys: tokens_in, tokens_out, cost_usd,
         fuel_steps.
     """
+    from pathlib import Path as _Path
+
     site: str = S["site"]
     prompt: str = recipe.get("prompt", "")
     tool_names: list[str] = recipe.get(
@@ -360,9 +467,16 @@ def live_oracle(
     )
     fuel: int = recipe.get("fuel", 8)
 
-    # Enforce site containment at the tool layer
+    # Enforce site containment at the tool layer (global, for backward compat)
     readonly: list[str] = S.get("readonly-dirs", [])
     tools.set_site_root(site, readonly=readonly or None)
+
+    # Context-threaded site root and readonly roots (per-invocation)
+    site_root = _Path(site).resolve()
+    readonly_roots = {_Path(p).resolve() for p in (readonly or [])}
+
+    # Per-invocation usage tracker
+    tracker = llm.UsageTracker()
 
     # System prompt: tell the oracle where it is and what it must produce
     output_lines = "\n".join(f"  - {site}/{o}" for o in outputs)
@@ -376,12 +490,6 @@ def live_oracle(
         "When finished, stop."
     )
 
-    # Snapshot usage before
-    before = llm.get_usage()
-    ti0 = before["input_tokens"]
-    to0 = before["output_tokens"]
-    c0 = before["cost_usd"]
-
     try:
         result = agent(
             {
@@ -390,17 +498,20 @@ def live_oracle(
                 "system": system,
                 "model": _oracle_model,
                 "rule": rule_name,
+                "tracker": tracker,
+                "site_root": site_root,
+                "readonly_roots": readonly_roots,
             },
             fuel=fuel,
         )
     finally:
         tools.set_site_root(None)
 
-    # Compute delta
-    after = llm.get_usage()
+    # Compute deltas from the local tracker
+    snap = tracker.snapshot()
     return {
-        "tokens_in": after["input_tokens"] - ti0,
-        "tokens_out": after["output_tokens"] - to0,
-        "cost_usd": after["cost_usd"] - c0,
+        "tokens_in": snap["input_tokens"],
+        "tokens_out": snap["output_tokens"],
+        "cost_usd": snap["cost_usd"],
         "fuel_steps": result.get("fuel_steps", 0),
     }
