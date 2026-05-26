@@ -1,18 +1,20 @@
 #- cli.py — command-line interface for Husks plans
 #
 # Usage:
-#   python -m husks.cli check plan.json
-#   python -m husks.cli show  plan.json
-#   python -m husks.cli run   plan.json [--site /tmp/my-build] [--model ...]
-#   python -m husks.cli run   plan.json --stub   (no LLM, placeholder outputs)
+#   python -m husks check plan.json
+#   python -m husks show  plan.json
+#   python -m husks run   plan.json [--site /tmp/my-build] [--model ...]
+#   python -m husks run   plan.json --stub   (no LLM, placeholder outputs)
+#   python -m husks run   plan.json --hy     (use original Hy backend)
 
 import argparse
 import json
 import sys
 from pathlib import Path
 
-from husks.plan import check, show, run, from_json
-from husks.trace import _read_history, convergence_summary, _shorthash
+from husks.designs.ir import check, show, run, from_json
+from husks.designs.convergence import read_history, convergence_summary
+from husks.utils.console import _shorthash
 
 
 def main():
@@ -35,9 +37,12 @@ def main():
                    default="anthropic/claude-haiku-4-5-20251001")
     r.add_argument("--stub", action="store_true",
                    help="Use stub oracle (no LLM, placeholder outputs)")
+    r.add_argument("--hy", action="store_true",
+                   help="Use original Hy kernel backend instead of Python")
 
     # selftest
-    sub.add_parser("selftest", help="Verify engine against frozen conformance vectors")
+    st = sub.add_parser("selftest", help="Verify engine against frozen conformance vectors")
+    st.add_argument("--conformance", help="Path to conformance vector directory")
 
     # init
     i = sub.add_parser("init", help="Wire a project to drive Husks from Claude Code")
@@ -66,7 +71,7 @@ def main():
     # commands that take no plan file — dispatch before from_json()
     if args.cmd == "selftest":
         from husks.setup import selftest
-        sys.exit(0 if selftest() else 1)
+        sys.exit(0 if selftest(conformance=args.conformance) else 1)
 
     if args.cmd == "init":
         from husks.setup import init
@@ -97,11 +102,17 @@ def main():
             overrides["site"] = args.site
 
         if not args.stub:
-            # live oracle: kernel + LLM
-            import hy  # noqa: F401
-            from husks.kernel import live_oracle, set_oracle_model
-            set_oracle_model(args.model)
-            overrides["oracle_backend"] = live_oracle
+            if args.hy:
+                # Hy kernel backend (original .hy files)
+                from husks.designs.hy import hy_kernel_backend
+                kern = hy_kernel_backend()
+                kern["set_oracle_model"](args.model)
+                overrides["oracle_backend"] = kern["live_oracle"]
+            else:
+                # Python kernel backend (default)
+                from husks.oracle import live_oracle, set_oracle_model
+                set_oracle_model(args.model)
+                overrides["oracle_backend"] = live_oracle
             overrides["oracle_model"] = args.model
 
         S = run(plan, **overrides)
@@ -121,7 +132,7 @@ def main():
 
         if args.rule:
             # detailed history for one rule
-            entries = _read_history(site, args.rule)
+            entries = read_history(site, args.rule)
             if not entries:
                 print(f"  no history for '{args.rule}' in {site}")
                 sys.exit(0)
@@ -160,13 +171,12 @@ def main():
             print(f"  {'─' * 60}")
             for r in rules:
                 rname = r["name"]
-                entries = _read_history(site, rname)
+                entries = read_history(site, rname)
                 if not entries:
                     print(f"  {rname:<24s} no history")
                     continue
                 n = min(args.n, len(entries))
                 cs = convergence_summary(rname, site, n=n)
-                fuels = [e.get("fuel_consumed", 0) for e in entries[-n:]]
                 print(f"  {rname:<24s} {len(entries)} runs  {cs['classification']}")
             print(f"  {'─' * 60}\n")
 

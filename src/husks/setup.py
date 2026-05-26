@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 from husks.core import recompute_root
-from husks.resources import conformance_dir as _conformance_dir
 from husks.resources import skill_dir as _skill_dir
 from husks.resources import skill_is_packaged
 
@@ -59,14 +58,59 @@ so the tests check the spec, not whatever the implementation happened to do.
 """
 
 
+# ── conformance resolution ─────────────────────────────────────────────
+def _resolve_conformance(override=None) -> Path:
+    """Resolve the conformance vector directory via fallback chain.
+
+    1. Explicit override (from --conformance flag)
+    2. HUSKS_CONFORMANCE_DIR env var
+    3. husks_conformance.conformance_dir() (if installed)
+    4. spec/conformance relative to repo root
+    5. Error
+    """
+    # 1. Explicit argument
+    if override is not None:
+        p = Path(override).resolve()
+        if p.exists():
+            return p
+        raise FileNotFoundError(f"Conformance directory not found: {p}")
+
+    # 2. Environment variable
+    env = os.environ.get("HUSKS_CONFORMANCE_DIR")
+    if env:
+        p = Path(env).resolve()
+        if p.exists():
+            return p
+        raise FileNotFoundError(
+            f"HUSKS_CONFORMANCE_DIR points to nonexistent path: {p}"
+        )
+
+    # 3. husks_conformance package
+    try:
+        from husks_conformance import conformance_dir
+        return conformance_dir()
+    except (ImportError, FileNotFoundError):
+        pass
+
+    # 4. Repo-relative fallback
+    repo = Path(__file__).resolve().parent.parents[1]  # src/husks -> src -> repo
+    candidate = repo / "spec" / "conformance"
+    if candidate.exists():
+        return candidate
+
+    raise FileNotFoundError(
+        "Conformance vectors not found. Install husks-conformance, "
+        "set HUSKS_CONFORMANCE_DIR, or pass --conformance."
+    )
+
+
 # ── selftest ────────────────────────────────────────────────────────────
-def selftest(verbose=True):
+def selftest(verbose=True, conformance=None):
     """Recompute the frozen conformance roots. Returns True iff all match."""
-    conf = _conformance_dir()
-    if not conf.exists():
-        print(f"  error: conformance vectors not found at {conf}", file=sys.stderr)
-        print("  selftest requires the repo checkout (editable install).",
-              file=sys.stderr)
+    try:
+        conf = _resolve_conformance(conformance)
+    except FileNotFoundError as e:
+        print(f"  error: {e}", file=sys.stderr)
         return False
 
     vectors = sorted(p.stem for p in conf.glob("*.husk"))
