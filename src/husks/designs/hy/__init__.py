@@ -17,7 +17,7 @@ __all__ = [
     "hy_kernel_backend",
 ]
 
-_HY_IMPORT_ERROR = "Hy is not installed. Install with: pip install hy>=1.0.0"
+_HY_IMPORT_ERROR = "Hy is not installed. Install with: pip install husks[hy]"
 
 # -- Availability flag (set once at import time) --
 

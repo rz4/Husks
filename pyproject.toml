@@ -10,13 +10,11 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 dependencies = [
-    "hy>=1.0.0",
+    "litellm",
 ]
 
 [project.optional-dependencies]
-llm = [
-    "litellm",
-]
+hy = ["hy>=1.0.0"]
 
 [project.scripts]
 husks = "husks.cli:main"

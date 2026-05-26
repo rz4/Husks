@@ -74,8 +74,7 @@ can't spawn new rules based on what it discovers.  If an oracle finds it
 needs to decompose work further, that decomposition has to happen in a
 new design, not within the current build.
 
-## 10. Hy dependency is mandatory
+## 10. ~~Hy dependency is mandatory~~ (resolved)
 
-`pyproject.toml` lists `hy>=1.0.0` as a hard dependency even though the
-Hy backend is optional and wrapped in a try/except.  Users who only want
-JSON designs still need Hy installed.
+Hy is now an optional dependency.  Users who want the Hy bridge install
+with `pip install husks[hy]`.  The core package no longer pulls in Hy.
