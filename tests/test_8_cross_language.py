@@ -119,6 +119,51 @@ class TestElaboratedPlanCrossLanguage:
         assert "PASS" in stdout
 
 
+# -- Multi-target cross-language verification ----------------------------------
+
+class TestMultiTargetCrossLanguage:
+    """Multi-target husks verify under the JS reader."""
+
+    def test_multi_target_js_verifier(self, tmp_path):
+        """Build a multi-target design, verify with JS reader."""
+        from husks.designs.ir import run
+
+        site = str(tmp_path / "site")
+        os.makedirs(site)
+        with open(os.path.join(site, "input.txt"), "w") as f:
+            f.write("data\n")
+
+        design = {
+            "name": "multi-js",
+            "fuel": 10,
+            "targets": ["done-a", "done-b"],
+            "site": site,
+            "site_inputs": ["input.txt"],
+            "rules": [
+                {
+                    "name": "step",
+                    "kind": "action",
+                    "inputs": ["input.txt"],
+                    "outputs": ["out.txt"],
+                },
+                {"name": "done-a", "kind": "commit", "value": "a-ok"},
+                {"name": "done-b", "kind": "commit", "value": "b-ok"},
+            ],
+        }
+
+        S = run(design)
+        assert S["status"] == "committed"
+        engine_root = S["build-root"]
+        assert engine_root is not None
+
+        husk_path = os.path.join(site, "multi-js.husk")
+        assert os.path.isfile(husk_path)
+
+        stdout, rc = _run_js_verifier(husk_path, site, engine_root)
+        assert rc == 0, f"JS verifier failed on multi-target: {stdout}"
+        assert "PASS" in stdout
+
+
 # -- JS reader is independent --------------------------------------------------
 
 class TestReaderIndependence:

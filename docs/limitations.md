@@ -65,7 +65,8 @@ Multi-target builds are now supported.  A design may specify
 roots in a single build.  The legacy `"target": "x"` (string) form is
 still accepted and treated as a one-element targets list.  The build-root
 for multi-target builds is the SHA-256 of the sorted per-target roots
-concatenated together.
+concatenated together.  Multi-target husks verify under both the Python
+reader and the independent JS cross-language reader (`verify.mjs`).
 
 ## 9. No dynamic graph construction
 

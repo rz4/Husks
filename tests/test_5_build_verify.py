@@ -483,6 +483,63 @@ def test_single_target_string_backward_compat():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_different_shell_commands_different_seal():
+    """Two shell actions with different commands must produce different seals."""
+    tmpdir = tempfile.mkdtemp(prefix="shell-seal-")
+    try:
+        from husks.designs.ir import run
+
+        # Build A: shell command "echo alpha"
+        site_a = os.path.join(tmpdir, "site-a")
+        os.makedirs(site_a)
+        design_a = {
+            "name": "cmd-a",
+            "fuel": 10,
+            "target": "step",
+            "site": site_a,
+            "rules": [
+                {
+                    "name": "step",
+                    "kind": "action",
+                    "inputs": [],
+                    "outputs": ["out.txt"],
+                    "run": "echo alpha > out.txt",
+                },
+            ],
+        }
+        S_a = run(design_a)
+        assert S_a["status"] == "committed"
+        root_a = S_a["build-root"]
+
+        # Build B: shell command "echo beta"
+        site_b = os.path.join(tmpdir, "site-b")
+        os.makedirs(site_b)
+        design_b = {
+            "name": "cmd-b",
+            "fuel": 10,
+            "target": "step",
+            "site": site_b,
+            "rules": [
+                {
+                    "name": "step",
+                    "kind": "action",
+                    "inputs": [],
+                    "outputs": ["out.txt"],
+                    "run": "echo beta > out.txt",
+                },
+            ],
+        }
+        S_b = run(design_b)
+        assert S_b["status"] == "committed"
+        root_b = S_b["build-root"]
+
+        assert root_a != root_b, (
+            f"different shell commands produced identical build roots: {root_a}"
+        )
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def test_imports_check_validation():
     """check() catches bad imports: relative paths, collisions."""
     from husks.designs.ir import check

@@ -273,7 +273,8 @@ def recipe_to_cse(recipe: Recipe) -> CseValue:
     if kind == "action":
         fn = recipe["fn"]
         qualname: str = getattr(fn, "__qualname__", "anon")
-        return [b"action", qualname.encode()]
+        cmd: str = getattr(fn, "_husks_cmd", "")
+        return [b"action", qualname.encode(), cmd.encode()]
     if kind == "oracle":
         name = recipe.get("name")
         return [

@@ -59,12 +59,30 @@ function computeSeal(version, recipe, inputs, sitedir) {
   return sha256(encode(preimage));
 }
 
-function computeNode(rule, version, sitedir) {
-  const name    = rule[1];
-  const recipe  = rule[2];
-  const inputs  = rule[3];
-  const outputs = rule[4];
-  const children = rule.slice(5);
+function computeNode(node, version, sitedir) {
+  const tag = node[0].toString();
+
+  // Terminal nodes: digest is the hash of their CSE encoding
+  if (tag === "commit" || tag === "halt")
+    return sha256(encode(node));
+
+  // Cond nodes
+  if (tag === "cond") {
+    const thenDigest = computeNode(node[2], version, sitedir);
+    const elseDigest = computeNode(node[3], version, sitedir);
+    const condForm = [
+      Buffer.from("cond"), node[1],
+      Buffer.from(thenDigest), Buffer.from(elseDigest),
+    ];
+    return sha256(encode(condForm));
+  }
+
+  // Rule node
+  const name    = node[1];
+  const recipe  = node[2];
+  const inputs  = node[3];
+  const outputs = node[4];
+  const children = node.slice(5);
 
   const childDigests = children.map((c) =>
     Buffer.from(computeNode(c, version, sitedir))
@@ -82,8 +100,13 @@ function recomputeRoot(huskBuf, sitedir) {
   const [tree] = parse(huskBuf);
   const version = tree[1];          // husk → version
   const build   = tree[2];          // husk → build
-  const target  = build[3];         // build → target rule
-  return computeNode(target, version, sitedir);
+  const targets = build.slice(3);   // all target nodes
+  if (targets.length === 1)
+    return computeNode(targets[0], version, sitedir);
+  const perRoots = targets
+    .map((t) => computeNode(t, version, sitedir))
+    .sort();
+  return sha256(Buffer.from(perRoots.join("")));
 }
 
 // ── CLI ──────────────────────────────────────────────────────────

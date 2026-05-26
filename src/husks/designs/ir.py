@@ -602,6 +602,7 @@ def _make_shell_action(cmd: str, outputs: list[str]):
                 f"{result.stderr[:500]}"
             )
 
+    shell_action._husks_cmd = cmd
     return shell_action
 
 
@@ -620,6 +621,7 @@ def _make_touch_action(outputs: list[str]):
                 p.parent.mkdir(parents=True, exist_ok=True)
                 write_text(site_path(S, o), "ok\n")
 
+    touch_action._husks_cmd = "__touch__"
     return touch_action
 
 
