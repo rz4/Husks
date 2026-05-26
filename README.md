@@ -24,28 +24,28 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-Check a plan against its contract:
+Check a design against its contract:
 
 ```bash
-husks check examples/husks-demo.plan.json
+husks check examples/husks-demo.design.json
 ```
 
 Run it with a stub oracle — no model, no key, just the machinery:
 
 ```bash
-husks run examples/husks-demo.plan.json --site /tmp/husks-demo --stub
+husks run examples/husks-demo.design.json --site /tmp/husks-demo --stub
 ```
 
 Run it again. Fresh seals skip work already done:
 
 ```bash
-husks run examples/husks-demo.plan.json --site /tmp/husks-demo --stub
+husks run examples/husks-demo.design.json --site /tmp/husks-demo --stub
 ```
 
 Read how a node has moved across runs:
 
 ```bash
-husks history examples/husks-demo.plan.json --site /tmp/husks-demo
+husks history examples/husks-demo.design.json --site /tmp/husks-demo
 ```
 
 ---
@@ -71,11 +71,11 @@ The observable unit is the thing left behind. The framework records only what it
 
 An agent loop runs a model until the model decides it is finished. The work and the judgment of the work happen in the same opaque pass, and at the end you are handed a transcript and a final state and asked to trust both. You are trusting the event to grade its own carcass.
 
-A Husk reverses the order. The plan is a contract that exists *before* the model touches anything: the whole graph — every input, output, prompt, tool, and fuel bound — written down where you can read it. You review the contract. Then the runtime walks it, fires only what is stale, seals what is fresh, reuses what is already sealed, and prints exactly what happened.
+A Husk reverses the order. The design is a contract that exists *before* the model touches anything: the whole graph — every input, output, prompt, tool, and fuel bound — written down where you can read it. You review the contract. Then the runtime walks it, fires only what is stale, seals what is fresh, reuses what is already sealed, and prints exactly what happened.
 
 The contract precedes the work; it is not reconstructed from logs afterward. Fuel bounds everything — a global budget and a budget per oracle — so there are no unbounded loops to wait out. Sealed residue is never regenerated, which makes reruns nearly free. And nondeterminism has exactly one home: `oracle`. The rest is deterministic structure you can reason about.
 
-A plan is the contract. It becomes a Husk when it is lowered, sealed, and verified.
+A design is the contract. It becomes a Husk when it is lowered, sealed, and verified.
 
 ---
 
@@ -97,7 +97,7 @@ Nine forms. That is the whole language.
 
 Nesting expresses dependency. `let` expresses sharing. A recipe expresses production. `commit` and `halt` record which residue was kept and which was thrown away. You start with two — `action` and `oracle` — and reach for the rest only when the shape of the work demands it.
 
-The JSON plan IR is the current executable subset: it compiles `action` and `oracle` rules. The remaining forms — `let`, `cond`, `trial` — exist in the canonical AST and the Lisp surface form and are reached through that path, not through JSON today.
+The JSON design IR is the current executable subset: it compiles `action` and `oracle` rules. The remaining forms — `let`, `cond`, `trial` — exist in the canonical AST and the Lisp surface form and are reached through that path, not through JSON today.
 
 ---
 
@@ -143,7 +143,7 @@ There are two ways to hold a Husk, and they are not the same kind of thing.
 }
 ```
 
-This lowers deterministically into an AST. The walk that performs the lowering imposes a fixed order on everything, so two plans that mean the same thing produce the same structure — canonicalization happens here, once, where the full graph is still in view. For human eyes the AST renders as a Lisp surface form:
+This lowers deterministically into an AST. The walk that performs the lowering imposes a fixed order on everything, so two designs that mean the same thing produce the same structure — canonicalization happens here, once, where the full graph is still in view. For human eyes the AST renders as a Lisp surface form:
 
 ```hy
 (build "husks-demo" 30
@@ -214,7 +214,7 @@ Anything less is a reader that works on the easy cases and lies on the hard ones
 
 ## 8. Bootstrap validation
 
-`plans/bootstrap-core.json` turns that test on the framework itself. It has two nodes. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate, `scripts/gate_level0.py`, judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
+`examples/bootstrap-core.json` turns that test on the framework itself. It has two nodes. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate, `husks_conformance.gate`, judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
 
 The shape is the whole thesis in miniature: the oracle produces, the gate verifies, and the gate is not the oracle. A model can write the verifier; it cannot grade its own verifier. The frozen roots do that — and the roots were computed by readers the model never saw. What happened the first time we ran this is at the end of the document, because it is the point of the whole exercise.
 
@@ -222,7 +222,7 @@ The shape is the whole thesis in miniature: the oracle produces, the gate verifi
 
 ## 9. Convergence and extraction
 
-A plan is not written once. It is *worked*. You run it, read the trace, perturb the nodes that didn't satisfy, pin the ones that did, and run again. Across revisions this is not tuning a build. It is **program extraction against nondeterminism** — separating the part of a task you have managed to reduce to a deterministic rule from the part that has, so far, resisted that reduction.
+A design is not written once. It is *worked*. You run it, read the trace, perturb the nodes that didn't satisfy, pin the ones that did, and run again. Across revisions this is not tuning a build. It is **program extraction against nondeterminism** — separating the part of a task you have managed to reduce to a deterministic rule from the part that has, so far, resisted that reduction.
 
 An oracle whose output is fixed by its inputs is not an oracle. It is transcription, and transcription is a deterministic `action` you have not extracted yet. The prompt is source code for a function; leaving it as an oracle pays an API call to interpret that function at runtime. The end state of a converged node is to stop being an oracle.
 
@@ -292,7 +292,7 @@ And run the cold bootstrap — a reader written from the spec alone, judged by t
 rm -rf /tmp/bootstrap-core && mkdir -p /tmp/bootstrap-core
 cp spec/CSE-v1.md        /tmp/bootstrap-core/CSE-v1.md
 cp spec/CSE-v2.md /tmp/bootstrap-core/CSE-v2.md
-husks run plans/bootstrap-core.json --site /tmp/bootstrap-core
+husks run examples/bootstrap-core.json --site /tmp/bootstrap-core
 ```
 
 A successful run writes `readers/VERIFIED` and prints `GATE PASS`.
@@ -303,14 +303,14 @@ A successful run writes `readers/VERIFIED` and prints `GATE PASS`.
 
 What stands today:
 
-- JSON plans with deterministic lowering into the symbolic build form;
+- JSON designs with deterministic lowering into the symbolic build form;
 - sealed artifact reuse and full trace recording;
 - CSE v1 and v2, both frozen;
 - independent Python and JavaScript readers;
 - frozen conformance vectors and adversarial parser fixtures;
 - Level 0 bootstrap validation, passing.
 
-The next test is recursive: a Husk plan that builds more of Husks itself — including its own verifier — while the final root stays independently checkable. That is the work, and it is named at the end for a reason.
+The next test is recursive: a Husk design that builds more of Husks itself — including its own verifier — while the final root stays independently checkable. That is the work, and it is named at the end for a reason.
 
 ---
 
@@ -324,7 +324,7 @@ It did not pass on the first run, and that is the part worth reading. The first 
 
 That is the whole point of writing a claim so it can be wrong. The format was held to account by something with every reason to disagree, and the disagreement made it more precise rather than less true — two ambiguities in the permanent layer, found and closed, by the act of being checked.
 
-Deeper forms of the test remain: a Husk that emits its own verifier as residue, a Husk that emits the plan that builds Husks. Those are not done. The first and sharpest one is.
+Deeper forms of the test remain: a Husk that emits its own verifier as residue, a Husk that emits the design that builds Husks. Those are not done. The first and sharpest one is.
 
 ---
 

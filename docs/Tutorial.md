@@ -2,7 +2,7 @@
 
 A tutorial for driving the Husks build calculus from a Claude Code instance.
 
-By the end you will have Claude Code authoring **plans** instead of running an
+By the end you will have Claude Code authoring **designs** instead of running an
 unbounded agent loop: it writes a build graph, you read the contract before any
 model touches anything, the runtime fires only what is stale, and every claim
 the system makes is a claim about sealed residue you can recompute yourself.
@@ -18,12 +18,12 @@ There are **three** roles, and keeping them separate is the whole point.
 
 | Role | Who plays it | What it does |
 | :--- | :--- | :--- |
-| **Author** | the Claude Code instance | reads your task, writes `plan.json`, runs the CLI, reports |
+| **Author** | the Claude Code instance | reads your task, writes `design.json`, runs the CLI, reports |
 | **Producer** | the husks `oracle` (a litellm call, default `claude-haiku-4-5`) | the one nondeterministic step — generates bytes inside a bounded workspace |
 | **Verifier** | the deterministic engine + frozen roots | seals, reuses, recomputes hashes; grades neither author nor producer on its say-so |
 
 The author and the producer are **different model calls**. Claude Code writes
-the contract; a separate, fuel-bounded oracle inside the plan produces the
+the contract; a separate, fuel-bounded oracle inside the design produces the
 residue. The verifier is not a model at all. A model can write a verifier; it
 cannot grade its own verifier — that separation is what you are setting up.
 
@@ -127,7 +127,7 @@ The stance file is written by the CLI, not copied from this tutorial, on purpose
 it's versioned with the engine, so it can't drift, and it's where lessons from
 real runs get encoded. The current stance:
 
-- **Plan first.** Write `plan.json` before exploring or running anything.
+- **Design first.** Write `design.json` before exploring or running anything.
 - **Check, show, wait.** `check` then `show` the graph; wait for your approval
   before `run`. Stub-first when the shape is new.
 - **Two forms only.** `action` (deterministic) and `oracle` (one bounded model
@@ -166,12 +166,12 @@ step is ideal:
 
 What you should see, in order:
 
-1. **It writes `plan.json` first** — before reading files or running anything.
+1. **It writes `design.json` first** — before reading files or running anything.
 2. **`check` then `show`** — the build graph printed for you to read. This is the
    contract: inputs, outputs, prompts, tools, and fuel, all visible *before* any
    model call.
 3. **It stops and asks approval.** Approve.
-4. **Stub run** (if requested): `husks run plan.json --site /tmp/husks-slug --stub`
+4. **Stub run** (if requested): `husks run design.json --site /tmp/husks-slug --stub`
    — confirms the graph executes and seals.
 5. **Live run:** drop `--stub`. The oracle fires `claude-haiku-4-5` via litellm,
    produces the module, the `pytest` action verifies it, the build commits or
@@ -180,15 +180,15 @@ What you should see, in order:
    post-build check, proving the residue is self-verifying.
 
 If the build **halts**, the trace names the failing rule and why. The skill is
-told to read it and propose a revised plan rather than silently re-running.
+told to read it and propose a revised design rather than silently re-running.
 
 ---
 
 ## 7. Read what happened
 
 ```bash
-husks history plan.json --site /tmp/husks-slug              # all nodes
-husks history plan.json scaffold --site /tmp/husks-slug     # one rule, in detail
+husks history design.json --site /tmp/husks-slug              # all nodes
+husks history design.json scaffold --site /tmp/husks-slug     # one rule, in detail
 ```
 
 `history` classifies each node:
@@ -227,7 +227,7 @@ print(recompute_root(husk, site))
 You don't have to police all of this by hand — `check` and the runtime do:
 
 - **Fuel is a real budget.** Each oracle has a local cap; the build has a global
-  one; total oracle fuel can't exceed it. `check` rejects a plan that overspends.
+  one; total oracle fuel can't exceed it. `check` rejects a design that overspends.
 - **Actions halt on failure.** A nonzero `run` raises and halts the build, so a
   failing validator stops the build before the terminal rule fires.
 - **Empty oracle outputs halt.** An oracle that produces a missing or zero-byte
@@ -248,9 +248,9 @@ You don't have to police all of this by hand — `check` and the runtime do:
 | `AuthenticationError` / 401 from the oracle | no key in env | fill `.env`, then `set -a && source .env` |
 | Claude Code doesn't use Husks | skill not loaded | `claude doctor`; confirm `.claude/skills/husks/SKILL.md` exists; restart session |
 | Skill seems out of date after upgrading Husks | non-editable install copies the skill | `husks init --force` to refresh it |
-| `check` rejects the plan | missing `target`/output, oracle fuel/tools, or undeclared input | read the error; the skill repairs and re-checks |
+| `check` rejects the design | missing `target`/output, oracle fuel/tools, or undeclared input | read the error; the skill repairs and re-checks |
 | Build halts on "empty or missing output" | an oracle wrote nothing or a 0-byte file | refine the oracle prompt; this guard is working as intended |
-| Plan uses `let`/`cond`/`trial` | JSON IR can't lower them | constrain to `action`+`oracle` (the CLAUDE.md already says so) |
+| Design uses `let`/`cond`/`trial` | JSON IR can't lower them | constrain to `action`+`oracle` (the CLAUDE.md already says so) |
 
 ---
 
@@ -258,7 +258,7 @@ You don't have to police all of this by hand — `check` and the runtime do:
 
 Two experiments, in order of reach:
 
-**Spec-independence in practice.** Have Claude Code author a plan where the spec
+**Spec-independence in practice.** Have Claude Code author a design where the spec
 is a declared artifact fed to *both* the implementation oracle and the test
 oracle, and check whether the emitted CLAUDE.md actually changes the shape of what
 it produces versus a naive run. This tells you the encoded lessons are
@@ -268,7 +268,7 @@ load-bearing, not decoration.
 verifier — while the final root stays independently checkable by a reader that
 never saw the producing engine. That is the test the whole design is built to
 pass, and it's the natural endpoint once a live agent is reliably authoring
-two-form plans.
+two-form designs.
 
 For the engine internals and the permanence argument, see the repo `README.md`
 and `spec/CSE-v1.md` / `spec/CSE-v2.md`.

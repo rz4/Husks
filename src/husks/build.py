@@ -103,10 +103,10 @@ Imports from:
 
 Consumed by:
 
-  designs/    -- The design layer compiles a plan IR into node dicts
+  designs/    -- The design layer compiles a design IR into node dicts
                  and calls build() with the compiled tree.
 
-  cli.py      -- The CLI's ``run`` command calls build() after plan
+  cli.py      -- The CLI's ``run`` command calls build() after design
                  compilation.
 
 Node dict schema
@@ -218,6 +218,7 @@ def fresh_store(
     fuel: int,
     *,
     oracle_backend: OracleBackend | None = None,
+    readonly_dirs: list[str] | None = None,
 ) -> Store:
     """Create a new build store rooted at *site*."""
     ensure_dir(site)
@@ -228,6 +229,7 @@ def fresh_store(
         "value": None,
         "trace": [],
         "oracle-backend": oracle_backend,
+        "readonly-dirs": readonly_dirs or [],
         "run-id": str(uuid.uuid4()),
     }
 
@@ -875,6 +877,7 @@ def build(
     site: str | None = None,
     oracle_backend: OracleBackend | None = None,
     oracle_model: str | None = None,
+    readonly_dirs: list[str] | None = None,
     **kwargs: Any,
 ) -> Store:
     """Execute a build.
@@ -902,7 +905,7 @@ def build(
     if site is None:
         site = f"/tmp/mccarthy-{name}-{str(uuid.uuid4())[:8]}"
 
-    S = fresh_store(site, fuel, oracle_backend=oracle_backend)
+    S = fresh_store(site, fuel, oracle_backend=oracle_backend, readonly_dirs=readonly_dirs)
 
     S["trace"].append({"event": "build-start", "name": name, "site": site, "fuel": fuel})
     T.build_start(name, fuel, site, oracle_model)

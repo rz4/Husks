@@ -74,11 +74,11 @@ This module is consumed by:
                   Calls encode() and node structure helpers to serialize
                   the .husk file.
 
-  plan.py      -- (indirectly) the compiled plan flows through build,
+  designs/ir.py  -- (indirectly) the compiled design flows through build,
                   which invokes core for all cryptographic operations.
 
   transport.py -- calls encode() and parse() for the CSE <-> JSON
-                  bijection and flat-plan elaboration.
+                  bijection and flat-design elaboration.
 
   setup.py     -- calls recompute_root() and verify() to run the
                   selftest against frozen conformance vectors.

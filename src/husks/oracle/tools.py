@@ -23,10 +23,10 @@ from ``fn.__name__`` with underscores replaced by hyphens
 
 Public API
 ----------
-  set_site_root(path)   -- Activate/deactivate the sandbox.
-  sandbox(path)         -- Resolve a path within the sandbox.
-  schemas(names)        -- Return OpenAI tool definitions.
-  dispatch(name, args)  -- Call a registered tool by name.
+  set_site_root(path, readonly)  -- Activate/deactivate the sandbox.
+  sandbox(path, write)           -- Resolve a path within the sandbox.
+  schemas(names)                 -- Return OpenAI tool definitions.
+  dispatch(name, args)           -- Call a registered tool by name.
 
 Interface with husks
 -------------------------
@@ -54,16 +54,26 @@ from typing import Any, get_type_hints
 # ── Site sandbox ──────────────────────────────────────────────────
 
 _site_root: Path | None = None
+_readonly_roots: set[Path] = set()
 
 
-def set_site_root(path: str | None) -> None:
+def set_site_root(path: str | None, readonly: list[str] | None = None) -> None:
     """Activate or deactivate the site-root sandbox.
 
     When active, all tool paths must resolve within the site root.
     Pass None to deactivate.
+
+    Parameters
+    ----------
+    path : str or None
+        Site root directory.  None deactivates the sandbox.
+    readonly : list of str, optional
+        Absolute paths of read-only import targets.  Reads through
+        symlinks into these directories are permitted; writes are not.
     """
-    global _site_root
+    global _site_root, _readonly_roots
     _site_root = Path(path).resolve() if path else None
+    _readonly_roots = {Path(p).resolve() for p in (readonly or [])}
 
 
 def get_site_root() -> Path | None:
@@ -71,21 +81,44 @@ def get_site_root() -> Path | None:
     return _site_root
 
 
-def sandbox(path: str) -> Path:
+def sandbox(path: str, *, write: bool = False) -> Path:
     """Resolve *path* within the site-root sandbox.
 
     Returns the resolved Path.  Raises ValueError if the resolved
-    path escapes the site root.
+    path escapes the allowed roots.
+
+    Parameters
+    ----------
+    path : str
+        The path to resolve (may be relative to cwd or absolute).
+    write : bool
+        If True, the path must resolve under the site root only.
+        If False (default), the path may also resolve under any
+        registered read-only root (import target).
     """
     p = Path(path).resolve()
     if _site_root is not None:
         try:
             p.relative_to(_site_root)
         except ValueError:
-            raise ValueError(
-                f"path '{path}' resolves to '{p}' which is outside "
-                f"the site root '{_site_root}'"
-            ) from None
+            # Write access: must be under site root only.
+            if write:
+                raise ValueError(
+                    f"path '{path}' resolves to '{p}' which is outside "
+                    f"the site root '{_site_root}' (write denied)"
+                ) from None
+            # Read access: also allow read-only roots.
+            for ro in _readonly_roots:
+                try:
+                    p.relative_to(ro)
+                    break
+                except ValueError:
+                    continue
+            else:
+                raise ValueError(
+                    f"path '{path}' resolves to '{p}' which is outside "
+                    f"the site root '{_site_root}'"
+                ) from None
     return p
 
 
@@ -175,7 +208,7 @@ def read_file(path: str) -> str:
 def write_file(path: str, content: str) -> str:
     """Write content to a file, creating parent directories as needed."""
     try:
-        p = sandbox(path)
+        p = sandbox(path, write=True)
     except ValueError as e:
         return f"Error: {e}"
     p.parent.mkdir(parents=True, exist_ok=True)

@@ -17,18 +17,18 @@ from husks.resources import skill_is_packaged
 # ── the canonical stance, versioned with the engine ─────────────────────
 # Emitted into a project's CLAUDE.md by `husks init`. Encodes the workflow
 # the skill assumes, plus the recipe-hygiene lessons that only surface once
-# a live agent has actually run a plan.
+# a live agent has actually run a design.
 CLAUDE_MD = """\
 # Project conventions — Husks
 
 This project uses **Husks** for any task that produces artifacts: code
 generation, scaffolding, content, multi-step builds. Do not run as an unbounded
-agent loop. Use the `husks` skill — decompose the task into a `plan.json` build
+agent loop. Use the `husks` skill — decompose the task into a `design.json` build
 graph, then check, show, and run it.
 
 ## Workflow
-- Write `plan.json` first. No exploring or running commands before that.
-- `check` then `show` the plan. **Wait for approval before `run`.**
+- Write `design.json` first. No exploring or running commands before that.
+- `check` then `show` the design. **Wait for approval before `run`.**
 - Run `--stub` first when the shape is new; go live only after the stub commits.
 - On `run`: report status, build-root, rules fired/reused, fuel, artifacts.
 

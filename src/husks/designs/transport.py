@@ -1,5 +1,5 @@
 """
-transport.py -- Bijective CSE <-> JSON mapping and flat-plan elaboration.
+transport.py -- Bijective CSE <-> JSON mapping and flat-design elaboration.
 
 This module sits at the boundary between the permanent wire format
 (CSE byte trees, as defined by core.py) and the ergonomic authoring
@@ -11,7 +11,7 @@ format (JSON dicts).  It provides two services:
      exactly.  This enables tooling (editors, validators, debuggers)
      that operates on JSON while preserving the canonical CSE form.
 
-  2. Flat-plan elaboration.  A flat plan (a linear list of rules with
+  2. Flat-design elaboration.  A flat design (a linear list of rules with
      implicit dependencies) is deterministically converted into a CSE
      AST tree.  This is the bridge from the JSON IR authored by
      humans/agents to the permanent CSE form that participates in
@@ -54,7 +54,7 @@ Imports from:
 
 Consumed by:
 
-  designs/ir.py    -- (indirectly) the flat plan is the JSON IR that
+  designs/ir.py    -- (indirectly) the flat design is the JSON IR that
                       ir.py validates and compiles.  elaborate() can
                       produce the CSE AST from the same IR.
 
@@ -322,10 +322,10 @@ class OracleBackend(Protocol):
     ) -> tuple[dict[str, bytes], dict]: ...
 
 
-# ── Flat-plan elaboration ─────────────────────────────────────────
+# ── Flat-design elaboration ─────────────────────────────────────────
 
 def _elaborate_recipe(rule_dict: dict[str, Any]) -> CseValue:
-    """Convert a flat-plan rule's recipe fields to a CSE recipe form.
+    """Convert a flat-design rule's recipe fields to a CSE recipe form.
 
     Only applies to producing kinds (action, oracle, trial).
     Structural kinds (commit, halt, let, cond) are handled by
@@ -355,10 +355,10 @@ def _elaborate_recipe(rule_dict: dict[str, Any]) -> CseValue:
     raise ValueError(f"Unknown recipe kind: {kind!r}")
 
 
-def elaborate(flat_plan: dict[str, Any]) -> CseValue:
-    """Convert a flat plan dict to a CSE AST tree.
+def elaborate(flat_design: dict[str, Any]) -> CseValue:
+    """Convert a flat design dict to a CSE AST tree.
 
-    The flat plan is the ergonomic input format: a linear list of rules
+    The flat design is the ergonomic input format: a linear list of rules
     with implicit dependencies resolved by output->input edges.  The
     elaborator deterministically converts this into a CSE tree ready
     for ``encode()`` to produce canonical wire bytes.
@@ -383,8 +383,8 @@ def elaborate(flat_plan: dict[str, Any]) -> CseValue:
 
     Parameters
     ----------
-    flat_plan : dict
-        Plan dict with keys ``name``, ``fuel``, ``target``, ``rules``,
+    flat_design : dict
+        Design dict with keys ``name``, ``fuel``, ``target``, ``rules``,
         and optionally ``site_inputs``.
 
     Returns
@@ -393,8 +393,8 @@ def elaborate(flat_plan: dict[str, Any]) -> CseValue:
         A CSE tree ``[b"husk", b"1", [b"build", ...]]`` ready for
         ``encode()``.
     """
-    rules = flat_plan["rules"]
-    target_name: str = flat_plan.get("target", rules[-1]["name"])
+    rules = flat_design["rules"]
+    target_name: str = flat_design.get("target", rules[-1]["name"])
 
     # Build output -> producer-name mapping (producing kinds only)
     producer: dict[str, str] = {}
@@ -466,8 +466,8 @@ def elaborate(flat_plan: dict[str, Any]) -> CseValue:
         b"1",
         [
             b"build",
-            flat_plan["name"].encode("utf-8"),
-            str(flat_plan["fuel"]).encode("utf-8"),
+            flat_design["name"].encode("utf-8"),
+            str(flat_design["fuel"]).encode("utf-8"),
             target_rule,
         ],
     ]

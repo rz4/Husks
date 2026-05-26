@@ -1,12 +1,12 @@
 ---
 name: husks
-description: Decompose a task into a Husks plan — a sealed, verifiable build graph with two forms to start.
+description: Decompose a task into a Husks design — a sealed, verifiable build graph with two forms to start.
 allowed-tools: Bash(python -m husks.cli *) Bash(python -c *) Bash(./husks *) Bash(cd *) Bash(source *) Read Write
 ---
 
-You are working with **Husks**, a fuel-bounded build calculus that produces **permanent, verifiable artifacts**. Do not execute tasks as an unbounded agent loop. Decompose the task into a **plan**: a machine-checkable build graph with declared inputs, outputs, recipes, and fuel bounds.
+You are working with **Husks**, a fuel-bounded build calculus that produces **permanent, verifiable artifacts**. Do not execute tasks as an unbounded agent loop. Decompose the task into a **design**: a machine-checkable build graph with declared inputs, outputs, recipes, and fuel bounds.
 
-**The plan is a Husk.** The build graph you write is elaborated into a canonical s-expression (CSE), sealed with content-addressed hashes, and verified by an independent reader. The .husk file outlives the engine that produced it.
+**The design is a Husk.** The build graph you write is elaborated into a canonical s-expression (CSE), sealed with content-addressed hashes, and verified by an independent reader. The .husk file outlives the engine that produced it.
 
 ## Two Forms — Start Here
 
@@ -19,26 +19,26 @@ That's it. `action` and `oracle` cover every decomposition. Actions verify; orac
 
 ## Workflow
 
-Your first tool call must be writing `plan.json`. No exploring, no reading files, no running commands first.
+Your first tool call must be writing `design.json`. No exploring, no reading files, no running commands first.
 
 1. Read the user's task description. Do NOT explore the codebase, read files, search, or run commands. Work only from what the user told you. If you need more information, ask — do not go looking.
 
-2. Write `plan.json` immediately. This is your first and only action before check.
+2. Write `design.json` immediately. This is your first and only action before check.
 
-3. Check and show the plan in one step:
+3. Check and show the design in one step:
 
    ```bash
-   python -m husks.cli check plan.json && python -m husks.cli show plan.json
+   python -m husks.cli check design.json && python -m husks.cli show design.json
    ```
 
-   If `check` fails, repair `plan.json` and re-check. Only show a passing plan.
+   If `check` fails, repair `design.json` and re-check. Only show a passing design.
 
 4. Ask for approval. Do not run unless the user explicitly approves or explicitly requested automatic execution in the same turn.
 
-5. Run the plan:
+5. Run the design:
 
    ```bash
-   python -m husks.cli run plan.json --site /tmp/husks-<name>
+   python -m husks.cli run design.json --site /tmp/husks-<name>
    ```
 
 6. After the build completes, **verify the .husk artifact**:
@@ -64,7 +64,7 @@ Your first tool call must be writing `plan.json`. No exploring, no reading files
    - **Rules fired / reused**: which rules ran, which were sealed
    - **Artifacts produced**: list with hashes
    - **Fuel**: used / total
-   - If **halted**: read the trace, identify which rule failed and why, and suggest a revised plan. Do not re-run without approval.
+   - If **halted**: read the trace, identify which rule failed and why, and suggest a revised design. Do not re-run without approval.
    - If **committed**: report success. Note the build-root and that the .husk is verified.
 
 ## Convergence Loop
@@ -77,13 +77,13 @@ A husk is designed to be re-run. On the second run:
 
 To iterate:
 
-1. Re-run the same plan against the same site. Sealed rules are free.
-2. If an oracle's output is unsatisfying, edit the prompt in `plan.json` and re-run. The recipe-digest changes, so that rule (and its dependents) re-fire.
+1. Re-run the same design against the same site. Sealed rules are free.
+2. If an oracle's output is unsatisfying, edit the prompt in `design.json` and re-run. The recipe-digest changes, so that rule (and its dependents) re-fire.
 3. If a rule's output should be pinned, leave it alone — its seal protects it.
 
 Watch for the **prompt-loading signature**: if the oracle's fuel is exhausted but outputs are wrong, the prompt needs refinement, not more fuel.
 
-## Plan IR Format
+## Design IR Format
 
 ```json
 {
@@ -138,20 +138,20 @@ Each rule has:
 
 ## The Permanent Object
 
-The flat plan you write is **not the permanent artifact**. It is an ergonomic input that the engine elaborates into a canonical s-expression (CSE). The CSE is what gets hashed, sealed, and verified:
+The flat design you write is **not the permanent artifact**. It is an ergonomic input that the engine elaborates into a canonical s-expression (CSE). The CSE is what gets hashed, sealed, and verified:
 
 ```
-plan.json  ──elaborate──▸  CSE AST  ──encode──▸  .husk bytes
+design.json  ──elaborate──▸  CSE AST  ──encode──▸  .husk bytes
                                                     │
                                          sealed, content-addressed,
                                          verifiable without the engine
 ```
 
-The .husk file is the residue. It can be verified by any reader that implements the CSE spec — no Python, no Hy, no engine required. The plan that produced it can be discarded.
+The .husk file is the residue. It can be verified by any reader that implements the CSE spec — no Python, no Hy, no engine required. The design that produced it can be discarded.
 
 ## Constraints
 
-* Every plan must have a `target` naming the terminal rule.
+* Every design must have a `target` naming the terminal rule.
 * Every rule must declare at least one output.
 * Every input must either exist at build start or be produced by a prior rule.
 * Oracle rules must have `fuel > 0`, a prompt, and an explicit tool allowlist.
@@ -167,11 +167,11 @@ The .husk file is the residue. It can be verified by any reader that implements 
 * **Oracle for judgment.** Writing code, making design decisions, generating content, or resolving ambiguity.
 * **Fuel bounds everything.** Every oracle has a local fuel limit. The build has a global fuel limit. No unbounded loops.
 * **Outputs are the contract.** The build records hashes for declared outputs and uses them for sealing, reuse, and traceability.
-* **Show the plan first.** The user should see the build graph, not a prose promise.
+* **Show the design first.** The user should see the build graph, not a prose promise.
 * **The .husk outlives the engine.** Verification is by content, never by instrumentation. The seal keys on what was asked and what came back, never on who answered.
 
 ## Output Discipline
 
-Do not substitute a prose plan for `plan.json`. The required planning artifact is the JSON file. Prose may summarize the plan only after the JSON has passed `check`.
+Do not substitute a prose design for `design.json`. The required designning artifact is the JSON file. Prose may summarize the design only after the JSON has passed `check`.
 
-Do not run additional commands after the build to verify results outside the plan. If verification is needed, it belongs inside the plan as an action rule with `run`. The build is self-contained. The one post-build verification is the .husk root recomputation, which proves permanence.
+Do not run additional commands after the build to verify results outside the design. If verification is needed, it belongs inside the design as an action rule with `run`. The build is self-contained. The one post-build verification is the .husk root recomputation, which proves permanence.

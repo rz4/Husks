@@ -74,7 +74,7 @@ def main():
         b"rule",
         b"greet",
         action_recipe,
-        [b"config.txt", b"greeting.txt"],   # inputs (sorted by plan)
+        [b"config.txt", b"greeting.txt"],   # inputs (sorted by design)
         [b"hello.txt"],                      # outputs
         # no children
     ]

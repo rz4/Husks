@@ -361,7 +361,8 @@ def live_oracle(
     fuel: int = recipe.get("fuel", 8)
 
     # Enforce site containment at the tool layer
-    tools.set_site_root(site)
+    readonly: list[str] = S.get("readonly-dirs", [])
+    tools.set_site_root(site, readonly=readonly or None)
 
     # System prompt: tell the oracle where it is and what it must produce
     output_lines = "\n".join(f"  - {site}/{o}" for o in outputs)

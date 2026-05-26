@@ -1,11 +1,11 @@
-#- cli.py — command-line interface for Husks plans
+#- cli.py — command-line interface for Husks designs
 #
 # Usage:
-#   python -m husks check plan.json
-#   python -m husks show  plan.json
-#   python -m husks run   plan.json [--site /tmp/my-build] [--model ...]
-#   python -m husks run   plan.json --stub   (no LLM, placeholder outputs)
-#   python -m husks run   plan.json --hy     (use original Hy backend)
+#   python -m husks check design.json
+#   python -m husks show  design.json
+#   python -m husks run   design.json [--site /tmp/my-build] [--model ...]
+#   python -m husks run   design.json --stub   (no LLM, placeholder outputs)
+#   python -m husks run   design.json --hy     (use original Hy backend)
 
 import argparse
 import json
@@ -18,20 +18,20 @@ from husks.utils.console import _shorthash
 
 
 def main():
-    p = argparse.ArgumentParser(prog="husks", description="Husks plan CLI")
+    p = argparse.ArgumentParser(prog="husks", description="Husks design CLI")
     sub = p.add_subparsers(dest="cmd")
 
     # check
-    c = sub.add_parser("check", help="Validate a plan (exit 1 if errors)")
-    c.add_argument("plan", help="Path to plan JSON file")
+    c = sub.add_parser("check", help="Validate a design (exit 1 if errors)")
+    c.add_argument("design", help="Path to design JSON file")
 
     # show
-    s = sub.add_parser("show", help="Pretty-print a plan")
-    s.add_argument("plan", help="Path to plan JSON file")
+    s = sub.add_parser("show", help="Pretty-print a design")
+    s.add_argument("design", help="Path to design JSON file")
 
     # run
-    r = sub.add_parser("run", help="Check, compile, and execute a plan")
-    r.add_argument("plan", help="Path to plan JSON file")
+    r = sub.add_parser("run", help="Check, compile, and execute a design")
+    r.add_argument("design", help="Path to design JSON file")
     r.add_argument("--site", help="Override site directory")
     r.add_argument("--model", help="LLM model for oracle rules",
                    default="anthropic/claude-haiku-4-5-20251001")
@@ -55,7 +55,7 @@ def main():
 
     # history
     h = sub.add_parser("history", help="Show convergence history for rules")
-    h.add_argument("plan", help="Path to plan JSON file")
+    h.add_argument("design", help="Path to design JSON file")
     h.add_argument("rule", nargs="?", default=None,
                    help="Rule name (omit for summary of all rules)")
     h.add_argument("--site", help="Override site directory")
@@ -68,7 +68,7 @@ def main():
         p.print_help()
         sys.exit(1)
 
-    # commands that take no plan file — dispatch before from_json()
+    # commands that take no design file — dispatch before from_json()
     if args.cmd == "selftest":
         from husks.setup import selftest
         sys.exit(0 if selftest(conformance=args.conformance) else 1)
@@ -77,10 +77,10 @@ def main():
         from husks.setup import init
         sys.exit(init(args.target, claude_code=not args.no_claude_code, force=args.force))
 
-    plan = from_json(args.plan)
+    design = from_json(args.design)
 
     if args.cmd == "check":
-        errs = check(plan)
+        errs = check(design)
         if errs:
             for e in errs:
                 print(f"  error: {e}", file=sys.stderr)
@@ -89,12 +89,12 @@ def main():
             print("ok")
 
     elif args.cmd == "show":
-        errs = check(plan)
+        errs = check(design)
         if errs:
             print("warnings:", file=sys.stderr)
             for e in errs:
                 print(f"  - {e}", file=sys.stderr)
-        show(plan)
+        show(design)
 
     elif args.cmd == "run":
         overrides = {}
@@ -115,7 +115,7 @@ def main():
                 overrides["oracle_backend"] = live_oracle
             overrides["oracle_model"] = args.model
 
-        S = run(plan, **overrides)
+        S = run(design, **overrides)
         # summary
         print(json.dumps({
             "status": S["status"],
@@ -124,9 +124,9 @@ def main():
         }, indent=2))
 
     elif args.cmd == "history":
-        site = args.site or plan.get("site")
+        site = args.site or design.get("site")
         if not site:
-            print("error: no site directory. Use --site or set 'site' in plan.",
+            print("error: no site directory. Use --site or set 'site' in design.",
                   file=sys.stderr)
             sys.exit(1)
 
@@ -166,7 +166,7 @@ def main():
             print()
         else:
             # summary for all rules
-            rules = plan.get("rules", [])
+            rules = design.get("rules", [])
             print(f"\n  convergence history summary  (site: {site})")
             print(f"  {'─' * 60}")
             for r in rules:

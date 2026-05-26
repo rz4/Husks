@@ -1,14 +1,14 @@
 """
-ir.py -- Plan intermediate representation for Husks builds.
+ir.py -- Design intermediate representation for Husks builds.
 
-This module defines the contract between intent and execution.  A plan
+This module defines the contract between intent and execution.  A design
 is a JSON-native dict that declaratively specifies a build: its name,
 fuel budget, dependency graph of rules, and the terminal rule that
 constitutes a committed build.
 
 The IR supports all nine forms of the Husks calculus:
 
-  build   -- The top-level plan envelope (implicit: the plan dict).
+  build   -- The top-level design envelope (implicit: the design dict).
   rule    -- A work node with inputs, outputs, and a recipe.
   action  -- A deterministic recipe (shell command or callable).
   oracle  -- A bounded nondeterministic recipe (model call).
@@ -22,7 +22,7 @@ The IR supports all nine forms of the Husks calculus:
 
 Operations
 ----------
-  check(plan)    -- Static validation before execution.  Verifies
+  check(design)    -- Static validation before execution.  Verifies
                     structural integrity: names are unique, every input
                     is produced by a prior rule or declared as a site
                     input, every oracle has a prompt and fuel, the DAG
@@ -30,25 +30,25 @@ Operations
                     sufficient.  Returns a list of error strings
                     (empty means valid).
 
-  show(plan)     -- Pretty-print the plan to stdout.  Human-readable
+  show(design)     -- Pretty-print the design to stdout.  Human-readable
                     summary of rules, their kinds, inputs, outputs,
                     fuel, and the target.
 
-  compile(plan)  -- Lower the plan IR into runtime node dicts suitable
+  compile(design)  -- Lower the design IR into runtime node dicts suitable
                     for husks.build.build().  Resolves implicit
                     dependencies, deduplicates let-bound rules, and
                     wires cond predicates.  Returns
                     (name, fuel, terminal_node, kwargs).
 
-  run(plan)      -- End-to-end: check, compile, build.  Returns the
+  run(design)      -- End-to-end: check, compile, build.  Returns the
                     final Store dict.
 
-  from_json(p)   -- Load a plan from a JSON file path.
-  to_json(p, f)  -- Serialize a plan to JSON string or file.
+  from_json(p)   -- Load a design from a JSON file path.
+  to_json(p, f)  -- Serialize a design to JSON string or file.
 
-Plan IR schema
+Design IR schema
 --------------
-A plan is a dict with keys::
+A design is a dict with keys::
 
     {
       "name":        str,
@@ -86,7 +86,7 @@ A plan is a dict with keys::
             # everywhere it appears as a dependency.
 
         {"kind": "cond", "name": str,
-         "predicate": str,        # key into plan["predicates"]
+         "predicate": str,        # key into design["predicates"]
          "then": str,             # rule name for true branch
          "else": str},            # rule name for false branch
       ]
@@ -111,7 +111,7 @@ Imports from:
 Consumed by:
 
   cli.py    -- The CLI's check/show/run/history commands all operate
-               on plan IR loaded via from_json().
+               on design IR loaded via from_json().
 
 Does NOT import core.py directly.  All cryptographic operations flow
 through build.py, which delegates to core.
@@ -120,6 +120,7 @@ through build.py, which delegates to core.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, Callable
@@ -127,7 +128,7 @@ from typing import Any, Callable
 
 # ── Type alias ────────────────────────────────────────────────────
 
-Plan = dict[str, Any]
+Design = dict[str, Any]
 
 # All valid rule kinds in the Husks calculus.
 _RULE_KINDS = frozenset({"action", "oracle", "trial", "commit", "halt", "let", "cond"})
@@ -138,29 +139,32 @@ _PRODUCING_KINDS = frozenset({"action", "oracle", "trial"})
 # Kinds that are structural (no inputs/outputs).
 _STRUCTURAL_KINDS = frozenset({"commit", "halt", "let", "cond"})
 
+# Built-in predicate prefixes that can be used in JSON designs.
+_BUILTIN_PREFIXES = frozenset({"file-exists", "file-nonempty", "exit-zero"})
+
 
 # ── Static checks ────────────────────────────────────────────────
 
-def check(plan: Plan) -> list[str]:
-    """Validate a plan IR.  Returns a list of error strings (empty = ok)."""
+def check(design: Design) -> list[str]:
+    """Validate a design IR.  Returns a list of error strings (empty = ok)."""
     errors: list[str] = []
 
-    if not plan.get("name"):
-        errors.append("plan has no name")
+    if not design.get("name"):
+        errors.append("design has no name")
 
-    fuel = plan.get("fuel")
+    fuel = design.get("fuel")
     if fuel is None or fuel <= 0:
-        errors.append("plan has no fuel budget")
+        errors.append("design has no fuel budget")
 
-    rules = plan.get("rules", [])
+    rules = design.get("rules", [])
     if not rules:
-        errors.append("plan has no rules")
+        errors.append("design has no rules")
         return errors
 
     names: set[str] = set()
-    produced: set[str] = set(plan.get("site_inputs", []))
+    produced: set[str] = set(design.get("site_inputs", []))
     oracle_fuel = 0
-    predicates = plan.get("predicates", {})
+    predicates = design.get("predicates", {})
 
     for i, r in enumerate(rules):
         tag: str = r.get("name", f"rule[{i}]")
@@ -234,8 +238,16 @@ def check(plan: Plan) -> list[str]:
             pred_name = r.get("predicate")
             if not pred_name:
                 errors.append(f"{tag}: cond has no predicate")
-            elif pred_name not in predicates and not callable(pred_name):
-                errors.append(f"{tag}: predicate '{pred_name}' not in plan predicates")
+            elif not callable(pred_name) and pred_name not in predicates:
+                # Accept built-in prefix:arg patterns
+                if ":" in pred_name:
+                    prefix = pred_name.split(":", 1)[0]
+                    if prefix not in _BUILTIN_PREFIXES:
+                        errors.append(
+                            f"{tag}: unknown built-in predicate prefix '{prefix}'"
+                        )
+                else:
+                    errors.append(f"{tag}: predicate '{pred_name}' not in design predicates")
 
             then_name = r.get("then")
             else_name = r.get("else")
@@ -248,13 +260,35 @@ def check(plan: Plan) -> list[str]:
             elif else_name not in names:
                 errors.append(f"{tag}: cond 'else' target '{else_name}' not defined yet")
 
+    # imports
+    imports = design.get("imports")
+    if imports is not None:
+        if not isinstance(imports, dict):
+            errors.append("imports must be a dict mapping local names to absolute paths")
+        else:
+            rule_outputs: set[str] = set()
+            for r in rules:
+                for o in r.get("outputs", []):
+                    rule_outputs.add(o)
+            for local_name, ext_path in imports.items():
+                if not isinstance(ext_path, str):
+                    errors.append(f"import '{local_name}': value must be a string path")
+                elif not os.path.isabs(ext_path):
+                    errors.append(
+                        f"import '{local_name}': path must be absolute, got '{ext_path}'"
+                    )
+                if local_name in rule_outputs:
+                    errors.append(
+                        f"import '{local_name}' collides with a rule output name"
+                    )
+
     # target
-    target = plan.get("target")
+    target = design.get("target")
     if target:
         if target not in names:
             errors.append(f"target '{target}' does not match any rule name")
     else:
-        errors.append("plan has no target (must name the terminal rule)")
+        errors.append("design has no target (must name the terminal rule)")
 
     # fuel budget
     if fuel and oracle_fuel > fuel:
@@ -278,15 +312,15 @@ _KIND_MARKERS = {
 }
 
 
-def show(plan: Plan) -> None:
-    """Print a human-readable summary of the plan."""
-    name = plan.get("name", "?")
-    fuel = plan.get("fuel", "?")
-    target = plan.get("target", "?")
-    rules = plan.get("rules", [])
-    site_inputs = plan.get("site_inputs", [])
+def show(design: Design) -> None:
+    """Print a human-readable summary of the design."""
+    name = design.get("name", "?")
+    fuel = design.get("fuel", "?")
+    target = design.get("target", "?")
+    rules = design.get("rules", [])
+    site_inputs = design.get("site_inputs", [])
 
-    print(f"\n  plan: {name}  (fuel {fuel})  target: {target}")
+    print(f"\n  design: {name}  (fuel {fuel})  target: {target}")
     print(f"  {'─' * 50}")
 
     if site_inputs:
@@ -329,10 +363,59 @@ def show(plan: Plan) -> None:
     print(f"  {'─' * 50}\n")
 
 
+# ── Predicate resolution ─────────────────────────────────────────
+
+def _resolve_predicate(
+    spec: str | Callable,
+    predicates: dict[str, Callable],
+) -> Callable[[dict], bool]:
+    """Turn a predicate spec into a callable ``(Store) -> bool``.
+
+    Resolution order:
+
+    1. If *spec* is already callable, return it.
+    2. If *spec* is a key in *predicates*, return the mapped callable.
+    3. If *spec* matches ``prefix:arg`` with a known built-in prefix,
+       build and return the corresponding closure.
+    4. Otherwise raise ``ValueError``.
+    """
+    if callable(spec):
+        return spec
+
+    if spec in predicates:
+        return predicates[spec]
+
+    if ":" in spec:
+        prefix, arg = spec.split(":", 1)
+        if prefix == "file-exists":
+            def _file_exists(S: dict) -> bool:
+                from husks.build import site_path
+                return os.path.exists(site_path(S, arg))
+            return _file_exists
+
+        if prefix == "file-nonempty":
+            def _file_nonempty(S: dict) -> bool:
+                from husks.build import site_path
+                p = site_path(S, arg)
+                return os.path.exists(p) and os.path.getsize(p) > 0
+            return _file_nonempty
+
+        if prefix == "exit-zero":
+            def _exit_zero(S: dict) -> bool:
+                result = subprocess.run(
+                    arg, shell=True, cwd=S["site"],
+                    capture_output=True, timeout=120,
+                )
+                return result.returncode == 0
+            return _exit_zero
+
+    raise ValueError(f"unknown predicate: {spec!r}")
+
+
 # ── Compiler ──────────────────────────────────────────────────────
 
-def compile(plan: Plan) -> tuple[str, int, dict, dict[str, Any]]:
-    """Lower plan IR to runtime arguments for build().
+def compile(design: Design) -> tuple[str, int, dict, dict[str, Any]]:
+    """Lower design IR to runtime arguments for build().
 
     Returns (name, fuel, terminal_node, kwargs) ready for::
 
@@ -362,9 +445,9 @@ def compile(plan: Plan) -> tuple[str, int, dict, dict[str, Any]]:
         halt as halt_node,
     )
 
-    rules = plan.get("rules", [])
-    target = plan.get("target", rules[-1]["name"] if rules else None)
-    predicates: dict[str, Callable] = plan.get("predicates", {})
+    rules = design.get("rules", [])
+    target = design.get("target", rules[-1]["name"] if rules else None)
+    predicates: dict[str, Callable] = design.get("predicates", {})
     name_to_node: dict[str, dict] = {}
     name_to_ir: dict[str, dict] = {r["name"]: r for r in rules}
 
@@ -389,11 +472,7 @@ def compile(plan: Plan) -> tuple[str, int, dict, dict[str, Any]]:
 
         # ── cond: conditional branch ──
         if kind == "cond":
-            pred_name = r["predicate"]
-            if callable(pred_name):
-                pred_fn = pred_name
-            else:
-                pred_fn = predicates[pred_name]
+            pred_fn = _resolve_predicate(r["predicate"], predicates)
             then = name_to_node[r["then"]]
             else_ = name_to_node[r["else"]]
             name_to_node[rname] = cond_node(pred_fn, then, else_)
@@ -455,14 +534,14 @@ def compile(plan: Plan) -> tuple[str, int, dict, dict[str, Any]]:
     terminal = name_to_node[target]
 
     kwargs: dict[str, Any] = {}
-    if plan.get("site"):
-        kwargs["site"] = plan["site"]
-    if plan.get("oracle_backend"):
-        kwargs["oracle_backend"] = plan["oracle_backend"]
-    if plan.get("oracle_model"):
-        kwargs["oracle_model"] = plan["oracle_model"]
+    if design.get("site"):
+        kwargs["site"] = design["site"]
+    if design.get("oracle_backend"):
+        kwargs["oracle_backend"] = design["oracle_backend"]
+    if design.get("oracle_model"):
+        kwargs["oracle_model"] = design["oracle_model"]
 
-    return plan["name"], plan["fuel"], terminal, kwargs
+    return design["name"], design["fuel"], terminal, kwargs
 
 
 # ── Action factories ──────────────────────────────────────────────
@@ -520,32 +599,80 @@ def _make_touch_action(outputs: list[str]):
     return touch_action
 
 
+# ── Imports setup ─────────────────────────────────────────────
+
+def _setup_imports(site: str, imports: dict[str, str]) -> list[str]:
+    """Create symlinks in the site for each declared import.
+
+    Parameters
+    ----------
+    site : str
+        Absolute path to the site directory.
+    imports : dict
+        Mapping of local names (relative to site) to external absolute paths.
+
+    Returns
+    -------
+    list of str
+        Resolved absolute paths of the external targets (for read-only
+        sandbox registration).
+
+    Raises
+    ------
+    ValueError
+        If an external path does not exist.
+    """
+    readonly_dirs: list[str] = []
+    for local_name, ext_path in imports.items():
+        ext = Path(ext_path).resolve()
+        if not ext.exists():
+            raise ValueError(
+                f"import '{local_name}': external path does not exist: {ext_path}"
+            )
+        link = Path(site) / local_name
+        link.parent.mkdir(parents=True, exist_ok=True)
+        if link.exists() or link.is_symlink():
+            # Remove stale link from a previous run
+            link.unlink()
+        os.symlink(str(ext), str(link))
+        readonly_dirs.append(str(ext))
+    return readonly_dirs
+
+
 # ── Run ───────────────────────────────────────────────────────────
 
-def run(plan: Plan, **overrides: Any) -> dict[str, Any]:
-    """Check, compile, and execute a plan.  Returns the Store."""
-    errs = check(plan)
+def run(design: Design, **overrides: Any) -> dict[str, Any]:
+    """Check, compile, and execute a design.  Returns the Store."""
+    errs = check(design)
     if errs:
-        raise ValueError("plan check failed:\n  " + "\n  ".join(errs))
+        raise ValueError("design check failed:\n  " + "\n  ".join(errs))
 
     from husks.build import build
 
-    name, fuel, terminal, kwargs = compile(plan)
+    name, fuel, terminal, kwargs = compile(design)
     kwargs.update(overrides)
+
+    # Set up imports (symlinks + read-only roots) before building
+    imports = design.get("imports")
+    site = kwargs.get("site")
+    if imports and site:
+        readonly_dirs = _setup_imports(site, imports)
+        kwargs["readonly_dirs"] = readonly_dirs
+
     return build(name, fuel, terminal, **kwargs)
 
 
 # ── Load / save ───────────────────────────────────────────────────
 
-def from_json(path: str | Path) -> Plan:
-    """Load a plan from a JSON file."""
+def from_json(path: str | Path) -> Design:
+    """Load a design from a JSON file."""
     with open(path) as f:
         return json.load(f)
 
 
-def to_json(plan: Plan, path: str | Path | None = None) -> str:
-    """Serialize a plan to JSON.  If *path* is given, write to file."""
-    s = json.dumps(plan, indent=2)
+def to_json(design: Design, path: str | Path | None = None) -> str:
+    """Serialize a design to JSON.  If *path* is given, write to file."""
+    s = json.dumps(design, indent=2)
     if path:
         with open(path, "w") as f:
             f.write(s)

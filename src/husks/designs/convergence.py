@@ -54,7 +54,7 @@ Consumed by:
                           declared_vs_traced.
 
   cli.py               -- The ``history`` command displays convergence
-                          data for individual rules and plan-wide
+                          data for individual rules and design-wide
                           summaries.
 """
 
@@ -177,23 +177,23 @@ def convergence_summary(
 # ── Declared vs. traced inputs ────────────────────────────────────
 
 def declared_vs_traced(
-    plan: dict[str, Any],
+    design: dict[str, Any],
     site: str,
 ) -> dict[str, list[str]]:
     """Diff declared inputs against actual traced reads.
 
-    For each rule, compares the ``inputs`` declared in the plan against
+    For each rule, compares the ``inputs`` declared in the design against
     the ``traced_reads`` recorded in the most recent history entry.
     Returns a dict mapping rule names to lists of paths that were read
     by the oracle but not declared as inputs.
 
-    An empty return dict means all reads were declared -- the plan
+    An empty return dict means all reads were declared -- the design
     accurately captures the oracle's actual dependencies.
 
     Parameters
     ----------
-    plan : dict
-        The plan IR (as loaded by ir.from_json).
+    design : dict
+        The design IR (as loaded by ir.from_json).
     site : str
         Path to the site directory containing ``.traces/``.
 
@@ -204,7 +204,7 @@ def declared_vs_traced(
         undeclared reads.  Rules with no undeclared reads are omitted.
     """
     result: dict[str, list[str]] = {}
-    for r in plan.get("rules", []):
+    for r in design.get("rules", []):
         rname: str = r["name"]
         declared = set(r.get("inputs", []))
         entries = read_history(site, rname)

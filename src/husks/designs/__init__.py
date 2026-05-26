@@ -4,12 +4,12 @@ designs -- Build specification layer for Husks.
 This package contains everything between human/agent intent and the
 build runtime.  Three sub-modules:
 
-  ir.py          -- The plan intermediate representation.  JSON-native
+  ir.py          -- The design intermediate representation.  JSON-native
                     build graph: static validation (check), pretty-print
                     (show), compilation to runtime nodes (compile), and
                     end-to-end execution (run).
 
-  transport.py   -- Bijective CSE <-> JSON mapping and flat-plan
+  transport.py   -- Bijective CSE <-> JSON mapping and flat-design
                     elaboration.  Translates between the permanent
                     wire format (CSE byte trees) and the ergonomic
                     authoring format (JSON dicts).
