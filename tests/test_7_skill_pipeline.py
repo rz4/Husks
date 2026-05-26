@@ -1,7 +1,7 @@
 """
-Phase 5 gate tests — Skill output verifies against the frozen reader.
+test_7_skill_pipeline.py -- Skill output verifies against the frozen reader.
 
-Gate: the skill's workflow (flat plan → elaborate → encode → .husk)
+Gate: the skill's workflow (flat design -> elaborate -> encode -> .husk)
 produces artifacts that the frozen reader can parse and verify.
 
 This tests the programmatic pathway the skill relies on, not the
@@ -9,40 +9,26 @@ skill prompt itself. The skill is volatile; the pathway is permanent.
 """
 
 import os
-import sys
 import tempfile
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
+from conftest import DEMO_SITE, load_demo
 from husks.core import encode, parse, recompute_root, verify
-from husks.transport import elaborate, ast_to_json
+from husks.designs.transport import elaborate, ast_to_json
 
-SPEC_DIR = os.path.join(os.path.dirname(__file__), "..", "spec", "conformance")
-DEMO_HUSK = os.path.join(SPEC_DIR, "demo.husk")
-DEMO_ROOT = os.path.join(SPEC_DIR, "demo.root")
-DEMO_SITE = os.path.join(SPEC_DIR, "demo.site")
 SKILL_PATH = os.path.join(os.path.dirname(__file__), "..",
                           "skills", "husks", "SKILL.md")
 
 
-def _load_demo():
-    with open(DEMO_HUSK, "rb") as f:
-        husk_bytes = f.read()
-    with open(DEMO_ROOT, "r") as f:
-        root = f.read().strip()
-    return husk_bytes, root
-
-
-# ── Gate: skill workflow produces verifiable .husk ────────────────
+# -- Gate: skill workflow produces verifiable .husk ----------------------------
 
 class TestSkillWorkflowVerifies:
-    """The skill's plan → elaborate → encode → verify pathway works."""
+    """The skill's design -> elaborate -> encode -> verify pathway works."""
 
     def test_elaborate_encode_parse_roundtrip(self):
-        """A skill-authored flat plan elaborates to parseable CSE."""
-        plan = {
+        """A skill-authored flat design elaborates to parseable CSE."""
+        design = {
             "name": "skill-test",
             "fuel": 5,
             "target": "write-greeting",
@@ -58,15 +44,15 @@ class TestSkillWorkflowVerifies:
                 },
             ],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         husk_bytes = encode(tree)
         # The frozen reader can parse the skill's output
         parsed = parse(husk_bytes)
         assert parsed == tree
 
     def test_elaborate_produces_valid_husk_structure(self):
-        """Elaborated plan has the correct CSE form structure."""
-        plan = {
+        """Elaborated design has the correct CSE form structure."""
+        design = {
             "name": "my-build",
             "fuel": 10,
             "target": "done",
@@ -88,7 +74,7 @@ class TestSkillWorkflowVerifies:
                 },
             ],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
 
         # Top-level husk form
@@ -116,16 +102,16 @@ class TestSkillWorkflowVerifies:
         assert gen["recipe"]["prompt"] == "Generate a result."
 
     def test_golden_vector_verifies(self):
-        """The demo.husk verifies against the frozen reader — the
+        """The demo.husk verifies against the frozen reader -- the
         fundamental gate that proves permanence."""
-        husk_bytes, expected_root = _load_demo()
+        husk_bytes, expected_root = load_demo()
         assert verify(husk_bytes, DEMO_SITE, expected_root)
 
-    def test_elaborate_demo_plan_verifies(self):
-        """A flat plan matching demo.husk elaborates to bytes that
+    def test_elaborate_demo_design_verifies(self):
+        """A flat design matching demo.husk elaborates to bytes that
         verify against the frozen reader."""
-        _, expected_root = _load_demo()
-        plan = {
+        _, expected_root = load_demo()
+        design = {
             "name": "demo",
             "fuel": 10,
             "target": "combine",
@@ -148,13 +134,13 @@ class TestSkillWorkflowVerifies:
                 },
             ],
         }
-        husk_bytes = encode(elaborate(plan))
+        husk_bytes = encode(elaborate(design))
         assert verify(husk_bytes, DEMO_SITE, expected_root)
 
     def test_husk_file_written_to_disk_verifies(self):
         """Writing .husk bytes to disk and reading them back
-        reproduces the same root — the file is self-contained."""
-        husk_bytes, expected_root = _load_demo()
+        reproduces the same root -- the file is self-contained."""
+        husk_bytes, expected_root = load_demo()
 
         with tempfile.NamedTemporaryFile(suffix=".husk", delete=False) as f:
             f.write(husk_bytes)
@@ -170,14 +156,14 @@ class TestSkillWorkflowVerifies:
             os.unlink(tmp_path)
 
 
-# ── Two-form vocabulary ──────────────────────────────────────────
+# -- Two-form vocabulary -------------------------------------------------------
 
 class TestTwoFormVocabulary:
     """action and oracle are sufficient for any decomposition."""
 
-    def test_action_only_plan(self):
-        """A plan with only action rules elaborates correctly."""
-        plan = {
+    def test_action_only_design(self):
+        """A design with only action rules elaborates correctly."""
+        design = {
             "name": "actions-only",
             "fuel": 1,
             "target": "copy",
@@ -191,15 +177,15 @@ class TestTwoFormVocabulary:
                 },
             ],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["target"]["recipe"] == {"form": "action"}
         # Parseable by reader
         assert parse(encode(tree)) == tree
 
-    def test_oracle_only_plan(self):
-        """A plan with only oracle rules elaborates correctly."""
-        plan = {
+    def test_oracle_only_design(self):
+        """A design with only oracle rules elaborates correctly."""
+        design = {
             "name": "oracle-only",
             "fuel": 8,
             "target": "generate",
@@ -215,16 +201,16 @@ class TestTwoFormVocabulary:
                 },
             ],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
         recipe = j["build"]["target"]["recipe"]
         assert recipe["form"] == "oracle"
         assert recipe["prompt"] == "Generate content."
         assert parse(encode(tree)) == tree
 
-    def test_mixed_action_oracle_plan(self):
+    def test_mixed_action_oracle_design(self):
         """The common pattern: oracle produces, action verifies."""
-        plan = {
+        design = {
             "name": "produce-and-verify",
             "fuel": 10,
             "target": "validate",
@@ -246,7 +232,7 @@ class TestTwoFormVocabulary:
                 },
             ],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
 
         # Target is action (validates)
@@ -256,14 +242,14 @@ class TestTwoFormVocabulary:
         assert parse(encode(tree)) == tree
 
 
-# ── Convergence properties ───────────────────────────────────────
+# -- Convergence properties ----------------------------------------------------
 
 class TestConvergenceProperties:
     """Sealed rules produce stable hashes; recipe changes alter the root."""
 
-    def test_same_plan_same_root(self):
-        """Elaborating the same plan twice produces identical bytes."""
-        plan = {
+    def test_same_design_same_root(self):
+        """Elaborating the same design twice produces identical bytes."""
+        design = {
             "name": "stable",
             "fuel": 5,
             "target": "r",
@@ -279,15 +265,15 @@ class TestConvergenceProperties:
                 },
             ],
         }
-        a = encode(elaborate(plan))
-        b = encode(elaborate(plan))
+        a = encode(elaborate(design))
+        b = encode(elaborate(design))
         assert a == b
 
     def test_prompt_change_changes_bytes(self):
         """Changing the oracle prompt changes the CSE bytes (and thus
         the recipe-digest and seal). This is the convergence signal:
         a prompt edit re-fires the rule."""
-        plan_a = {
+        design_a = {
             "name": "b",
             "fuel": 5,
             "target": "r",
@@ -303,17 +289,17 @@ class TestConvergenceProperties:
                 },
             ],
         }
-        plan_b = dict(plan_a)
-        plan_b["rules"] = [dict(plan_a["rules"][0])]
-        plan_b["rules"][0]["prompt"] = "Write version 2."
+        design_b = dict(design_a)
+        design_b["rules"] = [dict(design_a["rules"][0])]
+        design_b["rules"][0]["prompt"] = "Write version 2."
 
-        a = encode(elaborate(plan_a))
-        b = encode(elaborate(plan_b))
+        a = encode(elaborate(design_a))
+        b = encode(elaborate(design_b))
         assert a != b
 
     def test_fuel_change_changes_bytes(self):
         """Changing oracle fuel changes the recipe and thus the seal."""
-        plan_a = {
+        design_a = {
             "name": "b",
             "fuel": 10,
             "target": "r",
@@ -329,7 +315,7 @@ class TestConvergenceProperties:
                 },
             ],
         }
-        plan_b = {
+        design_b = {
             "name": "b",
             "fuel": 10,
             "target": "r",
@@ -345,12 +331,12 @@ class TestConvergenceProperties:
                 },
             ],
         }
-        a = encode(elaborate(plan_a))
-        b = encode(elaborate(plan_b))
+        a = encode(elaborate(design_a))
+        b = encode(elaborate(design_b))
         assert a != b
 
 
-# ── Skill document conformance ───────────────────────────────────
+# -- Skill document conformance ------------------------------------------------
 
 class TestSkillDocument:
     """The SKILL.md document meets Phase 5 requirements."""

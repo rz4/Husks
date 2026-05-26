@@ -1,5 +1,5 @@
 """
-test_phase1_gate.py — Phase 1 gate: engine root == reader root.
+test_5_build_verify.py -- Engine root == reader root.
 
 The gate passes when the engine's CSE seal computation matches
 the independent reader's recomputation from the serialized husk
@@ -7,11 +7,8 @@ and site files.
 """
 
 import os
-import sys
 import shutil
 import tempfile
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from husks.core import recompute_root
 
@@ -27,8 +24,8 @@ def _make_site(tmpdir):
     return site
 
 
-def _make_plan(site):
-    """Build a plan with two rules: action (greet) -> oracle (combine)."""
+def _make_design(site):
+    """Build a design with two rules: action (greet) -> oracle (combine)."""
     return {
         "name": "phase1-test",
         "fuel": 20,
@@ -55,10 +52,10 @@ def _make_plan(site):
     }
 
 
-def _run_build(plan):
-    """Run a build via plan.run() and return the store."""
-    from husks.plan import run
-    return run(plan)
+def _run_build(design):
+    """Run a build via design.run() and return the store."""
+    from husks.designs.ir import run
+    return run(design)
 
 
 def test_engine_root_equals_reader_root():
@@ -66,8 +63,8 @@ def test_engine_root_equals_reader_root():
     tmpdir = tempfile.mkdtemp(prefix="phase1-gate-")
     try:
         site = _make_site(tmpdir)
-        plan = _make_plan(site)
-        S = _run_build(plan)
+        design = _make_design(site)
+        S = _run_build(design)
 
         assert S["status"] == "committed", f"build failed: {S.get('value')}"
         assert "build-root" in S and S["build-root"] is not None, (
@@ -100,8 +97,8 @@ def test_seal_determinism():
     tmpdir = tempfile.mkdtemp(prefix="phase1-determ-")
     try:
         site = _make_site(tmpdir)
-        plan = _make_plan(site)
-        S1 = _run_build(plan)
+        design = _make_design(site)
+        S1 = _run_build(design)
         assert S1["status"] == "committed"
         root1 = S1["build-root"]
 
@@ -110,7 +107,7 @@ def test_seal_determinism():
         if os.path.isdir(traces_dir):
             shutil.rmtree(traces_dir)
 
-        S2 = _run_build(plan)
+        S2 = _run_build(design)
         assert S2["status"] == "committed"
         root2 = S2["build-root"]
 
@@ -128,13 +125,13 @@ def test_freshness_skip():
     tmpdir = tempfile.mkdtemp(prefix="phase1-fresh-")
     try:
         site = _make_site(tmpdir)
-        plan = _make_plan(site)
-        S1 = _run_build(plan)
+        design = _make_design(site)
+        S1 = _run_build(design)
         assert S1["status"] == "committed"
         root1 = S1["build-root"]
 
-        # Second run — seals should be fresh, no re-execution
-        S2 = _run_build(plan)
+        # Second run -- seals should be fresh, no re-execution
+        S2 = _run_build(design)
         assert S2["status"] == "committed"
         root2 = S2["build-root"]
 
@@ -156,8 +153,8 @@ def test_staleness_changes_root():
     tmpdir = tempfile.mkdtemp(prefix="phase1-stale-")
     try:
         site = _make_site(tmpdir)
-        plan = _make_plan(site)
-        S1 = _run_build(plan)
+        design = _make_design(site)
+        S1 = _run_build(design)
         assert S1["status"] == "committed"
         root1 = S1["build-root"]
 
@@ -165,7 +162,7 @@ def test_staleness_changes_root():
         with open(os.path.join(site, "config.txt"), "wb") as f:
             f.write(b"mode=changed\n")
 
-        S2 = _run_build(plan)
+        S2 = _run_build(design)
         assert S2["status"] == "committed"
         root2 = S2["build-root"]
 
@@ -174,15 +171,3 @@ def test_staleness_changes_root():
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-if __name__ == "__main__":
-    test_engine_root_equals_reader_root()
-    print("PASS: engine root == reader root")
-    test_seal_determinism()
-    print("PASS: seal determinism")
-    test_freshness_skip()
-    print("PASS: freshness skip")
-    test_staleness_changes_root()
-    print("PASS: staleness changes root")
-    print("\nAll Phase 1 gate tests PASSED")

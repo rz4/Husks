@@ -1,5 +1,5 @@
 """
-Phase 4 gate tests — Instrumentation boundary.
+test_4_layer_isolation.py -- Instrumentation boundary.
 
 Gate: import isolation across all four layers, and the OracleBackend
 protocol is content-keyed at the boundary.
@@ -8,7 +8,7 @@ Layer structure (imports flow upward only):
 
     Layer 0  core.py          permanent, stdlib-only
     Layer 1  transport.py     pure, imports core + stdlib
-    Layer 2  build.hy plan.py engine, imports core/transport + stdlib
+    Layer 2  build.hy designs/ir.py engine, imports core/transport + stdlib
     Layer 3  llm.py tools.py  instrument, may import anything
              trace.py cli.py
              kernel.hy
@@ -16,36 +16,29 @@ Layer structure (imports flow upward only):
 
 import ast as python_ast
 import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 SRC_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "husks")
 
-# ── Layer definitions ─────────────────────────────────────────────
+# -- Layer definitions ---------------------------------------------------------
 
 # Modules in each layer (Python source files only; .hy files are not
 # statically analyzable but are documented as Layer 2).
 LAYER_0 = {"core"}
 LAYER_1 = {"transport"}
-LAYER_2 = {"build", "plan"}
+LAYER_2 = {"build", "designs"}
 LAYER_3 = {"llm", "tools", "trace", "cli", "kernel", "__init__", "__main__"}
 
 # Allowed husks.* imports per layer (may import from same or higher layers)
 ALLOWED_HUSKS_IMPORTS = {
     "core":      set(),                  # Layer 0: imports nothing from husks
-    "transport": {"husks.core"},         # Layer 1: only core
+    "transport": {"husks.core"},         # Layer 1: only core (designs/transport.py)
 }
 
 
 def _extract_imports(filepath):
-    """Parse a Python file and return all import references as a set of strings.
-
-    Returns both 'import X' and 'from X.Y import Z' as the top-level
-    module name (e.g. 'husks.core' from 'from husks.core import parse').
-    """
+    """Parse a Python file and return all import references as a set of strings."""
     with open(filepath, "r") as f:
         source = f.read()
 
@@ -76,7 +69,7 @@ def _non_husks_imports(filepath):
             if not m.startswith("husks.") and m != "husks"}
 
 
-# ── Gate: core imports nothing downward ───────────────────────────
+# -- Gate: core imports nothing downward ---------------------------------------
 
 class TestCoreIsolation:
     """Layer 0: core.py imports no husks modules and only uses stdlib."""
@@ -91,28 +84,29 @@ class TestCoreIsolation:
     def test_stdlib_only(self):
         path = os.path.join(SRC_DIR, "core.py")
         imports = _non_husks_imports(path)
-        assert imports == {"hashlib", "os"}, (
-            f"core.py imports: {imports}, expected only hashlib and os"
+        allowed = {"hashlib", "os", "typing", "__future__"}
+        assert imports == allowed, (
+            f"core.py imports: {imports}, expected only {allowed}"
         )
 
 
-# ── Gate: transport imports only from core ────────────────────────
+# -- Gate: transport imports only from core ------------------------------------
 
 class TestTransportIsolation:
     """Layer 1: transport.py imports only from husks.core and stdlib."""
 
     def test_only_imports_core(self):
-        path = os.path.join(SRC_DIR, "transport.py")
+        path = os.path.join(SRC_DIR, "designs", "transport.py")
         imports = _husks_imports(path)
         assert imports == {"husks.core"}, (
             f"transport.py husks imports: {imports}, expected only husks.core"
         )
 
     def test_stdlib_only(self):
-        path = os.path.join(SRC_DIR, "transport.py")
+        path = os.path.join(SRC_DIR, "designs", "transport.py")
         imports = _non_husks_imports(path)
-        # json and typing are stdlib
-        allowed_stdlib = {"json", "typing"}
+        # json, typing, and __future__ are stdlib
+        allowed_stdlib = {"json", "typing", "__future__"}
         assert imports == allowed_stdlib, (
             f"transport.py non-husks imports: {imports}, "
             f"expected only {allowed_stdlib}"
@@ -120,10 +114,10 @@ class TestTransportIsolation:
 
     def test_no_engine_imports(self):
         """transport must not import from engine or instrument layers."""
-        path = os.path.join(SRC_DIR, "transport.py")
+        path = os.path.join(SRC_DIR, "designs", "transport.py")
         imports = _husks_imports(path)
         engine_instrument = {
-            "husks.build", "husks.plan", "husks.llm", "husks.tools",
+            "husks.build", "husks.designs", "husks.llm", "husks.tools",
             "husks.trace", "husks.cli", "husks.kernel",
         }
         violations = imports & engine_instrument
@@ -132,7 +126,7 @@ class TestTransportIsolation:
         )
 
 
-# ── Gate: no upward layer violations ─────────────────────────────
+# -- Gate: no upward layer violations -----------------------------------------
 
 class TestLayerBoundaries:
     """No module imports from a layer below it."""
@@ -145,7 +139,7 @@ class TestLayerBoundaries:
 
     def test_transport_never_imports_engine_or_instrument(self):
         """Transport (Layer 1) imports nothing from Layers 2-3."""
-        path = os.path.join(SRC_DIR, "transport.py")
+        path = os.path.join(SRC_DIR, "designs", "transport.py")
         imports = _husks_imports(path)
         lower_layers = {f"husks.{m}" for m in (LAYER_2 | LAYER_3)}
         violations = imports & lower_layers
@@ -153,11 +147,11 @@ class TestLayerBoundaries:
             f"transport.py imports from lower layers: {violations}"
         )
 
-    def test_plan_does_not_import_instrument(self):
-        """plan.py (Layer 2) should not directly import instrument modules
+    def test_designs_ir_does_not_import_instrument(self):
+        """designs/ir.py (Layer 2) should not directly import instrument modules
         at module scope. Lazy imports inside functions are acceptable
         (e.g. 'import hy' inside compile())."""
-        path = os.path.join(SRC_DIR, "plan.py")
+        path = os.path.join(SRC_DIR, "designs", "ir.py")
         # Parse only top-level imports (not inside functions)
         with open(path, "r") as f:
             source = f.read()
@@ -177,21 +171,21 @@ class TestLayerBoundaries:
         violations = {m for m in top_level_imports
                       if m in instrument_modules}
         assert violations == set(), (
-            f"plan.py top-level imports from instrument layer: {violations}"
+            f"designs/ir.py top-level imports from instrument layer: {violations}"
         )
 
 
-# ── OracleBackend protocol ───────────────────────────────────────
+# -- OracleBackend protocol ---------------------------------------------------
 
 class TestOracleBackendProtocol:
     """The OracleBackend protocol is defined and content-keyed."""
 
     def test_protocol_importable(self):
-        from husks.transport import OracleBackend
+        from husks.designs.transport import OracleBackend
         assert OracleBackend is not None
 
     def test_protocol_is_runtime_checkable(self):
-        from husks.transport import OracleBackend
+        from husks.designs.transport import OracleBackend
         # A conforming callable should satisfy isinstance check
         def my_backend(recipe_form, inputs):
             return {}, {}
@@ -200,22 +194,22 @@ class TestOracleBackendProtocol:
     def test_protocol_signature_is_content_keyed(self):
         """The protocol accepts recipe_form and inputs (content),
         not store, model, or other instrumentation."""
-        from husks.transport import OracleBackend
+        from husks.designs.transport import OracleBackend
         import inspect
         sig = inspect.signature(OracleBackend.__call__)
         params = list(sig.parameters.keys())
-        # self, recipe_form, inputs — no store, no model, no site
+        # self, recipe_form, inputs -- no store, no model, no site
         assert "recipe_form" in params
         assert "inputs" in params
         for banned in ("store", "model", "site", "backend", "S"):
             assert banned not in params, (
-                f"OracleBackend.__call__ has '{banned}' parameter — "
+                f"OracleBackend.__call__ has '{banned}' parameter -- "
                 f"instrumentation must not cross the boundary"
             )
 
     def test_stub_backend_conforms(self):
         """A minimal stub backend satisfies the protocol."""
-        from husks.transport import OracleBackend
+        from husks.designs.transport import OracleBackend
 
         def stub_backend(recipe_form, inputs):
             prompt = recipe_form[2].decode("utf-8") if len(recipe_form) > 2 else ""
@@ -231,7 +225,7 @@ class TestOracleBackendProtocol:
         assert b"Hello" in outputs["out.txt"]
 
 
-# ── Layer documentation ──────────────────────────────────────────
+# -- Layer documentation -------------------------------------------------------
 
 class TestLayerDocumentation:
     """Verify that modules document their layer membership."""
@@ -242,6 +236,6 @@ class TestLayerDocumentation:
                "stdlib" in husks.core.__doc__.lower()
 
     def test_transport_docstring_mentions_bijection(self):
-        import husks.transport
-        assert "bijection" in husks.transport.__doc__.lower() or \
-               "bijective" in husks.transport.__doc__.lower()
+        import husks.designs.transport
+        assert "bijection" in husks.designs.transport.__doc__.lower() or \
+               "bijective" in husks.designs.transport.__doc__.lower()

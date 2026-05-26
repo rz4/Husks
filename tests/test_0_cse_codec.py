@@ -1,13 +1,10 @@
 """
-test_core.py — Unit tests for CSE parse/encode/seal/Merkle in husks.core.
+test_0_cse_codec.py -- Unit tests for CSE parse/encode/seal/Merkle in husks.core.
 """
 
 import hashlib
-import sys
-import os
-import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+import pytest
 
 from husks.core import (
     encode, parse, atom, atom_str, sha256_bytes,
@@ -16,7 +13,7 @@ from husks.core import (
 )
 
 
-# ── Encode / Parse round-trip ──────────────────────────────────────
+# -- Encode / Parse round-trip ------------------------------------------------
 
 class TestEncode:
     def test_atom_empty(self):
@@ -95,7 +92,7 @@ class TestRoundTrip:
         assert parse(encode(data)) == data
 
 
-# ── SHA256 known-answer ────────────────────────────────────────────
+# -- SHA256 known-answer -------------------------------------------------------
 
 class TestSHA256:
     def test_empty(self):
@@ -113,7 +110,7 @@ class TestSHA256:
         assert len(h) == 64  # hex SHA256
 
 
-# ── Seal determinism ──────────────────────────────────────────────
+# -- Seal determinism ---------------------------------------------------------
 
 class TestSealDeterminism:
     def test_same_inputs_same_seal(self):

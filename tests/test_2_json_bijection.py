@@ -1,47 +1,29 @@
 """
-Phase 2 gate tests — Canonical JSON ↔ CSE bijection.
+test_2_json_bijection.py -- Canonical JSON <-> CSE bijection.
 
 Gate: CSE(json_to_ast(ast_to_json(parse(demo.husk)))) == demo.husk bytes,
       and recompute_root(round_tripped_bytes, demo.site) == demo.root.
 """
 
-import os
-import sys
-
 import pytest
 
-# Ensure src/ is importable
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
+from conftest import DEMO_HUSK, DEMO_ROOT, DEMO_SITE, load_demo
 from husks.core import encode, parse, recompute_root, NIL
-from husks.transport import ast_to_json, json_to_ast, to_json_str, from_json_str, round_trip
-
-SPEC_DIR = os.path.join(os.path.dirname(__file__), "..", "spec", "conformance")
-DEMO_HUSK = os.path.join(SPEC_DIR, "demo.husk")
-DEMO_ROOT = os.path.join(SPEC_DIR, "demo.root")
-DEMO_SITE = os.path.join(SPEC_DIR, "demo.site")
+from husks.designs.transport import ast_to_json, json_to_ast, to_json_str, from_json_str, round_trip
 
 
-def _load_demo():
-    with open(DEMO_HUSK, "rb") as f:
-        husk_bytes = f.read()
-    with open(DEMO_ROOT, "r") as f:
-        root = f.read().strip()
-    return husk_bytes, root
-
-
-# ── Gate tests ────────────────────────────────────────────────────
+# -- Gate tests ----------------------------------------------------------------
 
 class TestGoldenVectorRoundTrip:
     """The primary gate: byte-exact CSE round-trip through JSON."""
 
     def test_round_trip_bytes_match(self):
-        husk_bytes, _ = _load_demo()
+        husk_bytes, _ = load_demo()
         result = round_trip(husk_bytes)
         assert result == husk_bytes, "Round-tripped bytes differ from original"
 
     def test_root_preservation(self):
-        husk_bytes, expected_root = _load_demo()
+        husk_bytes, expected_root = load_demo()
         rt_bytes = round_trip(husk_bytes)
         actual_root = recompute_root(rt_bytes, DEMO_SITE)
         assert actual_root == expected_root, (
@@ -49,13 +31,13 @@ class TestGoldenVectorRoundTrip:
         )
 
 
-# ── JSON structure tests ─────────────────────────────────────────
+# -- JSON structure tests -----------------------------------------------------
 
 class TestJSONStructure:
     """Spot-check that ast_to_json produces the expected JSON shape."""
 
     def setup_method(self):
-        husk_bytes, _ = _load_demo()
+        husk_bytes, _ = load_demo()
         self.tree = parse(husk_bytes)
         self.j = ast_to_json(self.tree)
 
@@ -99,7 +81,7 @@ class TestJSONStructure:
         assert child["recipe"]["form"] == "action"
 
 
-# ── Symmetry tests ───────────────────────────────────────────────
+# -- Symmetry tests -----------------------------------------------------------
 
 class TestSymmetry:
     """json_to_ast(ast_to_json(x)) == x for each form type."""
@@ -145,12 +127,12 @@ class TestSymmetry:
         assert json_to_ast(ast_to_json(original)) == original
 
     def test_full_demo(self):
-        husk_bytes, _ = _load_demo()
+        husk_bytes, _ = load_demo()
         tree = parse(husk_bytes)
         assert json_to_ast(ast_to_json(tree)) == tree
 
 
-# ── Atom edge cases ──────────────────────────────────────────────
+# -- Atom edge cases -----------------------------------------------------------
 
 class TestAtomEdgeCases:
     """NIL, UTF-8, and numeric-looking atoms."""
@@ -163,7 +145,7 @@ class TestAtomEdgeCases:
         assert rt[1] == NIL
 
     def test_utf8_prompt(self):
-        prompt = "Héllo wörld! 🎉".encode("utf-8")
+        prompt = "Héllo wörld! \U0001f389".encode("utf-8")
         oracle = [b"oracle", b"n", prompt, [], b"1"]
         rt = json_to_ast(ast_to_json(oracle))
         assert rt[2] == prompt
@@ -176,7 +158,7 @@ class TestAtomEdgeCases:
 
     def test_json_string_round_trip(self):
         """to_json_str / from_json_str produce identical CSE trees."""
-        husk_bytes, _ = _load_demo()
+        husk_bytes, _ = load_demo()
         tree = parse(husk_bytes)
         json_str = to_json_str(tree)
         tree2 = from_json_str(json_str)

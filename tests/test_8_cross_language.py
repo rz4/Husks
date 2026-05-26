@@ -1,8 +1,8 @@
 """
-Phase 6 gate tests — THE PROOF.
+test_8_cross_language.py -- THE PROOF.
 
 Gate: a second-language reader (Node.js) reproduces demo.root from
-demo.husk — the thesis demonstrated across languages, not asserted.
+demo.husk -- the thesis demonstrated across languages, not asserted.
 
 This is the strongest single piece of evidence the project can ship:
 here is a husk, here is a verifier in a language the original engine
@@ -10,29 +10,16 @@ never knew, here is the matching hash.
 """
 
 import os
+import re
 import subprocess
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
+from conftest import SPEC_DIR, DEMO_HUSK, DEMO_ROOT, DEMO_SITE, load_demo
 from husks.core import encode, recompute_root
-from husks.transport import elaborate
+from husks.designs.transport import elaborate
 
-SPEC_DIR = os.path.join(os.path.dirname(__file__), "..", "spec", "conformance")
-DEMO_HUSK = os.path.join(SPEC_DIR, "demo.husk")
-DEMO_ROOT = os.path.join(SPEC_DIR, "demo.root")
-DEMO_SITE = os.path.join(SPEC_DIR, "demo.site")
 VERIFY_JS = os.path.join(SPEC_DIR, "verify.mjs")
-
-
-def _load_demo():
-    with open(DEMO_HUSK, "rb") as f:
-        husk_bytes = f.read()
-    with open(DEMO_ROOT, "r") as f:
-        root = f.read().strip()
-    return husk_bytes, root
 
 
 def _run_js_verifier(husk_path, site_dir, expected_root=None):
@@ -53,24 +40,24 @@ def _require_node():
         pytest.skip("Node.js not available")
 
 
-# ── Gate: JS reader reproduces demo.root ─────────────────────────
+# -- Gate: JS reader reproduces demo.root --------------------------------------
 
 class TestCrossLanguageVerification:
     """The thesis: a husk verifies under a reader the engine never knew."""
 
     def test_js_reader_reproduces_demo_root(self):
         """The primary gate: JS reader computes the same root hash."""
-        _, expected_root = _load_demo()
+        _, expected_root = load_demo()
         stdout, rc = _run_js_verifier(DEMO_HUSK, DEMO_SITE, expected_root)
         assert rc == 0, f"JS verifier failed: {stdout}"
         assert "PASS" in stdout
 
     def test_js_root_matches_python_root(self):
         """JS and Python readers agree on the same root hash."""
-        _, expected_root = _load_demo()
+        _, expected_root = load_demo()
         js_stdout, _ = _run_js_verifier(DEMO_HUSK, DEMO_SITE)
         js_root = js_stdout.split("\n")[0].strip()
-        husk_bytes, _ = _load_demo()
+        husk_bytes, _ = load_demo()
         py_root = recompute_root(husk_bytes, DEMO_SITE)
         assert js_root == py_root == expected_root
 
@@ -82,23 +69,23 @@ class TestCrossLanguageVerification:
 
     def test_js_computes_root_without_expected(self):
         """JS verifier outputs the root hash even without an expected value."""
-        _, expected_root = _load_demo()
+        _, expected_root = load_demo()
         stdout, rc = _run_js_verifier(DEMO_HUSK, DEMO_SITE)
         assert rc == 0
         root = stdout.strip()
         assert root == expected_root
 
 
-# ── Elaborated plan also verifies cross-language ──────────────────
+# -- Elaborated design also verifies cross-language ----------------------------
 
 class TestElaboratedPlanCrossLanguage:
-    """A plan elaborated by Python verifies under the JS reader."""
+    """A design elaborated by Python verifies under the JS reader."""
 
     def test_elaborate_encode_verify_js(self, tmp_path):
-        """elaborate → encode → write .husk → JS verifier PASS."""
-        _, expected_root = _load_demo()
+        """elaborate -> encode -> write .husk -> JS verifier PASS."""
+        _, expected_root = load_demo()
 
-        plan = {
+        design = {
             "name": "demo",
             "fuel": 10,
             "target": "combine",
@@ -122,20 +109,20 @@ class TestElaboratedPlanCrossLanguage:
             ],
         }
 
-        husk_bytes = encode(elaborate(plan))
+        husk_bytes = encode(elaborate(design))
         husk_path = str(tmp_path / "elaborated.husk")
         with open(husk_path, "wb") as f:
             f.write(husk_bytes)
 
         stdout, rc = _run_js_verifier(husk_path, DEMO_SITE, expected_root)
-        assert rc == 0, f"JS verifier failed on elaborated plan: {stdout}"
+        assert rc == 0, f"JS verifier failed on elaborated design: {stdout}"
         assert "PASS" in stdout
 
 
-# ── JS reader is independent ─────────────────────────────────────
+# -- JS reader is independent --------------------------------------------------
 
 class TestReaderIndependence:
-    """The JS reader uses no Python code — it is fully independent."""
+    """The JS reader uses no Python code -- it is fully independent."""
 
     def test_verify_mjs_exists(self):
         assert os.path.isfile(VERIFY_JS)
@@ -151,12 +138,11 @@ class TestReaderIndependence:
         for imp in ["crypto", "fs", "path"]:
             assert imp in source
         # No npm/third-party imports (only "crypto", "fs", "path" allowed)
-        import re
         imports = re.findall(r'from\s+"([^"]+)"', source)
         allowed = {"crypto", "fs", "path"}
         for mod in imports:
             assert mod in allowed, (
-                f"verify.mjs imports '{mod}' — only {allowed} allowed"
+                f"verify.mjs imports '{mod}' -- only {allowed} allowed"
             )
 
     def test_verify_mjs_is_compact(self):
@@ -164,7 +150,7 @@ class TestReaderIndependence:
         with open(VERIFY_JS, "r") as f:
             lines = [l for l in f.readlines()
                      if l.strip() and not l.strip().startswith("//")]
-        # Plan says ~40 lines; allow generous margin
+        # Design says ~40 lines; allow generous margin
         assert len(lines) < 100, (
             f"verify.mjs is {len(lines)} non-blank non-comment lines; "
             f"should be compact enough to audit"

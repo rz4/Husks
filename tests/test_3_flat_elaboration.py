@@ -1,36 +1,19 @@
 """
-Phase 3 gate tests — Flat-plan elaboration.
+test_3_flat_elaboration.py -- Flat-design elaboration.
 
-Gate: two distinct flat-plans with the same DAG produce the same build-root.
+Gate: two distinct flat-designs with the same DAG produce the same build-root.
 """
-
-import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
+from conftest import DEMO_SITE, load_demo
 from husks.core import encode, parse, recompute_root, NIL
-from husks.transport import elaborate, ast_to_json
-
-SPEC_DIR = os.path.join(os.path.dirname(__file__), "..", "spec", "conformance")
-DEMO_HUSK = os.path.join(SPEC_DIR, "demo.husk")
-DEMO_ROOT = os.path.join(SPEC_DIR, "demo.root")
-DEMO_SITE = os.path.join(SPEC_DIR, "demo.site")
+from husks.designs.transport import elaborate, ast_to_json
 
 
-def _load_demo():
-    with open(DEMO_HUSK, "rb") as f:
-        husk_bytes = f.read()
-    with open(DEMO_ROOT, "r") as f:
-        root = f.read().strip()
-    return husk_bytes, root
+# -- The flat design equivalent to demo.husk -----------------------------------
 
-
-# ── The flat plan equivalent to demo.husk ─────────────────────────
-
-DEMO_FLAT_PLAN = {
+DEMO_FLAT_DESIGN = {
     "name": "demo",
     "fuel": 10,
     "target": "combine",
@@ -55,7 +38,7 @@ DEMO_FLAT_PLAN = {
 }
 
 # Same DAG, rules listed in reverse order
-DEMO_FLAT_PLAN_REVERSED = {
+DEMO_FLAT_DESIGN_REVERSED = {
     "name": "demo",
     "fuel": 10,
     "target": "combine",
@@ -80,50 +63,50 @@ DEMO_FLAT_PLAN_REVERSED = {
 }
 
 
-# ── Gate: golden vector from flat plan ────────────────────────────
+# -- Gate: golden vector from flat design --------------------------------------
 
 class TestGoldenVectorElaboration:
-    """Flat plan elaborates to the exact same CSE bytes as demo.husk."""
+    """Flat design elaborates to the exact same CSE bytes as demo.husk."""
 
     def test_elaborate_matches_demo_bytes(self):
-        husk_bytes, _ = _load_demo()
-        tree = elaborate(DEMO_FLAT_PLAN)
+        husk_bytes, _ = load_demo()
+        tree = elaborate(DEMO_FLAT_DESIGN)
         assert encode(tree) == husk_bytes
 
     def test_elaborate_matches_demo_ast(self):
-        husk_bytes, _ = _load_demo()
+        husk_bytes, _ = load_demo()
         expected = parse(husk_bytes)
-        actual = elaborate(DEMO_FLAT_PLAN)
+        actual = elaborate(DEMO_FLAT_DESIGN)
         assert actual == expected
 
     def test_elaborate_root_preservation(self):
-        _, expected_root = _load_demo()
-        tree = elaborate(DEMO_FLAT_PLAN)
+        _, expected_root = load_demo()
+        tree = elaborate(DEMO_FLAT_DESIGN)
         husk_bytes = encode(tree)
         actual_root = recompute_root(husk_bytes, DEMO_SITE)
         assert actual_root == expected_root
 
 
-# ── Gate: two distinct flat-plans, same DAG, same root ────────────
+# -- Gate: two distinct flat-designs, same DAG, same root ----------------------
 
 class TestOrderIndependence:
-    """Different rule orderings in the flat plan produce identical output."""
+    """Different rule orderings in the flat design produce identical output."""
 
     def test_reversed_order_same_bytes(self):
-        a = encode(elaborate(DEMO_FLAT_PLAN))
-        b = encode(elaborate(DEMO_FLAT_PLAN_REVERSED))
+        a = encode(elaborate(DEMO_FLAT_DESIGN))
+        b = encode(elaborate(DEMO_FLAT_DESIGN_REVERSED))
         assert a == b
 
     def test_reversed_order_same_root(self):
-        _, expected_root = _load_demo()
-        husk_bytes = encode(elaborate(DEMO_FLAT_PLAN_REVERSED))
+        _, expected_root = load_demo()
+        husk_bytes = encode(elaborate(DEMO_FLAT_DESIGN_REVERSED))
         actual_root = recompute_root(husk_bytes, DEMO_SITE)
         assert actual_root == expected_root
 
 
-# ── Diamond DAG (shared producer) ─────────────────────────────────
+# -- Diamond DAG (shared producer) ---------------------------------------------
 
-DIAMOND_PLAN = {
+DIAMOND_DESIGN = {
     "name": "diamond",
     "fuel": 20,
     "target": "merge",
@@ -156,7 +139,7 @@ DIAMOND_PLAN = {
     ],
 }
 
-DIAMOND_PLAN_SHUFFLED = {
+DIAMOND_DESIGN_SHUFFLED = {
     "name": "diamond",
     "fuel": 20,
     "target": "merge",
@@ -194,12 +177,12 @@ class TestDiamondDAG:
     """Shared producer duplicated in tree; order-independent."""
 
     def test_diamond_same_bytes_regardless_of_order(self):
-        a = encode(elaborate(DIAMOND_PLAN))
-        b = encode(elaborate(DIAMOND_PLAN_SHUFFLED))
+        a = encode(elaborate(DIAMOND_DESIGN))
+        b = encode(elaborate(DIAMOND_DESIGN_SHUFFLED))
         assert a == b
 
     def test_diamond_tree_structure(self):
-        tree = elaborate(DIAMOND_PLAN)
+        tree = elaborate(DIAMOND_DESIGN)
         j = ast_to_json(tree)
         merge = j["build"]["target"]
         assert merge["name"] == "merge"
@@ -218,13 +201,13 @@ class TestDiamondDAG:
 
     def test_diamond_children_ordered_by_input_reference(self):
         """Children appear in order of first reference in parent's input list."""
-        # merge inputs: [left.txt, right.txt] → children: [left, right]
-        tree = elaborate(DIAMOND_PLAN)
+        # merge inputs: [left.txt, right.txt] -> children: [left, right]
+        tree = elaborate(DIAMOND_DESIGN)
         j = ast_to_json(tree)
         merge = j["build"]["target"]
         assert [c["name"] for c in merge["children"]] == ["left", "right"]
 
-        # Swap input order → children order changes
+        # Swap input order -> children order changes
         swapped = {
             "name": "diamond",
             "fuel": 20,
@@ -248,29 +231,29 @@ class TestDiamondDAG:
         assert [c["name"] for c in merge2["children"]] == ["right", "left"]
 
 
-# ── Recipe elaboration ────────────────────────────────────────────
+# -- Recipe elaboration -------------------------------------------------------
 
 class TestRecipeElaboration:
     """Each recipe kind elaborates correctly."""
 
     def test_action_recipe(self):
-        plan = {
+        design = {
             "name": "b", "fuel": 1, "target": "r",
             "rules": [{"name": "r", "kind": "action",
                         "inputs": [], "outputs": ["x"]}],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["target"]["recipe"] == {"form": "action"}
 
     def test_oracle_recipe_nil_name(self):
-        plan = {
+        design = {
             "name": "b", "fuel": 5, "target": "r",
             "rules": [{"name": "r", "kind": "oracle",
                         "inputs": [], "outputs": ["x"],
                         "prompt": "Do it.", "tools": ["t1"], "fuel": 3}],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
         recipe = j["build"]["target"]["recipe"]
         assert recipe["form"] == "oracle"
@@ -280,19 +263,19 @@ class TestRecipeElaboration:
         assert recipe["fuel"] == "3"
 
     def test_oracle_recipe_with_name(self):
-        plan = {
+        design = {
             "name": "b", "fuel": 5, "target": "r",
             "rules": [{"name": "r", "kind": "oracle",
                         "oracle_name": "my-oracle",
                         "inputs": [], "outputs": ["x"],
                         "prompt": "Go.", "tools": [], "fuel": 2}],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["target"]["recipe"]["name"] == "my-oracle"
 
     def test_trial_recipe(self):
-        plan = {
+        design = {
             "name": "b", "fuel": 5, "target": "r",
             "rules": [{"name": "r", "kind": "trial",
                         "inputs": [], "outputs": ["x"],
@@ -302,7 +285,7 @@ class TestRecipeElaboration:
                              "tools": ["t"], "fuel": 1},
                         ]}],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
         recipe = j["build"]["target"]["recipe"]
         assert recipe["form"] == "trial"
@@ -311,61 +294,61 @@ class TestRecipeElaboration:
         assert recipe["branches"][1]["form"] == "oracle"
 
 
-# ── Edge cases ────────────────────────────────────────────────────
+# -- Edge cases ----------------------------------------------------------------
 
 class TestElaborateEdgeCases:
-    """Flat-plan edge cases."""
+    """Flat-design edge cases."""
 
     def test_single_rule_no_children(self):
-        plan = {
+        design = {
             "name": "solo", "fuel": 1, "target": "r",
             "rules": [{"name": "r", "kind": "action",
                         "inputs": [], "outputs": ["out.txt"]}],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["target"]["children"] == []
 
     def test_target_defaults_to_last_rule(self):
-        plan = {
+        design = {
             "name": "b", "fuel": 1,
             "rules": [
                 {"name": "a", "kind": "action", "inputs": [], "outputs": ["x"]},
                 {"name": "b", "kind": "action", "inputs": ["x"], "outputs": ["y"]},
             ],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["target"]["name"] == "b"
 
     def test_site_inputs_not_children(self):
         """Inputs from site_inputs don't create child dependencies."""
-        plan = {
+        design = {
             "name": "b", "fuel": 1, "target": "r",
             "site_inputs": ["ext.txt"],
             "rules": [{"name": "r", "kind": "action",
                         "inputs": ["ext.txt"], "outputs": ["out.txt"]}],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["target"]["inputs"] == ["ext.txt"]
         assert j["build"]["target"]["children"] == []
 
     def test_fuel_as_int_becomes_string_atom(self):
-        plan = {
+        design = {
             "name": "b", "fuel": 42, "target": "r",
             "rules": [{"name": "r", "kind": "action",
                         "inputs": [], "outputs": ["x"]}],
         }
-        tree = elaborate(plan)
+        tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["fuel"] == "42"
         assert isinstance(j["build"]["fuel"], str)
 
     def test_elaborate_then_json_round_trip(self):
-        """elaborate → ast_to_json → json_to_ast → encode is stable."""
-        from husks.transport import json_to_ast
-        tree = elaborate(DEMO_FLAT_PLAN)
+        """elaborate -> ast_to_json -> json_to_ast -> encode is stable."""
+        from husks.designs.transport import json_to_ast
+        tree = elaborate(DEMO_FLAT_DESIGN)
         j = ast_to_json(tree)
         tree2 = json_to_ast(j)
         assert encode(tree2) == encode(tree)
