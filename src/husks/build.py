@@ -838,6 +838,19 @@ def eval_trial(
 
 def node_to_cse(node: Node) -> CseValue:
     """Serialize an engine node tree to its CSE form."""
+    ntype = node["type"]
+    if ntype == "commit":
+        return [b"commit", atom(node["value"])]
+    if ntype == "halt":
+        return [b"halt", atom(node["reason"])]
+    if ntype == "cond":
+        return [
+            b"cond",
+            atom(getattr(node["predicate"], "__qualname__", "anon")),
+            node_to_cse(node["then"]),
+            node_to_cse(node["else"]),
+        ]
+    # rule node
     recipe_form = recipe_to_cse(node["recipe"])
     inp_list: list[bytes] = [atom(i) for i in node["inputs"]]
     out_list: list[bytes] = [atom(o) for o in node["outputs"]]
@@ -851,6 +864,25 @@ def compute_build_root(S: Store, node: Node) -> str:
     Returns the hex digest string for this node (the build-root when
     called on the target node).
     """
+    ntype = node["type"]
+
+    # Terminal nodes: digest is just the hash of their CSE form
+    if ntype in ("commit", "halt"):
+        cse_form = node_to_cse(node)
+        return hashlib.sha256(encode(cse_form)).hexdigest()
+
+    if ntype == "cond":
+        then_digest = compute_build_root(S, node["then"])
+        else_digest = compute_build_root(S, node["else"])
+        cse_form = [
+            b"cond",
+            atom(getattr(node["predicate"], "__qualname__", "anon")),
+            atom(then_digest),
+            atom(else_digest),
+        ]
+        return hashlib.sha256(encode(cse_form)).hexdigest()
+
+    # Rule node
     # Recurse children
     child_digests: list[bytes] = [
         atom(compute_build_root(S, c)) for c in node["children"]
@@ -911,11 +943,20 @@ def build(
     T.build_start(name, fuel, site, oracle_model)
 
     try:
+        last_commit_value = None
         for node in nodes:
-            eval_node(S, node)
-        if S["status"] == "running":
-            S["status"] = "committed"
-            S["value"] = "ok"
+            try:
+                eval_node(S, node)
+            except Stop as stop:
+                if stop.kind == "halt":
+                    raise  # propagate halts immediately
+                # commit: record and continue to next target
+                last_commit_value = stop.value
+                S["status"] = "running"  # reset for next target
+        # All targets processed
+        S["status"] = "committed"
+        S["value"] = last_commit_value if last_commit_value is not None else "ok"
+        if last_commit_value is None:
             S["trace"].append({"event": "auto-commit"})
     except Stop:
         pass
@@ -929,14 +970,23 @@ def build(
 
     # Compute build-root (Merkle DAG) and write .husk file
     if nodes and S["status"] == "committed":
-        target = nodes[0]
         try:
-            S["build-root"] = compute_build_root(S, target)
-            husk_form: CseValue = [
-                b"husk",
-                CSE_VERSION,
-                [b"build", atom(name), atom(str(fuel)), node_to_cse(target)],
-            ]
+            if len(nodes) == 1:
+                S["build-root"] = compute_build_root(S, nodes[0])
+            else:
+                per_roots = {
+                    n.get("name", n.get("value", n.get("reason", "?"))): compute_build_root(S, n)
+                    for n in nodes
+                }
+                S["target-roots"] = per_roots
+                combined = hashlib.sha256(
+                    b"".join(r.encode() for r in sorted(per_roots.values()))
+                ).hexdigest()
+                S["build-root"] = combined
+            build_form: list[CseValue] = [
+                b"build", atom(name), atom(str(fuel)),
+            ] + [node_to_cse(n) for n in nodes]
+            husk_form: CseValue = [b"husk", CSE_VERSION, build_form]
             husk_bytes = encode(husk_form)
             husk_path = site_path(S, f"{name}.husk")
             Path(husk_path).write_bytes(husk_bytes)

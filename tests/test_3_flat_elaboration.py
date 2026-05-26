@@ -184,7 +184,7 @@ class TestDiamondDAG:
     def test_diamond_tree_structure(self):
         tree = elaborate(DIAMOND_DESIGN)
         j = ast_to_json(tree)
-        merge = j["build"]["target"]
+        merge = j["build"]["targets"][0]
         assert merge["name"] == "merge"
         assert len(merge["children"]) == 2
 
@@ -204,7 +204,7 @@ class TestDiamondDAG:
         # merge inputs: [left.txt, right.txt] -> children: [left, right]
         tree = elaborate(DIAMOND_DESIGN)
         j = ast_to_json(tree)
-        merge = j["build"]["target"]
+        merge = j["build"]["targets"][0]
         assert [c["name"] for c in merge["children"]] == ["left", "right"]
 
         # Swap input order -> children order changes
@@ -227,7 +227,7 @@ class TestDiamondDAG:
         }
         tree2 = elaborate(swapped)
         j2 = ast_to_json(tree2)
-        merge2 = j2["build"]["target"]
+        merge2 = j2["build"]["targets"][0]
         assert [c["name"] for c in merge2["children"]] == ["right", "left"]
 
 
@@ -244,7 +244,7 @@ class TestRecipeElaboration:
         }
         tree = elaborate(design)
         j = ast_to_json(tree)
-        assert j["build"]["target"]["recipe"] == {"form": "action"}
+        assert j["build"]["targets"][0]["recipe"] == {"form": "action"}
 
     def test_oracle_recipe_nil_name(self):
         design = {
@@ -255,7 +255,7 @@ class TestRecipeElaboration:
         }
         tree = elaborate(design)
         j = ast_to_json(tree)
-        recipe = j["build"]["target"]["recipe"]
+        recipe = j["build"]["targets"][0]["recipe"]
         assert recipe["form"] == "oracle"
         assert recipe["name"] is None
         assert recipe["prompt"] == "Do it."
@@ -272,7 +272,7 @@ class TestRecipeElaboration:
         }
         tree = elaborate(design)
         j = ast_to_json(tree)
-        assert j["build"]["target"]["recipe"]["name"] == "my-oracle"
+        assert j["build"]["targets"][0]["recipe"]["name"] == "my-oracle"
 
     def test_trial_recipe(self):
         design = {
@@ -287,7 +287,7 @@ class TestRecipeElaboration:
         }
         tree = elaborate(design)
         j = ast_to_json(tree)
-        recipe = j["build"]["target"]["recipe"]
+        recipe = j["build"]["targets"][0]["recipe"]
         assert recipe["form"] == "trial"
         assert len(recipe["branches"]) == 2
         assert recipe["branches"][0] == {"form": "action"}
@@ -307,7 +307,7 @@ class TestElaborateEdgeCases:
         }
         tree = elaborate(design)
         j = ast_to_json(tree)
-        assert j["build"]["target"]["children"] == []
+        assert j["build"]["targets"][0]["children"] == []
 
     def test_target_defaults_to_last_rule(self):
         design = {
@@ -319,7 +319,7 @@ class TestElaborateEdgeCases:
         }
         tree = elaborate(design)
         j = ast_to_json(tree)
-        assert j["build"]["target"]["name"] == "b"
+        assert j["build"]["targets"][0]["name"] == "b"
 
     def test_site_inputs_not_children(self):
         """Inputs from site_inputs don't create child dependencies."""
@@ -331,8 +331,8 @@ class TestElaborateEdgeCases:
         }
         tree = elaborate(design)
         j = ast_to_json(tree)
-        assert j["build"]["target"]["inputs"] == ["ext.txt"]
-        assert j["build"]["target"]["children"] == []
+        assert j["build"]["targets"][0]["inputs"] == ["ext.txt"]
+        assert j["build"]["targets"][0]["children"] == []
 
     def test_fuel_as_int_becomes_string_atom(self):
         design = {

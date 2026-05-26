@@ -381,14 +381,15 @@ def _extract_rule_fields(
 
 def _extract_build(
     husk_tree: list[CseValue],
-) -> tuple[bytes, bytes, list[CseValue]]:
+) -> tuple[bytes, bytes, list[list[CseValue]]]:
     """Destructure a top-level husk tree.
 
     Expected layout::
 
-        (4:husk 1:1 (5:build <name> <fuel> <target-node>))
+        (4:husk 1:1 (5:build <name> <fuel> <target-node> ...))
 
-    Returns (build_name, fuel, target_node).
+    Returns (build_name, fuel, target_nodes) where target_nodes is a
+    list of one or more target node trees (``build_form[3:]``).
 
     Raises ValueError if the structure does not match.
     """
@@ -406,7 +407,7 @@ def _extract_build(
     if not isinstance(build_form, list) or len(build_form) < 4:
         raise ValueError(
             "CSE build form: expected list of >= 4 elements "
-            f"(build name fuel target), got length "
+            f"(build name fuel target...), got length "
             f"{len(build_form) if isinstance(build_form, list) else 'N/A'}"
         )
     if build_form[0] != b"build":
@@ -415,19 +416,34 @@ def _extract_build(
         )
     build_name: bytes = build_form[1]
     fuel: bytes = build_form[2]
-    target_node: list[CseValue] = build_form[3]
-    return build_name, fuel, target_node
+    target_nodes: list[list[CseValue]] = build_form[3:]
+    return build_name, fuel, target_nodes
 
 
 # ── Recompute root ────────────────────────────────────────────────
 
-def _recompute_node(rule_node: list[CseValue], site_dir: str) -> str:
+def _recompute_node(node: list[CseValue], site_dir: str) -> str:
     """Recursively recompute a node's Merkle digest from the site directory.
 
     Walks the tree depth-first, bottom-up: child digests are computed
     before the parent.  Returns the hex digest string for this node.
+
+    Handles rule, commit, halt, and cond node types.
     """
-    name, recipe, inputs, outputs, children = _extract_rule_fields(rule_node)
+    tag = node[0] if isinstance(node, list) else None
+
+    # Terminal nodes: digest is the hash of their CSE encoding
+    if tag in (b"commit", b"halt"):
+        return hashlib.sha256(encode(node)).hexdigest()
+
+    if tag == b"cond":
+        then_digest = _recompute_node(node[2], site_dir)
+        else_digest = _recompute_node(node[3], site_dir)
+        cse_form: CseValue = [b"cond", node[1], atom(then_digest), atom(else_digest)]
+        return hashlib.sha256(encode(cse_form)).hexdigest()
+
+    # Rule node
+    name, recipe, inputs, outputs, children = _extract_rule_fields(node)
 
     # Children first (depth-first)
     child_digests: list[bytes] = []
@@ -465,6 +481,10 @@ def recompute_root(husk_bytes: bytes, site_dir: str) -> str:
     is verified: every recipe, input, output, and dependency edge is
     covered by the hash.
 
+    For multi-target builds, per-target roots are computed independently
+    and combined into a single root by hashing the sorted per-target
+    roots together (matching the engine-side algorithm in build.py).
+
     Parameters
     ----------
     husk_bytes : bytes
@@ -478,8 +498,13 @@ def recompute_root(husk_bytes: bytes, site_dir: str) -> str:
         Lowercase hex SHA-256 build-root digest.
     """
     husk_tree = parse(husk_bytes)
-    _build_name, _fuel, target_node = _extract_build(husk_tree)
-    return _recompute_node(target_node, site_dir)
+    _build_name, _fuel, target_nodes = _extract_build(husk_tree)
+    if len(target_nodes) == 1:
+        return _recompute_node(target_nodes[0], site_dir)
+    per_roots = [_recompute_node(t, site_dir) for t in target_nodes]
+    return hashlib.sha256(
+        b"".join(r.encode() for r in sorted(per_roots))
+    ).hexdigest()
 
 
 def verify(husk_bytes: bytes, site_dir: str, expected_root: str) -> bool:

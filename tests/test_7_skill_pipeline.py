@@ -87,7 +87,7 @@ class TestSkillWorkflowVerifies:
         assert j["build"]["fuel"] == "10"
 
         # Target rule
-        target = j["build"]["target"]
+        target = j["build"]["targets"][0]
         assert target["form"] == "rule"
         assert target["name"] == "done"
         assert target["recipe"] == {"form": "action"}
@@ -179,7 +179,7 @@ class TestTwoFormVocabulary:
         }
         tree = elaborate(design)
         j = ast_to_json(tree)
-        assert j["build"]["target"]["recipe"] == {"form": "action"}
+        assert j["build"]["targets"][0]["recipe"] == {"form": "action"}
         # Parseable by reader
         assert parse(encode(tree)) == tree
 
@@ -203,7 +203,7 @@ class TestTwoFormVocabulary:
         }
         tree = elaborate(design)
         j = ast_to_json(tree)
-        recipe = j["build"]["target"]["recipe"]
+        recipe = j["build"]["targets"][0]["recipe"]
         assert recipe["form"] == "oracle"
         assert recipe["prompt"] == "Generate content."
         assert parse(encode(tree)) == tree
@@ -236,9 +236,9 @@ class TestTwoFormVocabulary:
         j = ast_to_json(tree)
 
         # Target is action (validates)
-        assert j["build"]["target"]["recipe"] == {"form": "action"}
+        assert j["build"]["targets"][0]["recipe"] == {"form": "action"}
         # Child is oracle (produces)
-        assert j["build"]["target"]["children"][0]["recipe"]["form"] == "oracle"
+        assert j["build"]["targets"][0]["children"][0]["recipe"]["form"] == "oracle"
         assert parse(encode(tree)) == tree
 
 

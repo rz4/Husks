@@ -52,7 +52,7 @@ class TestJSONStructure:
         assert build["fuel"] == "10"
 
     def test_rule_form(self):
-        rule = self.j["build"]["target"]
+        rule = self.j["build"]["targets"][0]
         assert rule["form"] == "rule"
         assert rule["name"] == "combine"
         assert rule["inputs"] == ["hello.txt"]
@@ -61,7 +61,7 @@ class TestJSONStructure:
         assert len(rule["children"]) == 1
 
     def test_oracle_recipe(self):
-        recipe = self.j["build"]["target"]["recipe"]
+        recipe = self.j["build"]["targets"][0]["recipe"]
         assert recipe["form"] == "oracle"
         assert recipe["name"] is None  # NIL
         assert recipe["prompt"] == "Combine the files."
@@ -69,7 +69,7 @@ class TestJSONStructure:
         assert recipe["fuel"] == "3"
 
     def test_child_rule(self):
-        child = self.j["build"]["target"]["children"][0]
+        child = self.j["build"]["targets"][0]["children"][0]
         assert child["form"] == "rule"
         assert child["name"] == "greet"
         assert child["inputs"] == ["config.txt", "greeting.txt"]
@@ -77,7 +77,7 @@ class TestJSONStructure:
         assert child["children"] == []
 
     def test_action_recipe(self):
-        child = self.j["build"]["target"]["children"][0]
+        child = self.j["build"]["targets"][0]["children"][0]
         assert child["recipe"]["form"] == "action"
 
 

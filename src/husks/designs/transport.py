@@ -24,7 +24,7 @@ CSE form tags
 The bijection recognizes these tagged forms:
 
   husk     (4:husk <version> <build>)
-  build    (5:build <name> <fuel> <target-node>)
+  build    (5:build <name> <fuel> <target-node> ...)
   rule     (4:rule <name> <recipe> <inputs> <outputs> children...)
   action   (6:action)                          -- no payload in CSE v1
   oracle   (6:oracle <name> <prompt> <tools> <fuel>)
@@ -114,7 +114,7 @@ def ast_to_json(cse_value: CseValue) -> Any:
             "form": "build",
             "name": _atom_to_json(cse_value[1]),
             "fuel": _atom_to_json(cse_value[2]),
-            "target": ast_to_json(cse_value[3]),
+            "targets": [ast_to_json(t) for t in cse_value[3:]],
         }
 
     if tag == b"rule":
@@ -208,12 +208,15 @@ def json_to_ast(json_value: Any) -> CseValue:
         ]
 
     if form == "build":
+        targets = json_value.get("targets", [])
+        # Backward compat: accept legacy single "target" key
+        if not targets and "target" in json_value:
+            targets = [json_value["target"]]
         return [
             b"build",
             _json_to_atom(json_value["name"]),
             _json_to_atom(json_value["fuel"]),
-            json_to_ast(json_value["target"]),
-        ]
+        ] + [json_to_ast(t) for t in targets]
 
     if form == "rule":
         result: list[CseValue] = [
@@ -394,7 +397,12 @@ def elaborate(flat_design: dict[str, Any]) -> CseValue:
         ``encode()``.
     """
     rules = flat_design["rules"]
-    target_name: str = flat_design.get("target", rules[-1]["name"])
+    # Support both "targets" (list) and "target" (string)
+    if "targets" in flat_design:
+        val = flat_design["targets"]
+        target_names: list[str] = [val] if isinstance(val, str) else list(val)
+    else:
+        target_names = [flat_design.get("target", rules[-1]["name"])]
 
     # Build output -> producer-name mapping (producing kinds only)
     producer: dict[str, str] = {}
@@ -460,7 +468,7 @@ def elaborate(flat_design: dict[str, Any]) -> CseValue:
         result.extend(children)
         return result
 
-    target_rule = elaborate_node(target_name)
+    target_cse_nodes = [elaborate_node(t) for t in target_names]
     return [
         b"husk",
         b"1",
@@ -468,6 +476,5 @@ def elaborate(flat_design: dict[str, Any]) -> CseValue:
             b"build",
             flat_design["name"].encode("utf-8"),
             str(flat_design["fuel"]).encode("utf-8"),
-            target_rule,
-        ],
+        ] + target_cse_nodes,
     ]

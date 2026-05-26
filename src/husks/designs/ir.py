@@ -143,6 +143,25 @@ _STRUCTURAL_KINDS = frozenset({"commit", "halt", "let", "cond"})
 _BUILTIN_PREFIXES = frozenset({"file-exists", "file-nonempty", "exit-zero"})
 
 
+# ── Target resolution ─────────────────────────────────────────────
+
+def _resolve_targets(design: Design) -> list[str] | None:
+    """Return the list of target names from a design.
+
+    Accepts either ``"targets": [...]`` (list of strings) or
+    ``"target": "x"`` (single string, wrapped into a one-element list).
+    Returns None if neither key is present.
+    """
+    if "targets" in design:
+        val = design["targets"]
+        if isinstance(val, str):
+            return [val]
+        return list(val)
+    if "target" in design:
+        return [design["target"]]
+    return None
+
+
 # ── Static checks ────────────────────────────────────────────────
 
 def check(design: Design) -> list[str]:
@@ -282,13 +301,16 @@ def check(design: Design) -> list[str]:
                         f"import '{local_name}' collides with a rule output name"
                     )
 
-    # target
-    target = design.get("target")
-    if target:
-        if target not in names:
-            errors.append(f"target '{target}' does not match any rule name")
+    # target(s)
+    targets = _resolve_targets(design)
+    if targets is None:
+        errors.append("design has no target (must provide 'target' or 'targets')")
+    elif len(targets) == 0:
+        errors.append("'targets' list is empty")
     else:
-        errors.append("design has no target (must name the terminal rule)")
+        for t in targets:
+            if t not in names:
+                errors.append(f"target '{t}' does not match any rule name")
 
     # fuel budget
     if fuel and oracle_fuel > fuel:
@@ -316,11 +338,13 @@ def show(design: Design) -> None:
     """Print a human-readable summary of the design."""
     name = design.get("name", "?")
     fuel = design.get("fuel", "?")
-    target = design.get("target", "?")
+    targets = _resolve_targets(design) or ["?"]
     rules = design.get("rules", [])
     site_inputs = design.get("site_inputs", [])
+    target_set = set(targets)
 
-    print(f"\n  design: {name}  (fuel {fuel})  target: {target}")
+    targets_str = ", ".join(targets)
+    print(f"\n  design: {name}  (fuel {fuel})  targets: {targets_str}")
     print(f"  {'─' * 50}")
 
     if site_inputs:
@@ -332,7 +356,7 @@ def show(design: Design) -> None:
         rname = r.get("name", "?")
         inputs = r.get("inputs", [])
         outputs = r.get("outputs", [])
-        is_target = rname == target
+        is_target = rname in target_set
         marker = _KIND_MARKERS.get(kind, "?")
         target_tag = "  \u25c0 target" if is_target else ""
 
@@ -414,12 +438,12 @@ def _resolve_predicate(
 
 # ── Compiler ──────────────────────────────────────────────────────
 
-def compile(design: Design) -> tuple[str, int, dict, dict[str, Any]]:
+def compile(design: Design) -> tuple[str, int, list[dict], dict[str, Any]]:
     """Lower design IR to runtime arguments for build().
 
-    Returns (name, fuel, terminal_node, kwargs) ready for::
+    Returns (name, fuel, terminal_nodes, kwargs) ready for::
 
-        build(name, fuel, terminal_node, **kwargs)
+        build(name, fuel, *terminal_nodes, **kwargs)
 
     Handles all nine forms:
       - action/oracle/trial: compiled into rule nodes with recipes.
@@ -446,7 +470,7 @@ def compile(design: Design) -> tuple[str, int, dict, dict[str, Any]]:
     )
 
     rules = design.get("rules", [])
-    target = design.get("target", rules[-1]["name"] if rules else None)
+    targets = _resolve_targets(design) or ([rules[-1]["name"]] if rules else [])
     predicates: dict[str, Callable] = design.get("predicates", {})
     name_to_node: dict[str, dict] = {}
     name_to_ir: dict[str, dict] = {r["name"]: r for r in rules}
@@ -531,7 +555,7 @@ def compile(design: Design) -> tuple[str, int, dict, dict[str, Any]]:
         node = rule(rname, *children, inputs=inputs, outputs=outputs, recipe=recipe)
         name_to_node[rname] = node
 
-    terminal = name_to_node[target]
+    terminals = [name_to_node[t] for t in targets]
 
     kwargs: dict[str, Any] = {}
     if design.get("site"):
@@ -541,7 +565,7 @@ def compile(design: Design) -> tuple[str, int, dict, dict[str, Any]]:
     if design.get("oracle_model"):
         kwargs["oracle_model"] = design["oracle_model"]
 
-    return design["name"], design["fuel"], terminal, kwargs
+    return design["name"], design["fuel"], terminals, kwargs
 
 
 # ── Action factories ──────────────────────────────────────────────
@@ -649,7 +673,7 @@ def run(design: Design, **overrides: Any) -> dict[str, Any]:
 
     from husks.build import build
 
-    name, fuel, terminal, kwargs = compile(design)
+    name, fuel, terminals, kwargs = compile(design)
     kwargs.update(overrides)
 
     # Set up imports (symlinks + read-only roots) before building
@@ -659,7 +683,7 @@ def run(design: Design, **overrides: Any) -> dict[str, Any]:
         readonly_dirs = _setup_imports(site, imports)
         kwargs["readonly_dirs"] = readonly_dirs
 
-    return build(name, fuel, terminal, **kwargs)
+    return build(name, fuel, *terminals, **kwargs)
 
 
 # ── Load / save ───────────────────────────────────────────────────

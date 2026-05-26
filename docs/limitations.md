@@ -58,11 +58,14 @@ partial output, token streaming, or intermediate checkpoints.  For
 long-running oracle calls, the user sees nothing until the rule either
 commits or exhausts fuel.
 
-## 8. Single-target builds only
+## 8. ~~Single-target builds only~~ (resolved)
 
-A design has one `target` rule.  If you want to produce two independent
-artifact trees, you need two separate designs or an artificial merge
-rule that depends on both.
+Multi-target builds are now supported.  A design may specify
+`"targets": ["rule-a", "rule-b"]` to commit multiple independent DAG
+roots in a single build.  The legacy `"target": "x"` (string) form is
+still accepted and treated as a one-element targets list.  The build-root
+for multi-target builds is the SHA-256 of the sorted per-target roots
+concatenated together.
 
 ## 9. No dynamic graph construction
 

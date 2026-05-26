@@ -360,6 +360,129 @@ def test_imports_build_succeeds():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+# ── Multi-target tests ─────────────────────────────────────────
+
+
+def test_multi_target_build():
+    """Multi-target design with two independent commit rules builds successfully."""
+    tmpdir = tempfile.mkdtemp(prefix="multi-target-")
+    try:
+        site = os.path.join(tmpdir, "site")
+        os.makedirs(site)
+
+        design = {
+            "name": "multi-out",
+            "fuel": 10,
+            "targets": ["report", "archive"],
+            "site": site,
+            "rules": [
+                {"name": "report", "kind": "commit", "value": "done-report"},
+                {"name": "archive", "kind": "commit", "value": "done-archive"},
+            ],
+        }
+
+        from husks.designs.ir import check, run
+        errs = check(design)
+        assert errs == [], f"check errors: {errs}"
+
+        S = run(design)
+        assert S["status"] == "committed", f"build failed: {S.get('value')}"
+        assert S["build-root"] is not None, "build-root not computed"
+        assert "target-roots" in S, "target-roots not set for multi-target build"
+        assert len(S["target-roots"]) == 2
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_multi_target_engine_equals_reader_root():
+    """Engine root == reader root for multi-target builds."""
+    tmpdir = tempfile.mkdtemp(prefix="multi-target-verify-")
+    try:
+        site = os.path.join(tmpdir, "site")
+        os.makedirs(site)
+        # Create a site input for the action rule
+        with open(os.path.join(site, "input.txt"), "w") as f:
+            f.write("data\n")
+
+        design = {
+            "name": "multi-verify",
+            "fuel": 10,
+            "targets": ["done-a", "done-b"],
+            "site": site,
+            "site_inputs": ["input.txt"],
+            "rules": [
+                {
+                    "name": "step",
+                    "kind": "action",
+                    "inputs": ["input.txt"],
+                    "outputs": ["out.txt"],
+                },
+                {"name": "done-a", "kind": "commit", "value": "a-ok"},
+                {"name": "done-b", "kind": "commit", "value": "b-ok"},
+            ],
+        }
+
+        from husks.designs.ir import run
+        S = run(design)
+        assert S["status"] == "committed"
+        engine_root = S["build-root"]
+        assert engine_root is not None
+
+        husk_path = os.path.join(site, "multi-verify.husk")
+        assert os.path.isfile(husk_path)
+
+        with open(husk_path, "rb") as f:
+            husk_bytes = f.read()
+
+        reader_root = recompute_root(husk_bytes, site)
+        assert engine_root == reader_root, (
+            f"multi-target root mismatch:\n"
+            f"  engine: {engine_root}\n"
+            f"  reader: {reader_root}"
+        )
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_single_target_string_backward_compat():
+    """Single 'target' (string) still works after multi-target changes."""
+    tmpdir = tempfile.mkdtemp(prefix="compat-target-")
+    try:
+        site = os.path.join(tmpdir, "site")
+        os.makedirs(site)
+
+        design = {
+            "name": "compat-test",
+            "fuel": 10,
+            "target": "done",
+            "site": site,
+            "rules": [
+                {"name": "done", "kind": "commit", "value": "ok"},
+            ],
+        }
+
+        from husks.designs.ir import check, run
+        errs = check(design)
+        assert errs == [], f"check errors: {errs}"
+
+        S = run(design)
+        assert S["status"] == "committed"
+        assert S["build-root"] is not None
+
+        # Verify engine == reader
+        husk_path = os.path.join(site, "compat-test.husk")
+        assert os.path.isfile(husk_path)
+        with open(husk_path, "rb") as f:
+            husk_bytes = f.read()
+        reader_root = recompute_root(husk_bytes, site)
+        assert S["build-root"] == reader_root
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def test_imports_check_validation():
     """check() catches bad imports: relative paths, collisions."""
     from husks.designs.ir import check
