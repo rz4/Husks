@@ -39,6 +39,8 @@ def main():
                    help="Use stub oracle (no LLM, placeholder outputs)")
     r.add_argument("--hy", action="store_true",
                    help="Use original Hy kernel backend instead of Python")
+    r.add_argument("--json", action="store_true", dest="json_output",
+                   help="Output full Report as JSON instead of text")
 
     # selftest
     st = sub.add_parser("selftest", help="Verify engine against frozen conformance vectors")
@@ -116,12 +118,17 @@ def main():
             overrides["oracle_model"] = args.model
 
         S = run(design, **overrides)
-        # summary
-        print(json.dumps({
-            "status": S["status"],
-            "fuel_remaining": S["fuel"],
-            "site": S["site"],
-        }, indent=2))
+
+        # Build Report
+        from husks.report import assemble, render_text, render_json
+        from husks.utils import trace as T
+        from husks.oracle.llm import get_usage
+
+        report = assemble(S, T, design, get_usage())
+        if args.json_output:
+            print(render_json(report))
+        else:
+            print(render_text(report))
 
     elif args.cmd == "history":
         site = args.site or design.get("site")

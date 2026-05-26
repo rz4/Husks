@@ -41,6 +41,12 @@ Your first tool call must be writing `design.json`. No exploring, no reading fil
    python -m husks.cli run design.json --site /tmp/husks-<name>
    ```
 
+   The run command prints a structured **Report** showing status, root, fuel, cost, delta (changed/new/unchanged nodes), and a per-node table. Use `--json` for machine-readable output:
+
+   ```bash
+   python -m husks.cli run design.json --site /tmp/husks-<name> --json
+   ```
+
 6. After the build completes, **verify the .husk artifact**:
 
    ```bash
@@ -57,14 +63,9 @@ Your first tool call must be writing `design.json`. No exploring, no reading fil
 
    This proves the .husk file is self-verifying — any future reader with SHA-256 and the site files can reproduce the root hash. The engine that built it can be discarded.
 
-7. Summarize the result:
+7. Read the Report output and relay the result:
 
-   - **Status**: committed or halted
-   - **Build-root**: the Merkle root hash
-   - **Rules fired / reused**: which rules ran, which were sealed
-   - **Artifacts produced**: list with hashes
-   - **Fuel**: used / total
-   - If **halted**: read the trace, identify which rule failed and why, and suggest a revised design. Do not re-run without approval.
+   - If **halted**: the Report includes a `diagnosis` section with the exact error and failed nodes. Identify which rule failed and why, and suggest a revised design. Do not re-run without approval.
    - If **committed**: report success. Note the build-root and that the .husk is verified.
 
 ## Convergence Loop

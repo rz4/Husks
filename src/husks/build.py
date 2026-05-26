@@ -412,6 +412,8 @@ def append_history(
     *,
     fuel_consumed: int = 1,
     satisfaction: bool | None = None,
+    cost_usd: float | None = None,
+    recipe_digest_hex: str | None = None,
 ) -> None:
     """Append one convergence record to the rule's history log."""
     prompt_length: int | None = None
@@ -433,6 +435,8 @@ def append_history(
         "satisfaction": satisfaction,
         "traced_reads": traced_reads,
         "output_hashes": output_hashes(S, outputs),
+        "cost_usd": cost_usd,
+        "recipe_digest": recipe_digest_hex,
     }
     hp = history_file(S, rule_name)
     ensure_dir(str(Path(hp).parent))
@@ -609,7 +613,16 @@ def eval_rule(S: Store, node: Node) -> None:
         if usage and usage.get("fuel_steps", 0):
             fuel_consumed = usage["fuel_steps"]
 
-        append_history(S, name, recipe, outputs, fuel_consumed=fuel_consumed)
+        # Compute recipe digest and extract cost for history record
+        rd_hex: str | None = None
+        if recipe is not None:
+            rd_hex = recipe_digest(recipe_to_cse(recipe))
+        cost: float | None = None
+        if usage and "cost_usd" in usage:
+            cost = usage["cost_usd"]
+
+        append_history(S, name, recipe, outputs, fuel_consumed=fuel_consumed,
+                       cost_usd=cost, recipe_digest_hex=rd_hex)
         S["trace"].append({"event": "fired", "rule": name, "outputs": outputs})
         T.rule_done(name, outputs=outputs, output_hashes=output_hashes(S, outputs))
     except Stop:
@@ -809,6 +822,12 @@ def eval_trial(
         if branch_recipe and branch_recipe.get("type", "") == "oracle":
             prompt_length = len(branch_recipe.get("prompt", ""))
 
+        # Compute recipe digest and extract cost for branch history
+        branch_rd: str | None = None
+        if branch_recipe is not None:
+            branch_rd = recipe_digest(recipe_to_cse(branch_recipe))
+        branch_cost_val: float | None = r.get("cost_usd") if not has_error else None
+
         record = {
             "run_id": S["run-id"],
             "ts": time.time(),
@@ -821,6 +840,8 @@ def eval_trial(
                 for o in outputs
                 if o in r.get("outputs", {})
             ],
+            "cost_usd": branch_cost_val,
+            "recipe_digest": branch_rd,
         }
         hp = history_file(S, f"{rule_name}.{rname}")
         ensure_dir(str(Path(hp).parent))

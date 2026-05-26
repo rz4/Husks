@@ -30,7 +30,8 @@ graph, then check, show, and run it.
 - Write `design.json` first. No exploring or running commands before that.
 - `check` then `show` the design. **Wait for approval before `run`.**
 - Run `--stub` first when the shape is new; go live only after the stub commits.
-- On `run`: report status, build-root, rules fired/reused, fuel, artifacts.
+- On `run`: the CLI prints a structured Report (status, root, fuel, cost, delta,
+  per-node table, diagnosis). Use `--json` for machine-readable output.
 
 ## Two forms only
 - Use `action` (deterministic) and `oracle` (one bounded model call). Nothing else.
