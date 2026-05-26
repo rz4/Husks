@@ -20,7 +20,7 @@ llm = [
 
 [project.scripts]
 husks = "husks.cli:main"
-husks-gate = "husks.gate_level0:main"
+husks-gate = "husks_conformance.gate:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/husks"]
