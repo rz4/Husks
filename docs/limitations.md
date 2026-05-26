@@ -79,3 +79,23 @@ new design, not within the current build.
 
 Hy is now an optional dependency.  Users who want the Hy bridge install
 with `pip install husks[hy]`.  The core package no longer pulls in Hy.
+
+## 11. Non-shell recipe identity depends on host-language symbols
+
+Action recipes seal their Python function's `__qualname__` into the recipe
+digest.  Cond predicates (not yet in the executable JSON subset) do the
+same.  This means:
+
+- Renaming or relocating a Python function silently changes the seal and
+  the build-root, even when the function's behavior is identical.  This
+  causes spurious re-fires and breaks historical root continuity across a
+  pure refactor.
+- A non-Python producer cannot generate an identical husk for a build that
+  uses callable actions or cond predicates.  It can still verify an
+  existing husk, since the symbol is serialized in the CSE bytes.
+
+Shell actions (`"run": "..."` in the JSON design) are not affected — the
+command string is the sole identity, and it is portable across producers.
+
+This will be resolved before `cond` and callable actions enter the
+executable JSON subset.  See `spec/CSE-v2.md` §E5 for details.

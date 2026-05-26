@@ -243,3 +243,36 @@ This applies uniformly:
 - `seal` in the node form: `64:<hex>`
 - Each entry in `child-digests`: `64:<hex>`
 - Each `hash` in input/output bindings: `64:<hex>` (or `6:absent`)
+
+## E5. Recipe Identity and Host-Language Symbols
+
+The recipe form that participates in the seal preimage includes
+host-language symbols for non-shell recipes:
+
+- **Action recipes** seal as `(action <qualname> <cmd>)`, where `qualname`
+  is the Python function's `__qualname__` attribute.
+- **Cond predicates** (not yet in the executable JSON subset) seal the
+  predicate callable's `__qualname__`.
+
+Shell actions with a `run` command are portable: the command string is
+serialized into the recipe form and any reader can reproduce the digest
+from the husk bytes alone.
+
+Non-shell recipes (Python-callable actions, cond predicates) embed the
+host symbol. This means:
+
+1. Renaming or relocating a Python function changes the seal and root
+   even when behavior is identical, causing spurious re-fires.
+2. A non-Python producer cannot *generate* an identical husk for a build
+   that uses callable actions or cond predicates. It can still *verify*
+   an existing husk, since the symbol is serialized in the bytes.
+
+This is a known limitation of the current engine, not of the CSE format.
+The husk file remains self-verifying regardless — the symbol is in the
+bytes, so any reader reproduces the digest. The limitation affects only
+cross-producer portability and refactoring stability for callable recipes.
+
+Resolution is planned before `cond` and callable actions enter the
+executable JSON subset: either require an explicit author-supplied stable
+identifier, or key the seal on a normalized behavioral form rather than
+the host symbol.

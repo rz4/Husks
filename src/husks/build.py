@@ -295,7 +295,7 @@ def compute_cse_seal(S: Store, inputs: list[str], recipe: Recipe) -> str:
     """Compute the CSE-based seal hash for a rule.  Returns hex string."""
     recipe_form = recipe_to_cse(recipe)
     bindings: list[tuple[bytes, bytes]] = [
-        (atom(i), file_sig(site_path(S, i))) for i in sorted(inputs)
+        (atom(i), file_sig(site_path(S, i))) for i in inputs
     ]
     return compute_seal(CSE_VERSION, recipe_form, bindings)
 
@@ -911,7 +911,7 @@ def compute_build_root(S: Store, node: Node) -> str:
     ]
     # Input bindings
     inp_bindings: list[tuple[bytes, bytes]] = [
-        (atom(i), file_sig(site_path(S, i))) for i in sorted(node["inputs"])
+        (atom(i), file_sig(site_path(S, i))) for i in node["inputs"]
     ]
     # Seal
     seal = compute_cse_seal(S, node["inputs"], node["recipe"])
