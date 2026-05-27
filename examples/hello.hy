@@ -33,7 +33,7 @@ Requires: pip install husks[hy]
 
 ;; --- run ---
 (defn main []
-  (let [store (build "hello-hy" 10 finish-rule)]
+  (let [store (build "hello-hy" 10 finish-rule :site "/tmp/test_lisp")]
     (print "build status:" (get store "status"))
     (print "site:" (get store "site"))))
 

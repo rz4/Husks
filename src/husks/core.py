@@ -106,7 +106,7 @@ CseValue = Union[bytes, list["CseValue"]]
 # ── Constants ─────────────────────────────────────────────────────
 
 NIL: bytes = b""
-CSE_VERSION: bytes = b"1"
+CSE_VERSION: bytes = b"2"
 ABSENT: bytes = b"absent"
 
 # Maximum nesting depth for the recursive parser.  CSE trees in
@@ -381,15 +381,15 @@ def _extract_rule_fields(
 
 def _extract_build(
     husk_tree: list[CseValue],
-) -> tuple[bytes, bytes, list[list[CseValue]]]:
+) -> tuple[bytes, bytes, bytes, list[list[CseValue]]]:
     """Destructure a top-level husk tree.
 
     Expected layout::
 
         (4:husk 1:1 (5:build <name> <fuel> <target-node> ...))
 
-    Returns (build_name, fuel, target_nodes) where target_nodes is a
-    list of one or more target node trees (``build_form[3:]``).
+    Returns (version, build_name, fuel, target_nodes) where target_nodes
+    is a list of one or more target node trees (``build_form[3:]``).
 
     Raises ValueError if the structure does not match.
     """
@@ -403,6 +403,7 @@ def _extract_build(
         raise ValueError(
             f"CSE husk: expected tag b'husk', got {husk_tree[0]!r}"
         )
+    version: bytes = husk_tree[1]
     build_form = husk_tree[2]
     if not isinstance(build_form, list) or len(build_form) < 4:
         raise ValueError(
@@ -417,16 +418,19 @@ def _extract_build(
     build_name: bytes = build_form[1]
     fuel: bytes = build_form[2]
     target_nodes: list[list[CseValue]] = build_form[3:]
-    return build_name, fuel, target_nodes
+    return version, build_name, fuel, target_nodes
 
 
 # ── Recompute root ────────────────────────────────────────────────
 
-def _recompute_node(node: list[CseValue], site_dir: str) -> str:
+def _recompute_node(node: list[CseValue], site_dir: str, version: bytes) -> str:
     """Recursively recompute a node's Merkle digest from the site directory.
 
     Walks the tree depth-first, bottom-up: child digests are computed
     before the parent.  Returns the hex digest string for this node.
+
+    The *version* atom (extracted from the husk) is threaded through to
+    compute_seal so that v1 and v2 husks verify correctly.
 
     Handles rule, commit, halt, and cond node types.
     """
@@ -437,8 +441,8 @@ def _recompute_node(node: list[CseValue], site_dir: str) -> str:
         return hashlib.sha256(encode(node)).hexdigest()
 
     if tag == b"cond":
-        then_digest = _recompute_node(node[2], site_dir)
-        else_digest = _recompute_node(node[3], site_dir)
+        then_digest = _recompute_node(node[2], site_dir, version)
+        else_digest = _recompute_node(node[3], site_dir, version)
         cse_form: CseValue = [b"cond", node[1], atom(then_digest), atom(else_digest)]
         return hashlib.sha256(encode(cse_form)).hexdigest()
 
@@ -448,7 +452,7 @@ def _recompute_node(node: list[CseValue], site_dir: str) -> str:
     # Children first (depth-first)
     child_digests: list[bytes] = []
     for child in children:
-        cd = _recompute_node(child, site_dir)
+        cd = _recompute_node(child, site_dir, version)
         child_digests.append(atom(cd))
 
     # Input bindings: (name, content_hash)
@@ -458,8 +462,8 @@ def _recompute_node(node: list[CseValue], site_dir: str) -> str:
         h = content_hash_or_absent(path)
         input_bindings.append((inp, h))
 
-    # Seal
-    seal = compute_seal(CSE_VERSION, recipe, input_bindings)
+    # Seal — use the version from the husk, not the global constant
+    seal = compute_seal(version, recipe, input_bindings)
 
     # Output bindings: (name, content_hash)
     output_bindings: list[tuple[bytes, bytes]] = []
@@ -498,10 +502,10 @@ def recompute_root(husk_bytes: bytes, site_dir: str) -> str:
         Lowercase hex SHA-256 build-root digest.
     """
     husk_tree = parse(husk_bytes)
-    _build_name, _fuel, target_nodes = _extract_build(husk_tree)
+    version, _build_name, _fuel, target_nodes = _extract_build(husk_tree)
     if len(target_nodes) == 1:
-        return _recompute_node(target_nodes[0], site_dir)
-    per_roots = [_recompute_node(t, site_dir) for t in target_nodes]
+        return _recompute_node(target_nodes[0], site_dir, version)
+    per_roots = [_recompute_node(t, site_dir, version) for t in target_nodes]
     return hashlib.sha256(
         b"".join(r.encode() for r in sorted(per_roots))
     ).hexdigest()

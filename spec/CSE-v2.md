@@ -246,33 +246,68 @@ This applies uniformly:
 
 ## E5. Recipe Identity and Host-Language Symbols
 
-The recipe form that participates in the seal preimage includes
-host-language symbols for non-shell recipes:
+### E5.1 v1 recipe identity (CSE version `1`)
 
-- **Action recipes** seal as `(action <qualname> <cmd>)`, where `qualname`
-  is the Python function's `__qualname__` attribute.
-- **Cond predicates** (not yet in the executable JSON subset) seal the
-  predicate callable's `__qualname__`.
+v1 action recipes seal as `(action <qualname> <cmd>)`, where `qualname`
+is the Python function's `__qualname__` attribute and `cmd` is the shell
+command string (empty for callable actions).  Cond predicates seal the
+predicate callable's `__qualname__`.
 
-Shell actions with a `run` command are portable: the command string is
-serialized into the recipe form and any reader can reproduce the digest
-from the husk bytes alone.
-
-Non-shell recipes (Python-callable actions, cond predicates) embed the
-host symbol. This means:
+This has two defects:
 
 1. Renaming or relocating a Python function changes the seal and root
    even when behavior is identical, causing spurious re-fires.
-2. A non-Python producer cannot *generate* an identical husk for a build
-   that uses callable actions or cond predicates. It can still *verify*
-   an existing husk, since the symbol is serialized in the bytes.
+2. Built-in JSON predicates (`file-exists:<path>`, `exit-zero:<cmd>`)
+   compile to closures whose `__qualname__` is identical regardless of
+   the argument — so `file-exists:/A` and `file-exists:/B` produce the
+   same seal, causing false freshness.
 
-This is a known limitation of the current engine, not of the CSE format.
-The husk file remains self-verifying regardless — the symbol is in the
-bytes, so any reader reproduces the digest. The limitation affects only
-cross-producer portability and refactoring stability for callable recipes.
+v1 conformance vectors (`demo`, `adversarial`, `unsorted`) are frozen
+with version atom `1` and remain verifiable under any conformant reader.
 
-Resolution is planned before `cond` and callable actions enter the
-executable JSON subset: either require an explicit author-supplied stable
-identifier, or key the seal on a normalized behavioral form rather than
-the host symbol.
+### E5.2 v2 recipe identity (CSE version `2`)
+
+v2 recipe forms eliminate host-language symbols in favor of
+behavior-based identity.  New builds emit version atom `2` in the husk
+and seal preimage.
+
+**Shell actions** (`run: "..."`): identity is the command string alone.
+
+    recipe-form = (6:action <cmd>)
+
+The `__qualname__` is dropped.  The command string is the sole identity
+and is portable across producers.
+
+**Callable actions** (Python callable, no shell command): identity is a
+SHA-256 digest of the function's source code (via `inspect.getsource`),
+or of `co_code + repr(co_consts)` if source is unavailable.
+
+    recipe-form = (6:action 64:<behavior-digest>)
+
+Renaming or relocating the function no longer changes the seal — only
+changing the function's body does.
+
+**Oracle and trial recipes**: unchanged from v1.
+
+**Built-in cond predicates** (`file-exists:<path>`, `file-nonempty:<path>`,
+`exit-zero:<cmd>`): identity is the full spec string.
+
+    cond-form = (4:cond <spec-string> <then-node> <else-node>)
+
+The compiler stamps `_husks_pred_spec` on each built-in closure with the
+original spec string (e.g. `"file-exists:config.txt"`).  The engine
+serializes this attribute instead of `__qualname__`.
+
+**Custom Python cond predicates**: identity is a SHA-256 source/bytecode
+digest, same scheme as callable actions.
+
+### E5.3 Version negotiation
+
+The version atom is embedded in the husk file: `(4:husk <version> ...)`.
+A conformant reader extracts the version from the husk and uses it in
+the seal preimage.  It must accept both `1` and `2`.
+
+The engine uses version `2` for all new builds.  Existing v1 seal files
+will mismatch on the first build after upgrade, causing a one-time
+re-fire of all rules.  This is expected and correct: the recipe identity
+schema changed.

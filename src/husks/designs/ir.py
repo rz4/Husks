@@ -407,6 +407,7 @@ def _resolve_predicate(
             def _file_exists(S: dict) -> bool:
                 from husks.build import site_path
                 return os.path.exists(site_path(S, arg))
+            _file_exists._husks_pred_spec = spec
             return _file_exists
 
         if prefix == "file-nonempty":
@@ -414,6 +415,7 @@ def _resolve_predicate(
                 from husks.build import site_path
                 p = site_path(S, arg)
                 return os.path.exists(p) and os.path.getsize(p) > 0
+            _file_nonempty._husks_pred_spec = spec
             return _file_nonempty
 
         if prefix == "exit-zero":
@@ -423,6 +425,7 @@ def _resolve_predicate(
                     capture_output=True, timeout=120,
                 )
                 return result.returncode == 0
+            _exit_zero._husks_pred_spec = spec
             return _exit_zero
 
     raise ValueError(f"unknown predicate: {spec!r}")

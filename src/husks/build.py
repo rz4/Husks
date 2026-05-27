@@ -156,6 +156,8 @@ from husks.core import (
     recipe_digest,
 )
 
+import inspect
+
 # ── Type aliases ──────────────────────────────────────────────────
 
 Store = dict[str, Any]
@@ -256,25 +258,63 @@ def file_sig(p: str) -> bytes:
     return ABSENT
 
 
+# ── Behavior digest ───────────────────────────────────────────────
+
+def _fn_behavior_digest(fn: Callable) -> str:
+    """Compute a behavior-based SHA-256 digest for a Python callable.
+
+    Tries inspect.getsource first (deterministic across runs for
+    statically defined functions).  Falls back to bytecode + constants
+    if source is unavailable (e.g. for dynamically generated callables).
+    """
+    try:
+        source = inspect.getsource(fn)
+        return hashlib.sha256(source.encode()).hexdigest()
+    except (OSError, TypeError):
+        code = fn.__code__
+        data = code.co_code + repr(code.co_consts).encode()
+        return hashlib.sha256(data).hexdigest()
+
+
+def _pred_identity(predicate: Callable) -> str:
+    """Return the identity string for a cond predicate (v2).
+
+    Built-in predicates carry _husks_pred_spec (the full spec string).
+    Custom Python predicates use a behavior digest.
+    """
+    spec = getattr(predicate, "_husks_pred_spec", None)
+    if spec is not None:
+        return spec
+    return _fn_behavior_digest(predicate)
+
+
 # ── Recipe → CSE ──────────────────────────────────────────────────
 
 def recipe_to_cse(recipe: Recipe) -> CseValue:
-    """Convert an engine recipe dict to a CSE-serializable form.
+    """Convert an engine recipe dict to a CSE-serializable form (v2).
 
     The CSE form is what participates in the seal preimage.  It must
     be deterministic: the same recipe dict always produces the same
-    CSE value.  Volatile fields (the action callable object, verdict
-    function) are represented by their qualified name, not their
-    identity.
+    CSE value.
+
+    v2 recipe identity:
+      - Shell actions: (action <cmd>) — command string is the identity.
+      - Callable actions: (action <behavior-digest>) — source/bytecode
+        digest is the identity.
+      - Oracle/trial: unchanged from v1.
     """
     if recipe is None:
         return NIL
     kind: str = recipe["type"]
     if kind == "action":
         fn = recipe["fn"]
-        qualname: str = getattr(fn, "__qualname__", "anon")
         cmd: str = getattr(fn, "_husks_cmd", "")
-        return [b"action", qualname.encode(), cmd.encode()]
+        if cmd:
+            # Shell action — command string is the sole identity
+            return [b"action", cmd.encode()]
+        else:
+            # Callable action — behavior digest
+            return [b"action", _fn_behavior_digest(fn).encode()]
     if kind == "oracle":
         name = recipe.get("name")
         return [
@@ -883,7 +923,7 @@ def node_to_cse(node: Node) -> CseValue:
     if ntype == "cond":
         return [
             b"cond",
-            atom(getattr(node["predicate"], "__qualname__", "anon")),
+            atom(_pred_identity(node["predicate"])),
             node_to_cse(node["then"]),
             node_to_cse(node["else"]),
         ]
@@ -913,7 +953,7 @@ def compute_build_root(S: Store, node: Node) -> str:
         else_digest = compute_build_root(S, node["else"])
         cse_form = [
             b"cond",
-            atom(getattr(node["predicate"], "__qualname__", "anon")),
+            atom(_pred_identity(node["predicate"])),
             atom(then_digest),
             atom(else_digest),
         ]
