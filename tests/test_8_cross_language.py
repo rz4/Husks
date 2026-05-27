@@ -193,6 +193,19 @@ class TestReaderIndependence:
                 f"verify.mjs imports '{mod}' -- only {allowed} allowed"
             )
 
+    def test_js_rejects_all_malformed_vectors(self):
+        """JS reader must reject every rootless (malformed) vector."""
+        for husk_path in sorted(
+            p for p in os.listdir(SPEC_DIR)
+            if p.endswith(".husk")
+            and not os.path.exists(os.path.join(SPEC_DIR, p.replace(".husk", ".root")))
+        ):
+            full = os.path.join(SPEC_DIR, husk_path)
+            stdout, rc = _run_js_verifier(full, SPEC_DIR)
+            assert rc != 0, (
+                f"JS reader accepted malformed vector {husk_path}: {stdout}"
+            )
+
     def test_verify_mjs_is_compact(self):
         """The reader should be small enough to audit by hand."""
         with open(VERIFY_JS, "r") as f:

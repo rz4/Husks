@@ -36,6 +36,7 @@ additional sorting is applied.
 
 - **`malformed-leadingzero.husk`** — Must be rejected (leading zero in atom length).
 - **`malformed-truncated.husk`** — Must be rejected (truncated atom).
+- **`malformed-trailing.husk`** — Must be rejected (trailing data after valid CSE object).
 
 ## Verification
 
