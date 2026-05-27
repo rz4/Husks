@@ -166,7 +166,7 @@ The .husk file is the residue. It can be verified by any reader that implements 
 
 * **Action for deterministic work.** Copying files, parsing data, running validators, packaging artifacts.
 * **Oracle for judgment.** Writing code, making design decisions, generating content, or resolving ambiguity.
-* **Fuel bounds everything.** Every oracle has a local fuel limit. The build has a global fuel limit. No unbounded loops.
+* **Fuel bounds everything.** Every stale rule that fires costs one unit of global fuel. Every oracle additionally has a local fuel limit bounding its agentic steps. No unbounded loops.
 * **Outputs are the contract.** The build records hashes for declared outputs and uses them for sealing, reuse, and traceability.
 * **Show the design first.** The user should see the build graph, not a prose promise.
 * **The .husk outlives the engine.** Verification is by content, never by instrumentation. The seal keys on what was asked and what came back, never on who answered.

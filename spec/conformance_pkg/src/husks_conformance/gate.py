@@ -174,3 +174,35 @@ def gate(reader_cmd, *, stamp_dir=None, cross_check=True, verbose=True):
     if ok:
         _print("GATE PASS")
     return ok
+
+
+# ── CLI entry point ─────────────────────────────────────────────────
+
+def main(argv=None):
+    """Entry point for the ``husks-gate`` console script."""
+    import argparse
+    import sys
+
+    p = argparse.ArgumentParser(
+        prog="husks-gate",
+        description="Run the conformance gate against a CSE reader.",
+    )
+    p.add_argument(
+        "reader_cmd",
+        nargs="?",
+        default="husks",
+        help="Reader command (default: husks)",
+    )
+    p.add_argument("--stamp-dir", default=None, help="Write VERIFIED stamp here on pass")
+    p.add_argument("--cross-check", action="store_true", default=True,
+                   help="Enable JS cross-check (default)")
+    p.add_argument("--no-cross-check", action="store_false", dest="cross_check",
+                   help="Disable JS cross-check")
+    p.add_argument("--verbose", action="store_true", default=True)
+    p.add_argument("--quiet", action="store_false", dest="verbose")
+    args = p.parse_args(argv)
+
+    reader = args.reader_cmd.split()
+    ok = gate(reader, stamp_dir=args.stamp_dir, cross_check=args.cross_check,
+              verbose=args.verbose)
+    sys.exit(0 if ok else 1)

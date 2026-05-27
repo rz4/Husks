@@ -50,3 +50,7 @@ python -m pytest tests/ -v
 ```
 
 A conformant reader must reproduce all positive roots and reject all malformed vectors.
+
+> **Note:** `verify.mjs` enforces a 10 MB file-size limit on `.husk` input. Files
+> exceeding this limit are rejected with a non-zero exit code. This prevents the
+> reader from hanging or consuming excessive memory on malformed/oversized input.

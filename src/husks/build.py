@@ -187,8 +187,20 @@ class Stop(Exception):
 # ── Site helpers ──────────────────────────────────────────────────
 
 def site_path(S: Store, name: str) -> str:
-    """Resolve *name* relative to the site directory."""
-    return str(Path(S["site"]) / name)
+    """Resolve *name* relative to the site directory.
+
+    Raises ValueError if the resolved path escapes the site root
+    (e.g. via ``..`` components or absolute paths).  Symlinked imports
+    (registered as read-only dirs) are permitted to resolve outside.
+    """
+    site = Path(S["site"]).resolve()
+    target = (site / name).resolve()
+    if not target.is_relative_to(site):
+        # Allow paths that resolve into registered read-only dirs (imports)
+        readonly_dirs = S.get("readonly-dirs", [])
+        if not any(target.is_relative_to(Path(rd).resolve()) for rd in readonly_dirs):
+            raise ValueError(f"path escapes site: {name}")
+    return str(target)
 
 
 def ensure_dir(p: str) -> str:
@@ -288,6 +300,15 @@ def _pred_identity(predicate: Callable) -> str:
     return _fn_behavior_digest(predicate)
 
 
+# ── Verdict policies ──────────────────────────────────────────────
+
+# Registry of named built-in verdict policies for trial recipes.
+# The name is included in the recipe CSE form so that changing the
+# verdict changes the recipe digest.
+VERDICT_POLICIES: dict[str, Callable] = {}
+# Populated after first_valid is defined (see below).
+
+
 # ── Recipe → CSE ──────────────────────────────────────────────────
 
 def recipe_to_cse(recipe: Recipe) -> CseValue:
@@ -325,7 +346,14 @@ def recipe_to_cse(recipe: Recipe) -> CseValue:
             str(recipe.get("fuel", 8)).encode(),
         ]
     if kind == "trial":
-        return [b"trial"] + [recipe_to_cse(b) for b in recipe["branches"]]
+        verdict = recipe.get("verdict")
+        if verdict is None or verdict is first_valid:
+            policy_name = b"first-valid"
+        elif isinstance(verdict, str) and verdict in VERDICT_POLICIES:
+            policy_name = verdict.encode()
+        else:
+            policy_name = b"custom:" + _fn_behavior_digest(verdict).encode()
+        return [b"trial", policy_name] + [recipe_to_cse(b) for b in recipe["branches"]]
     return NIL
 
 
@@ -412,6 +440,15 @@ def freshness_check(
     if cur_rd != prior.get("recipe_digest", ""):
         return "recipe changed"
 
+    # Output hash comparison (tamper detection)
+    prior_outputs: dict[str, str] = prior.get("outputs", {})
+    if prior_outputs:
+        for o in sorted(outputs):
+            cur_hash = file_sig(site_path(S, o)).decode()
+            old_hash = prior_outputs.get(o, "")
+            if cur_hash != old_hash:
+                return f"{o} tampered"
+
     return None
 
 
@@ -420,20 +457,25 @@ def write_seal(
     rule_name: str,
     inputs: list[str],
     recipe: Recipe,
+    outputs: list[str] | None = None,
 ) -> None:
-    """Write the v1 seal: CSE seal + recipe digest + per-input hashes."""
+    """Write the v1 seal: CSE seal + recipe digest + per-input/output hashes."""
     seal = compute_cse_seal(S, inputs, recipe)
     recipe_form = recipe_to_cse(recipe)
     rd = recipe_digest(recipe_form)
     input_sigs = {
         i: file_sig(site_path(S, i)).decode() for i in sorted(inputs)
     }
+    seal_data: dict[str, Any] = {
+        "v": 1, "seal": seal, "recipe_digest": rd, "inputs": input_sigs,
+    }
+    if outputs is not None:
+        seal_data["outputs"] = {
+            o: file_sig(site_path(S, o)).decode() for o in sorted(outputs)
+        }
     write_text(
         seal_file(S, rule_name),
-        json.dumps(
-            {"v": 1, "seal": seal, "recipe_digest": rd, "inputs": input_sigs},
-            indent=2,
-        ),
+        json.dumps(seal_data, indent=2),
     )
 
 
@@ -667,7 +709,7 @@ def eval_rule(S: Store, node: Node) -> None:
         # Oracle outputs must additionally be nonempty.
         _check_declared_outputs(S, name, outputs, recipe)
 
-        write_seal(S, name, inputs, recipe)
+        write_seal(S, name, inputs, recipe, outputs=outputs)
 
         fuel_consumed = 1
         if usage and usage.get("fuel_steps", 0):
@@ -774,6 +816,10 @@ def first_valid(results: list[dict[str, Any]]) -> dict[str, Any]:
     return {"winner": valid[0], "scores": scores}
 
 
+# Populate the registry now that first_valid is defined.
+VERDICT_POLICIES["first-valid"] = first_valid
+
+
 def eval_trial(
     S: Store,
     rule_name: str,
@@ -783,6 +829,8 @@ def eval_trial(
     """Evaluate a trial recipe: fork, run branches, verdict, merge."""
     branches = recipe["branches"]
     verdict_fn = recipe.get("verdict") or first_valid
+    if isinstance(verdict_fn, str):
+        verdict_fn = VERDICT_POLICIES[verdict_fn]
     results: list[dict[str, Any]] = []
 
     for branch in branches:
@@ -1013,6 +1061,9 @@ def build(
     """
     if site is None:
         site = f"/tmp/mccarthy-{name}-{str(uuid.uuid4())[:8]}"
+
+    # Clear trace state so sequential in-process builds don't accumulate.
+    T.clear()
 
     S = fresh_store(site, fuel, oracle_backend=oracle_backend, readonly_dirs=readonly_dirs)
 

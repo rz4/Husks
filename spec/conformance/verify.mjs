@@ -9,8 +9,11 @@
 // Usage: node verify.mjs <husk-file> <site-dir> [expected-root]
 
 import { createHash } from "crypto";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, statSync } from "fs";
 import { join, resolve } from "path";
+
+// ── Bounded read guard ──────────────────────────────────────────
+const MAX_HUSK_BYTES = 10 * 1024 * 1024; // 10 MB
 
 // ── CSE codec ────────────────────────────────────────────────────
 
@@ -117,7 +120,13 @@ if (!huskPath || !siteDir) {
   process.exit(1);
 }
 
-const husk = readFileSync(resolve(huskPath));
+const huskResolved = resolve(huskPath);
+const huskSize = statSync(huskResolved).size;
+if (huskSize > MAX_HUSK_BYTES) {
+  console.error(`error: husk file too large (${huskSize} bytes, max ${MAX_HUSK_BYTES})`);
+  process.exit(1);
+}
+const husk = readFileSync(huskResolved);
 const root = recomputeRoot(husk, resolve(siteDir));
 
 console.log(root);

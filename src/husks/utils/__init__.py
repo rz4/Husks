@@ -48,9 +48,13 @@ trace.add_listener(Console())
 
 
 def reset() -> None:
-    """Reset the default trace and re-attach the console listener."""
-    global trace
-    trace = BuildTrace()
+    """Reset the default trace in place and re-attach the console listener.
+
+    Mutates the existing ``trace`` instance so that aliases created via
+    ``from husks.utils import trace as T`` remain valid after reset.
+    """
+    trace.clear()
+    trace.clear_listeners()
     trace.add_listener(Console())
 
 

@@ -126,6 +126,29 @@ class BuildTrace:
         """Remove a previously registered listener."""
         self._listeners = [l for l in self._listeners if l is not listener]
 
+    def clear_listeners(self) -> None:
+        """Remove all registered listeners."""
+        self._listeners.clear()
+
+    # -- State management -----------------------------------------------------
+
+    def clear(self) -> None:
+        """Reset internal state while preserving listener registrations.
+
+        This mutates the existing instance in place so that aliases
+        (``from husks.utils import trace as T``) stay valid after a reset.
+        """
+        self._events.clear()
+        self._build_name = ""
+        self._build_fuel = 0
+        self._build_t0 = 0.0
+        self._rule_timers.clear()
+        self._rule_stack.clear()
+        self._node_events.clear()
+        self._oracle_events.clear()
+        self._tool_events.clear()
+        self._artifacts.clear()
+
     # -- Internal -------------------------------------------------------------
 
     def _emit(self, event: dict[str, Any]) -> None:

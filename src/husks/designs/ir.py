@@ -130,6 +130,16 @@ from typing import Any, Callable
 
 Design = dict[str, Any]
 
+
+def _validate_path(name: str) -> str | None:
+    """Return an error string if *name* is an unsafe relative path, else None."""
+    if os.path.isabs(name):
+        return f"path must be relative, got absolute: {name}"
+    parts = Path(name).parts
+    if ".." in parts:
+        return f"path contains '..': {name}"
+    return None
+
 # All valid rule kinds in the Husks calculus.
 _RULE_KINDS = frozenset({"action", "oracle", "trial", "commit", "halt", "let", "cond"})
 
@@ -158,7 +168,10 @@ def _resolve_targets(design: Design) -> list[str] | None:
             return [val]
         return list(val)
     if "target" in design:
-        return [design["target"]]
+        val = design["target"]
+        if isinstance(val, list):
+            return list(val)  # tolerate list in "target" key
+        return [val]
     return None
 
 
@@ -209,12 +222,18 @@ def check(design: Design) -> list[str]:
             if not outputs:
                 errors.append(f"{tag}: no declared outputs")
             for o in outputs:
+                path_err = _validate_path(o)
+                if path_err:
+                    errors.append(f"{tag}: output {path_err}")
                 if o in produced:
                     errors.append(f"{tag}: output '{o}' already produced by another rule")
                 produced.add(o)
 
             # inputs available
             for inp in r.get("inputs", []):
+                path_err = _validate_path(inp)
+                if path_err:
+                    errors.append(f"{tag}: input {path_err}")
                 if inp not in produced:
                     errors.append(f"{tag}: input '{inp}' not produced by any prior rule")
 
@@ -231,6 +250,10 @@ def check(design: Design) -> list[str]:
             branches = r.get("branches", [])
             if not branches:
                 errors.append(f"{tag}: trial has no branches")
+            verdict = r.get("verdict")
+            if verdict is not None:
+                if not callable(verdict) and not isinstance(verdict, str):
+                    errors.append(f"{tag}: verdict must be a callable or a policy name string")
 
         # ── commit-specific ──
         if kind == "commit":

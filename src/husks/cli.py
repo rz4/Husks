@@ -119,6 +119,11 @@ def main():
                 overrides["oracle_backend"] = live_oracle
             overrides["oracle_model"] = args.model
 
+        # Suppress console trace when outputting JSON to keep stdout clean.
+        if args.json_output:
+            from husks.utils import trace as T_pre
+            T_pre.clear_listeners()
+
         S = run(design, **overrides)
 
         # Build Report

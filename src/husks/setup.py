@@ -33,9 +33,10 @@ graph, then check, show, and run it.
 - On `run`: the CLI prints a structured Report (status, root, fuel, cost, delta,
   per-node table, diagnosis). Use `--json` for machine-readable output.
 
-## Two forms only
-- Use `action` (deterministic) and `oracle` (one bounded model call). Nothing else.
-- Do **not** emit `let`, `cond`, or `trial` — the JSON IR does not compile them.
+## Two forms to start
+- Use `action` (deterministic) and `oracle` (one bounded model call).
+- The JSON IR also supports `let`, `cond`, and `trial`, but start with
+  `action` + `oracle` until the simpler forms are routine.
 
 ## Recipes must be portable
 The `.husk` is permanent and meant to verify and re-run anywhere. Action `run`
@@ -92,6 +93,12 @@ def _resolve_conformance(override=None) -> Path:
         return conformance_dir()
     except (ImportError, FileNotFoundError):
         pass
+
+    # 3.5. Bundled in wheel (force-included by pyproject.toml)
+    _PKG = Path(__file__).resolve().parent
+    bundled = _PKG / "_resources" / "conformance"
+    if bundled.exists():
+        return bundled
 
     # 4. Repo-relative fallback
     repo = Path(__file__).resolve().parent.parents[1]  # src/husks -> src -> repo

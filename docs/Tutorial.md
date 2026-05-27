@@ -46,17 +46,21 @@ Into a virtual environment, straight from GitHub:
 python -m venv .venv
 source .venv/bin/activate
 pip install -U pip                                          # PEP 508 direct refs
-pip install "husks[llm] @ git+https://github.com/rz4/Husks.git"
+pip install "husks @ git+https://github.com/rz4/Husks.git"
 ```
 
-That's the whole install. The wheel ships everything the CLI needs — the engine
-(including its Hy modules), the conformance vectors, and the skill — so `run`,
-`check`, `selftest`, and `init` all work from a plain non-editable install. Drop
-the `[llm]` extra if you only intend to use `--stub` (it pulls in `litellm` for
-live oracle calls).
+That's the whole install. The wheel ships everything the CLI needs — the engine,
+the conformance vectors, the skill, and `litellm` for live oracle calls — so
+`run`, `check`, `selftest`, and `init` all work from a plain non-editable
+install.
+
+> **Hy backend (experimental).** The `--hy` flag activates the original Hy
+> kernel backend. This requires `pip install hy` and a source checkout with `.hy`
+> design files. The CLI currently only loads JSON designs; Hy design loading is
+> experimental and may not work end-to-end from the CLI.
 
 > **Contributing to Husks itself?** Use an editable checkout instead —
-> `git clone …` then `pip install -e ".[llm]"`. Both install modes are fully
+> `git clone …` then `pip install -e .`. Both install modes are fully
 > supported; the editable one just lets you hack on the engine in place.
 
 ---
@@ -130,8 +134,9 @@ real runs get encoded. The current stance:
 - **Design first.** Write `design.json` before exploring or running anything.
 - **Check, show, wait.** `check` then `show` the graph; wait for your approval
   before `run`. Stub-first when the shape is new.
-- **Two forms only.** `action` (deterministic) and `oracle` (one bounded model
-  call). No `let`/`cond`/`trial` — the JSON IR doesn't compile them.
+- **Two forms to start.** `action` (deterministic) and `oracle` (one bounded
+  model call). The JSON IR also supports `let`, `cond`, and `trial`, but start
+  with `action` + `oracle` until the simpler forms are routine.
 - **Recipes must be portable.** No absolute paths (a leaked `/home/<user>/…` path
   lives in the seal forever), and no `source .../activate` inside a `run` — the
   build already runs in your environment, and `source` is non-portable under
@@ -226,8 +231,9 @@ print(recompute_root(husk, site))
 
 You don't have to police all of this by hand — `check` and the runtime do:
 
-- **Fuel is a real budget.** Each oracle has a local cap; the build has a global
-  one; total oracle fuel can't exceed it. `check` rejects a design that overspends.
+- **Fuel is a real budget.** Each stale rule that fires costs one unit of global
+  fuel. Each oracle also has a local fuel cap that bounds its agentic steps.
+  `check` rejects a design whose total oracle fuel exceeds the global budget.
 - **Actions halt on failure.** A nonzero `run` raises and halts the build, so a
   failing validator stops the build before the terminal rule fires.
 - **Empty oracle outputs halt.** An oracle that produces a missing or zero-byte
@@ -244,13 +250,13 @@ You don't have to police all of this by hand — `check` and the runtime do:
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
 | `pip install "husks @ git+…"` rejects the spec | old pip without PEP 508 direct-reference support | `pip install -U pip`, retry |
-| `No module named litellm` on a live run | installed without the extra | reinstall with the `[llm]` extra |
+| `No module named litellm` on a live run | corrupted or partial install | reinstall: `pip install "husks @ git+…"` |
 | `AuthenticationError` / 401 from the oracle | no key in env | fill `.env`, then `set -a && source .env` |
 | Claude Code doesn't use Husks | skill not loaded | `claude doctor`; confirm `.claude/skills/husks/SKILL.md` exists; restart session |
 | Skill seems out of date after upgrading Husks | non-editable install copies the skill | `husks init --force` to refresh it |
 | `check` rejects the design | missing `target`/output, oracle fuel/tools, or undeclared input | read the error; the skill repairs and re-checks |
 | Build halts on "empty or missing output" | an oracle wrote nothing or a 0-byte file | refine the oracle prompt; this guard is working as intended |
-| Design uses `let`/`cond`/`trial` | JSON IR can't lower them | constrain to `action`+`oracle` (the CLAUDE.md already says so) |
+| Design uses `let`/`cond`/`trial` unexpectedly | advanced forms need care | start with `action`+`oracle`; use advanced forms only when needed |
 
 ---
 
