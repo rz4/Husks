@@ -46,13 +46,13 @@ Into a virtual environment, straight from GitHub:
 python -m venv .venv
 source .venv/bin/activate
 pip install -U pip                                          # PEP 508 direct refs
-pip install "husks @ git+https://github.com/rz4/Husks.git"
+pip install "husks[llm] @ git+https://github.com/rz4/Husks.git"
 ```
 
-That's the whole install. The wheel ships everything the CLI needs — the engine,
-the conformance vectors, the skill, and `litellm` for live oracle calls — so
-`run`, `check`, `selftest`, and `init` all work from a plain non-editable
-install.
+That's the whole install. The `[llm]` extra pulls in `litellm` for live oracle
+calls. Without it, `check`, `selftest`, `init`, and `--stub` runs still work —
+only live oracle execution requires `litellm`. The wheel also ships the
+conformance vectors and the skill.
 
 > **Hy backend (experimental).** The `--hy` flag activates the original Hy
 > kernel backend. This requires `pip install hy` and a source checkout with `.hy`
@@ -60,7 +60,7 @@ install.
 > experimental and may not work end-to-end from the CLI.
 
 > **Contributing to Husks itself?** Use an editable checkout instead —
-> `git clone …` then `pip install -e .`. Both install modes are fully
+> `git clone …` then `pip install -e ".[llm]"`. Both install modes are fully
 > supported; the editable one just lets you hack on the engine in place.
 
 ---
@@ -250,7 +250,7 @@ You don't have to police all of this by hand — `check` and the runtime do:
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
 | `pip install "husks @ git+…"` rejects the spec | old pip without PEP 508 direct-reference support | `pip install -U pip`, retry |
-| `No module named litellm` on a live run | corrupted or partial install | reinstall: `pip install "husks @ git+…"` |
+| `No module named litellm` on a live run | installed without the `[llm]` extra | reinstall with `pip install "husks[llm] @ git+…"` |
 | `AuthenticationError` / 401 from the oracle | no key in env | fill `.env`, then `set -a && source .env` |
 | Claude Code doesn't use Husks | skill not loaded | `claude doctor`; confirm `.claude/skills/husks/SKILL.md` exists; restart session |
 | Skill seems out of date after upgrading Husks | non-editable install copies the skill | `husks init --force` to refresh it |

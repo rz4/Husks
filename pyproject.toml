@@ -17,8 +17,7 @@ hy = ["hy>=1.0.0"]
 
 [project.scripts]
 husks = "husks.cli:main"
-# husks-gate lives in the conformance package (spec/conformance_pkg),
-# not the main wheel.  Install husks-conformance separately for the gate.
+husks-gate = "husks.gate:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/husks"]

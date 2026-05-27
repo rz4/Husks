@@ -206,3 +206,7 @@ def main(argv=None):
     ok = gate(reader, stamp_dir=args.stamp_dir, cross_check=args.cross_check,
               verbose=args.verbose)
     sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()

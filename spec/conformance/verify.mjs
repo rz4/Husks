@@ -107,7 +107,9 @@ function computeNode(node, version, sitedir) {
 }
 
 function recomputeRoot(huskBuf, sitedir) {
-  const [tree] = parse(huskBuf);
+  const [tree, next] = parse(huskBuf);
+  if (next !== huskBuf.length)
+    throw new Error(`trailing data at offset ${next} (${huskBuf.length - next} bytes)`);
   const version = tree[1];          // husk → version
   const build   = tree[2];          // husk → build
   const targets = build.slice(3);   // all target nodes
