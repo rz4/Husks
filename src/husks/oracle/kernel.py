@@ -340,7 +340,16 @@ def step(
         if kind == "acts":
             calls = form.get("calls", [])
             results = []
-            for cd in calls:
+            for i, cd in enumerate(calls):
+                if fuel <= 0:
+                    # Partial batch: record what ran so far
+                    C = _rebind(C, {
+                        "form": form,
+                        "calls": calls[:i],
+                        "results": results,
+                    })
+                    return {"type": "halt", "C": C, "fuel_steps": fuel_used}
+
                 name = cd["tool"]
                 args = cd.get("args", {})
 

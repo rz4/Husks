@@ -41,6 +41,8 @@ def main():
                    help="Use original Hy kernel backend instead of Python")
     r.add_argument("--json", action="store_true", dest="json_output",
                    help="Output full Report as JSON instead of text")
+    r.add_argument("--soft-fail", action="store_true",
+                   help="Exit 0 even when the build halts")
 
     # selftest
     st = sub.add_parser("selftest", help="Verify engine against frozen conformance vectors")
@@ -129,6 +131,9 @@ def main():
             print(render_json(report))
         else:
             print(render_text(report))
+
+        if S.get("status") == "halted" and not args.soft_fail:
+            sys.exit(1)
 
     elif args.cmd == "history":
         site = args.site or design.get("site")

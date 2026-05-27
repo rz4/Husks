@@ -531,6 +531,31 @@ def halt(reason: str) -> Node:
     return {"type": "halt", "reason": reason}
 
 
+# ── Output guard ──────────────────────────────────────────────────
+
+def _check_declared_outputs(
+    S: Store,
+    rule_name: str,
+    outputs: list[str],
+    recipe: Recipe,
+) -> None:
+    """Guard: all declared outputs must exist; oracle outputs must be nonempty.
+
+    Raises RuntimeError if the guard fails — preventing the rule from sealing.
+    """
+    require_nonempty = recipe is not None and recipe.get("type") == "oracle"
+    for o in outputs:
+        op = Path(site_path(S, o))
+        if not op.exists():
+            raise RuntimeError(
+                f"rule '{rule_name}' did not produce declared output: {o}"
+            )
+        if require_nonempty and op.stat().st_size == 0:
+            raise RuntimeError(
+                f"oracle '{rule_name}' produced empty output: {o}"
+            )
+
+
 # ── Evaluator ─────────────────────────────────────────────────────
 
 def eval_node(S: Store, node: Node) -> None:
@@ -598,14 +623,9 @@ def eval_rule(S: Store, node: Node) -> None:
     try:
         usage = eval_recipe(S, name, recipe, inputs, outputs)
 
-        # Oracle output guard: missing or zero-byte outputs must halt
-        if recipe and recipe.get("type") == "oracle":
-            for o in outputs:
-                op = Path(site_path(S, o))
-                if not op.exists() or op.stat().st_size == 0:
-                    raise RuntimeError(
-                        f"oracle '{name}' produced empty or missing output: {o}"
-                    )
+        # Output guard: all recipe types require declared outputs to exist.
+        # Oracle outputs must additionally be nonempty.
+        _check_declared_outputs(S, name, outputs, recipe)
 
         write_seal(S, name, inputs, recipe)
 
@@ -724,18 +744,20 @@ def eval_trial(
     branches = recipe["branches"]
     verdict_fn = recipe.get("verdict") or first_valid
     results: list[dict[str, Any]] = []
-    fuel_spent = 0
-    remaining = S["fuel"]
 
     for branch in branches:
-        if remaining <= 0:
+        if S["fuel"] <= 0:
             break
         bname: str = branch.get("name") or f"branch-{len(results)}"
+
+        # Charge 1 global fuel per branch fired
+        burn(S, f"{rule_name}:{bname}")
+
         tmp = tempfile.mkdtemp(prefix=f"trial-{bname}-")
         t0 = time.time()
         try:
             shutil.copytree(S["site"], tmp, dirs_exist_ok=True)
-            BS = fresh_store(tmp, remaining, oracle_backend=S.get("oracle-backend"))
+            BS = fresh_store(tmp, S["fuel"], oracle_backend=S.get("oracle-backend"))
 
             # Fire branch
             eval_recipe(BS, bname, branch, [], outputs)
@@ -747,10 +769,6 @@ def eval_trial(
                 op = site_path(BS, o)
                 if file_exists(op):
                     out_data[o] = read_text(op)
-
-            branch_spend = remaining - BS["fuel"]
-            fuel_spent += branch_spend
-            remaining -= branch_spend
 
             # Collect oracle cost for this branch from trace state
             branch_cost = sum(
@@ -774,9 +792,6 @@ def eval_trial(
             results.append({"name": bname, "error": str(e), "outputs": {}})
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-
-    # Charge fuel
-    S["fuel"] -= fuel_spent
 
     # Verdict (supports both legacy and dict protocol)
     vresult = verdict_fn(results)
