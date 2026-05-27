@@ -6,83 +6,184 @@
 
 **Build Husks, not vibes.**
 
-Husks is a small build system for work that may include model calls.
+A model call is an opaque event. By the time you look at it, the event is over and what you hold is its residue. Husks treats that as the only thing worth verifying.
 
-A Husks design declares rules, inputs, outputs, and a fuel budget. Husks runs the rules, writes artifacts into a site directory, seals each rule by content hash, and reuses work when the residue is unchanged.
+A *design* is a contract you write before any model runs: inputs, outputs, prompts, tools, fuel. The whole graph, on disk, in JSON. The engine walks it, fires only what is stale, seals what is fresh, reuses what is already sealed, and prints exactly what happened. Sealed residue keys on what was asked, not who answered, so a husk built today must verify identically against a reader written long after this engine is gone.
 
-Use Husks when you want an agent or model to produce files, but you still want ordinary build-system properties: declared outputs, repeatable checks, traceable history, and a root that can be recomputed later.
+An ordinary build system gives you declared outputs, content-addressed reuse, and a verifiable root. Husks gives you the same thing, pointed at work that includes nondeterministic model calls. Nondeterminism has exactly one home: the `oracle` form. The rest is structure.
+
+For the long version, see [`docs/Theory.md`](docs/Theory.md). For driving Husks from Claude Code, see [`docs/Tutorial.md`](docs/Tutorial.md).
+
+---
 
 ## Install
 
-Clone the repo and install the base package:
+Into a virtual environment, straight from GitHub:
 
 ```bash
-git clone https://github.com/rz4/Husks.git
-cd Husks
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -U pip
+pip install "husks[llm] @ git+https://github.com/rz4/Husks.git"
 ```
 
-The base install supports `check`, `show`, `run --stub`, `history`, `selftest`, and `husks-gate`.
+That is the whole install. The `[llm]` extra pulls in `litellm` for live oracle calls. Without it, `check`, `selftest`, `init`, and `--stub` runs still work. Only live oracle execution needs `litellm`.
 
-For live model calls, install the LLM extra:
+For engine-level work (the Hy kernel backend, lower-level kernel hacking), add the `[hy]` extra:
 
 ```bash
-pip install -e ".[llm]"
+pip install "husks[llm,hy] @ git+https://github.com/rz4/Husks.git"
 ```
 
-Husks uses LiteLLM for live oracles. The default model is Anthropic, so a typical setup is:
+To hack on the engine itself, clone instead and `pip install -e ".[llm,hy]"`.
+
+Live oracles default to Anthropic. Export a key for live runs:
 
 ```bash
 export ANTHROPIC_API_KEY=...
 ```
 
-You can also pass another LiteLLM model name with `--model`.
+Any other LiteLLM model name works via `--model`.
 
-## First run
+---
 
-Validate the demo design:
+## Verify your install
+
+```bash
+husks doctor
+```
+
+Expected with `[llm,hy]` installed and `ANTHROPIC_API_KEY` set:
+
+```text
+  ✓ husks                importable
+  ✓ conformance          6 vectors at .../spec/conformance
+  ✓ selftest             pass
+  ✓ hy                   importable
+  ✓ litellm              importable
+  ✓ ANTHROPIC_API_KEY    set
+  ✓ git                  found
+  ✓ node                 found
+```
+
+A `✗` on `litellm` means `--stub` runs work but live oracles will fail. A `○` on `hy` means the Hy kernel backend is unavailable (optional unless you're hacking on the engine). A `○` on `ANTHROPIC_API_KEY` only matters for live runs; the rest of the system runs without it.
+
+To confirm the engine reproduces its frozen roots:
+
+```bash
+husks selftest
+```
+
+Expected:
+
+```text
+  adversarial                PASS  5382838c381fc9d0...
+  demo                       PASS  9977239d5eb0131a...
+  malformed-leadingzero      PASS  correctly rejected
+  malformed-trailing         PASS  correctly rejected
+  malformed-truncated        PASS  correctly rejected
+  unsorted                   PASS  4f119edd838718ab...
+```
+
+This recomputes the frozen conformance roots with the bundled Python reader and confirms the malformed vectors are correctly rejected. If anything here is not green, stop. Permanence is what the rest rests on.
+
+To confirm live oracles fire, run the demo without `--stub` once a key is set:
+
+```bash
+husks run examples/husks-demo.design.json --site /tmp/husks-demo-live
+```
+
+The oracle should fire `claude-haiku-4-5`, write the declared outputs, the action should verify them, and the build should commit with a nonzero dollar cost reported. A second run on the same site reuses every seal and reports `$0.0000`.
+
+---
+
+## The development cycle of a design
+
+The demo design walks the full loop. Clear the site so the example is reproducible:
+
+```bash
+rm -rf /tmp/husks-demo
+```
+
+### 1. Author
+
+A design is JSON. Two rules: an `oracle` that scaffolds a tiny Python package, an `action` that marks completion.
+
+```json
+{
+  "name": "husks-demo",
+  "fuel": 30,
+  "target": "package-complete",
+  "rules": [
+    {
+      "name": "scaffold-package",
+      "kind": "oracle",
+      "inputs": [],
+      "outputs": ["husks-demo/pyproject.toml", "husks-demo/src/husks_demo/cli.py"],
+      "prompt": "Create a minimal Python package called husks-demo: a pyproject.toml and src/husks_demo/cli.py exposing a main() entry point that prints a greeting.",
+      "tools": ["read-file", "write-file"],
+      "fuel": 8
+    },
+    {
+      "name": "package-complete",
+      "kind": "action",
+      "inputs": ["husks-demo/pyproject.toml", "husks-demo/src/husks_demo/cli.py"],
+      "outputs": [".complete"]
+    }
+  ]
+}
+```
+
+This file is the contract. Read it before anything runs.
+
+### 2. Check
 
 ```bash
 husks check examples/husks-demo.design.json
 ```
 
-Run it with the stub oracle. This does not call a model:
+```text
+  ✓ syntax
+  ✓ names
+  ✓ paths
+  ✓ inputs
+  ✓ outputs
+  ✓ fuel
+  ✓ targets
+  ✓ imports
+  ✓ other
+```
+
+`check` validates the design statically. Add `--verbose` to print the compiled graph, or `husks graph design.json` to render the dependency DAG in `text`, `mermaid`, `dot`, or `json`.
+
+### 3. Stub run
 
 ```bash
 husks run examples/husks-demo.design.json --site /tmp/husks-demo --stub
 ```
 
-Run it again:
+```text
+  ✓ scaffold-package  (oracle)  $0.0000
+  ✓ package-complete  (action)
 
-```bash
-husks run examples/husks-demo.design.json --site /tmp/husks-demo --stub
+  committed  root 511c1b7e25  fuel 28/30  $0.0000
 ```
 
-On the second run, Husks should reuse sealed work instead of rebuilding unchanged artifacts.
+`--stub` runs the graph without firing a model. Oracles write placeholder bytes. This confirms the shape executes, seals are written, the target is reached. Use it whenever the graph itself is new.
 
-Inspect convergence history:
+### 4. Live run
 
-```bash
-husks history examples/husks-demo.design.json --site /tmp/husks-demo
-```
-
-For machine-readable output:
+Drop `--stub`:
 
 ```bash
-husks run examples/husks-demo.design.json --site /tmp/husks-demo --stub --json
+husks run examples/husks-demo.design.json --site /tmp/husks-demo
 ```
 
-## What Husks writes
-
-A run writes into a site directory. The site contains the artifacts declared by the design, plus Husks metadata.
-
-Typical outputs look like this:
+The oracle fires, the action verifies, the build commits. Each rule writes a seal under `.traces/`. The site now contains:
 
 ```text
 /tmp/husks-demo/
-  husks-demo.husk
+  husks-demo.husk          # serialized residue (Merkle DAG)
   .traces/
     scaffold-package.seal
     scaffold-package.history.jsonl
@@ -94,60 +195,128 @@ Typical outputs look like this:
   .complete
 ```
 
-The `.husk` file is the serialized build residue. The `.traces` directory records seals and per-rule history. A seal includes recipe identity, input hashes, and output hashes. If an output is changed by hand, the next run treats the rule as stale.
+### 5. Reuse
 
-## Design files
-
-A design is a JSON file. Most user designs start with two rule kinds:
-
-`oracle` asks a model or stub backend to produce files.
-
-`action` runs deterministic local work, such as tests, formatters, validators, or packaging commands.
-
-Example:
-
-```json
-{
-  "name": "hello-husks",
-  "fuel": 10,
-  "target": "verify",
-  "rules": [
-    {
-      "name": "write-program",
-      "kind": "oracle",
-      "inputs": [],
-      "outputs": ["hello.py"],
-      "prompt": "Write hello.py. It should print hello from husks.",
-      "tools": ["write-file"],
-      "fuel": 4
-    },
-    {
-      "name": "verify",
-      "kind": "action",
-      "inputs": ["hello.py"],
-      "outputs": ["test-output.txt"],
-      "run": "python hello.py > test-output.txt"
-    }
-  ]
-}
-```
-
-Run it with:
+Run it again:
 
 ```bash
-husks check design.json
-husks run design.json --site /tmp/hello-husks --stub
+husks run examples/husks-demo.design.json --site /tmp/husks-demo
 ```
 
-For a live model run:
+```text
+  ● scaffold-package  (oracle)
+  ● package-complete  (action)
+
+  committed  root 511c1b7e25  fuel 30/30  $0.0000
+```
+
+Filled dots mean reuse. Nothing fired. Sealed residue is never regenerated, which makes reruns nearly free.
+
+### 6. Read the state of the site
 
 ```bash
-husks run design.json --site /tmp/hello-husks --model anthropic/claude-haiku-4-5-20251001
+husks status examples/husks-demo.design.json --site /tmp/husks-demo
 ```
+
+```text
+  site: /tmp/husks-demo
+  root: 511c1b7e25c5facd...
+  rules:
+    ✓ package-complete     fresh
+    ✓ scaffold-package     fresh
+  artifacts:
+    ✓ .complete                fresh
+    ✓ husks-demo/pyproject.toml fresh
+    ✓ husks-demo/src/husks_demo/cli.py fresh
+```
+
+Now edit an output by hand. The seal records what was produced; edit the file, and the rule goes dirty:
+
+```bash
+echo "# tampered" >> /tmp/husks-demo/husks-demo/pyproject.toml
+husks status examples/husks-demo.design.json --site /tmp/husks-demo
+```
+
+```text
+  rules:
+    ▸ package-complete     stale  (input_changed:husks-demo/pyproject.toml)
+    ! scaffold-package     dirty  (output_hash_changed:husks-demo/pyproject.toml)
+  artifacts:
+    ✓ .complete                fresh
+    ! husks-demo/pyproject.toml modified
+    ✓ husks-demo/src/husks_demo/cli.py fresh
+```
+
+`husks diff` shows the exact hashes:
+
+```bash
+husks diff examples/husks-demo.design.json --site /tmp/husks-demo
+```
+
+```text
+  modified:
+    husks-demo/pyproject.toml 45ddb7152d -> 301e1723d8
+```
+
+`husks explain` dumps a rule's seal and state:
+
+```bash
+husks explain scaffold-package --site /tmp/husks-demo
+```
+
+```text
+  rule: scaffold-package  (oracle)
+  state: dirty  (output_hash_changed:husks-demo/pyproject.toml)
+  outputs: husks-demo/pyproject.toml, husks-demo/src/husks_demo/cli.py
+  seal:    898a9384efb9e9f2...
+  history: 1 runs
+```
+
+Re-run the build and the dirty rule re-fires; the action downstream re-runs because its input changed.
+
+### 7. Iterate
+
+Designs are not written once. They are *worked*. You perturb a prompt, run again, read the trace, decide whether the change helped, pin what works, perturb the next thing. `husks history` classifies how each node has moved across runs:
+
+```bash
+husks history examples/husks-demo.design.json --site /tmp/husks-demo
+```
+
+```text
+  convergence history summary
+  scaffold-package         1 runs  converging
+  package-complete         1 runs  converging
+```
+
+The classifier reports four trends, and they mean different things:
+
+- **converging**: fuel falling or flat, prompt flat. The node is settling toward its minimal form. Honest progress.
+- **prompt-loading**: fuel falling, prompt *rising*. The alarm. You are hand-migrating the determined part of the work into the prompt and then paying the oracle to read your own work back. The cost did not leave; it moved from the API bill to your hands.
+- **stable**: output hashes identical across runs. The specimen is fixed.
+- **volatile**: no settled trend. Not converged.
+
+### 8. Extract
+
+The end state of a converged node is to stop being an oracle. An oracle whose output is fixed by its inputs is not an oracle. It is transcription, and transcription is a deterministic `action` you have not extracted yet. When `history` reports `stable`, rewrite the rule as an `action` and stop paying an API call to interpret a function you have already written.
+
+That is the cycle. Author the contract, check, dry-run, fire, read, iterate, extract. Across revisions, the fixed point you are working toward is the maximal deterministic skeleton with the smallest residue of oracles naming the parts you have not yet reduced.
+
+---
+
+## Driving Husks from Claude Code
+
+`husks init` wires a project so Claude Code authors *designs* instead of running an unbounded agent loop:
+
+```bash
+cd /path/to/your-project
+husks init
+```
+
+It runs `selftest`, checks for `ANTHROPIC_API_KEY`, installs the Husks skill at `.claude/skills/husks`, and emits a `CLAUDE.md` stance file versioned with the engine. From there, Claude Code reads the skill, writes `design.json`, runs `check`, and waits for your approval before any oracle fires. Full walkthrough: [`docs/Tutorial.md`](docs/Tutorial.md).
+
+---
 
 ## Rule kinds
-
-The JSON design language supports the full Husks build form.
 
 | Kind | Use |
 | :--- | :--- |
@@ -159,175 +328,98 @@ The JSON design language supports the full Husks build form.
 | `commit` | Stop successfully with a value. |
 | `halt` | Stop with a failure reason. |
 
-You usually do not need all of these. Start with `action` and `oracle`. Add the other forms when the graph shape requires them.
+Start with `action` and `oracle`. Add the others when the graph shape requires them.
 
 ## Fuel
 
-Every design has a top-level `fuel` budget. Oracle rules also declare local fuel.
-
-```json
-{
-  "name": "write-docs",
-  "kind": "oracle",
-  "inputs": ["spec.md"],
-  "outputs": ["README.md"],
-  "prompt": "Write a user README from spec.md.",
-  "tools": ["read-file", "write-file"],
-  "fuel": 6
-}
-```
-
-Top-level fuel bounds the build. Oracle fuel bounds the local model/tool loop for that oracle. `husks check` rejects designs whose declared oracle budgets exceed the top-level budget.
+Every design has a top-level `fuel` budget. Oracle rules also declare local fuel. Top-level fuel bounds the build. Oracle fuel bounds the local model/tool loop for that oracle. `husks check` rejects designs whose declared oracle budgets exceed the top-level budget. There are no unbounded loops to wait out.
 
 ## Commands
 
-```bash
-husks check design.json
+```text
+husks check    design.json               validate; --verbose prints compiled graph
+husks run      design.json --site DIR    check, compile, execute
+husks status                --site DIR   freshness state of a built site
+husks diff                  --site DIR   differences between sealed and current artifacts
+husks explain  SUBJECT      --site DIR   explain a rule or artifact
+husks graph    design.json               render dependency graph (text|mermaid|dot|json)
+husks history  design.json  --site DIR   per-rule convergence history
+husks selftest                           recompute frozen conformance roots
+husks doctor                             environment and dependency check
+husks init                               wire a project for Claude Code
+husks gate     "READER_CMD" --stamp-dir DIR  run conformance gate on an external CSE reader
 ```
 
-Validate a design.
+`husks-gate` is also available as a standalone entry point. Add `--json` to most commands for machine-readable output.
 
-```bash
-husks show design.json
-```
+---
 
-Print the compiled rule structure.
+## Oracles and the rule that matters
 
-```bash
-husks run design.json --site /tmp/site --stub
-```
-
-Run with the stub oracle.
-
-```bash
-husks run design.json --site /tmp/site --model anthropic/claude-haiku-4-5-20251001
-```
-
-Run with a live model.
-
-```bash
-husks history design.json --site /tmp/site
-```
-
-Show per-rule history and convergence summaries.
-
-```bash
-husks selftest
-```
-
-Recompute the shipped conformance vectors with the Python reader.
-
-```bash
-husks-gate "python my_reader.py" --stamp-dir verified
-```
-
-Run the conformance gate against an external CSE reader.
-
-## Live oracles
-
-Live oracles can read and write only through declared tools. Common tools are:
+Live oracles read and write only through declared tools:
 
 ```json
 ["read-file", "write-file", "list-dir", "tree"]
 ```
 
-Use deterministic actions for validation. A useful pattern is:
+Validation is a deterministic `action`, never an oracle. Gate on exit code; a nonzero `run` already halts the build. **Do not let a model grade its own output.** The model produces; the action verifies; the seal records the result only if declared outputs exist and validation succeeds. That separation is the whole point, and the one place a build like this can quietly collapse if you let it.
+
+A useful pattern:
 
 1. An `oracle` writes code or text.
 2. An `action` runs tests, linting, scoring, or another deterministic check.
-3. Husks seals the result only if declared outputs exist and validation succeeds.
+3. Husks seals only if validation passes.
 
-Do not let a model grade its own output. Let the model produce artifacts. Let actions verify them.
+---
 
 ## Conformance
 
-Husks ships frozen conformance vectors under `spec/conformance`.
-
-Run the built-in selftest:
+Husks ships frozen conformance vectors under `spec/conformance`: positive cases that must reproduce their roots, and adversarial fixtures that must be *rejected*. The repo ships two independent readers, Python (`core.py`) and JavaScript (`verify.mjs`), built from the spec and run against the same vectors. They agree. If they ever stopped agreeing, the permanence claim would be false.
 
 ```bash
-husks selftest
-```
-
-Check the JavaScript reader directly:
-
-```bash
+husks selftest                                 # built-in Python reader
 node spec/conformance/verify.mjs spec/conformance/demo.husk \
-  spec/conformance/demo.site "$(cat spec/conformance/demo.root)"
+     spec/conformance/demo.site "$(cat spec/conformance/demo.root)"   # JS reader
+husks gate "python readers/generated_reader.py" --stamp-dir readers   # external reader
 ```
 
-Run the gate against a reader command:
+A reader command must accept `<husk-file> <site-dir>` and print the lowercase-hex build root to stdout.
+
+## Bootstrap
+
+`examples/bootstrap-core.json` turns the conformance test on the framework itself. An `oracle` reads CSE v1 and v2 (no existing reader, no answer key) and writes a dependency-free Python reader. A deterministic gate then judges that reader against the frozen vectors.
 
 ```bash
-husks-gate "python readers/generated_reader.py" --stamp-dir readers
-```
-
-The reader command must accept:
-
-```bash
-reader <husk-file> <site-dir>
-```
-
-and print the lowercase hex build root to stdout.
-
-## Bootstrap example
-
-The bootstrap example asks a live oracle to write a CSE reader from the specs, then checks it with `husks-gate`.
-
-Install live oracle support first:
-
-```bash
-pip install -e ".[llm]"
-export ANTHROPIC_API_KEY=...
-```
-
-Prepare the site with the specs:
-
-```bash
-rm -rf /tmp/bootstrap-core
-mkdir -p /tmp/bootstrap-core
-cp spec/CSE-v1.md /tmp/bootstrap-core/CSE-v1.md
-cp spec/CSE-v2.md /tmp/bootstrap-core/CSE-v2.md
-```
-
-Run the bootstrap:
-
-```bash
+rm -rf /tmp/bootstrap-core && mkdir -p /tmp/bootstrap-core
+cp spec/CSE-v1.md spec/CSE-v2.md /tmp/bootstrap-core/
 husks run examples/bootstrap-core.json --site /tmp/bootstrap-core
 ```
 
-A successful run writes:
+A successful run writes `readers/generated_reader.py`, `readers/gate-report.txt`, and `readers/VERIFIED`. The gate report contains `GATE PASS`. The shape is the whole thesis in miniature: the oracle produces, the gate verifies, the gate is not the oracle.
 
-```text
-/tmp/bootstrap-core/readers/generated_reader.py
-/tmp/bootstrap-core/readers/gate-report.txt
-/tmp/bootstrap-core/readers/VERIFIED
-```
+## Portability rules
 
-and the gate report contains `GATE PASS`.
+Keep paths relative to the site. Husks rejects absolute paths and `..` escapes. A leaked `/home/<user>/…` would live in the seal forever.
 
-## Safety and portability rules
+Keep validation deterministic. Tests, scoring scripts, formatters, and gates are `action` rules.
 
-Keep paths relative to the site directory. Husks rejects absolute paths and `..` escapes in declared artifacts.
+Keep oracles bounded. Every oracle gets a small output contract and a fuel limit.
 
-Keep validation deterministic. Tests, scoring scripts, formatters, and gates should be `action` rules.
+Keep `run` commands portable. No `source .../activate`, no machine-specific paths; call tools directly.
 
-Keep model calls bounded. Give every oracle a small output contract and a fuel limit.
-
-Keep designs portable. Avoid machine-specific paths in `run` commands.
-
-## Project status
+## Status
 
 Current capabilities:
 
-- JSON designs with deterministic lowering into the Husks build form.
-- Sealed artifact reuse with input and output hashing.
-- Per-rule trace and history files.
-- Stub and live oracle execution.
-- Python and JavaScript CSE readers.
-- Frozen positive and negative conformance vectors.
-- `husks-gate` for external reader validation.
-- Bootstrap example for generating and verifying a reader from the specs.
+- JSON designs lowering deterministically into the Husks build form.
+- Sealed artifact reuse keyed on recipe and input hashes.
+- Per-rule trace and history files; convergence classification.
+- Stub and live oracle execution via LiteLLM.
+- Python and JavaScript CSE readers built from the spec.
+- Frozen positive and adversarial conformance vectors.
+- `husks gate` for external reader validation.
+- `husks init` and a versioned Claude Code skill.
+- Bootstrap example that generates and verifies a reader from the specs.
 
 ## License
 
