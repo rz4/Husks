@@ -350,6 +350,58 @@ def check(design: Design) -> list[str]:
     return errors
 
 
+# ── Categorized check ─────────────────────────────────────────────
+
+def check_categorized(design: Design) -> dict[str, Any]:
+    """Validate a design and return errors grouped by category.
+
+    Returns a dict with keys: ok, categories, errors.
+    Each category has: ok (bool), errors (list[str]).
+    """
+    all_errors = check(design)
+
+    categories: dict[str, dict[str, Any]] = {
+        "syntax": {"ok": True, "errors": []},
+        "names": {"ok": True, "errors": []},
+        "paths": {"ok": True, "errors": []},
+        "inputs": {"ok": True, "errors": []},
+        "outputs": {"ok": True, "errors": []},
+        "fuel": {"ok": True, "errors": []},
+        "targets": {"ok": True, "errors": []},
+        "imports": {"ok": True, "errors": []},
+        "other": {"ok": True, "errors": []},
+    }
+
+    for err in all_errors:
+        el = err.lower()
+        if "name" in el or "duplicate" in el:
+            cat = "names"
+        elif "path" in el or "absolute" in el or "'..'" in el:
+            cat = "paths"
+        elif "input" in el and "not produced" in el:
+            cat = "inputs"
+        elif "output" in el and ("produced" in el or "no declared" in el):
+            cat = "outputs"
+        elif "fuel" in el:
+            cat = "fuel"
+        elif "target" in el:
+            cat = "targets"
+        elif "import" in el:
+            cat = "imports"
+        elif "kind" in el or "no rules" in el or "has no" in el:
+            cat = "syntax"
+        else:
+            cat = "other"
+        categories[cat]["errors"].append(err)
+        categories[cat]["ok"] = False
+
+    return {
+        "ok": len(all_errors) == 0,
+        "categories": categories,
+        "errors": all_errors,
+    }
+
+
 # ── Pretty-print ──────────────────────────────────────────────────
 
 _KIND_MARKERS = {
@@ -710,6 +762,11 @@ def run(design: Design, **overrides: Any) -> dict[str, Any]:
     name, fuel, terminals, kwargs = compile(design)
     kwargs.update(overrides)
 
+    # Pass design source metadata for the build manifest
+    if design.get("_source_path"):
+        kwargs["design_source"] = design["_source_path"]
+        kwargs["design_kind"] = "json"
+
     # Set up imports (symlinks + read-only roots) before building
     imports = design.get("imports")
     site = kwargs.get("site")
@@ -725,7 +782,9 @@ def run(design: Design, **overrides: Any) -> dict[str, Any]:
 def from_json(path: str | Path) -> Design:
     """Load a design from a JSON file."""
     with open(path) as f:
-        return json.load(f)
+        design = json.load(f)
+    design["_source_path"] = str(Path(path).resolve())
+    return design
 
 
 def to_json(design: Design, path: str | Path | None = None) -> str:

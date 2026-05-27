@@ -360,6 +360,39 @@ def render_text(report: dict) -> str:
     return "\n".join(lines)
 
 
+def render_concise(report: dict) -> str:
+    """Render a concise one-line-per-rule summary of the build."""
+    lines: list[str] = []
+
+    _state_sym = {"fired": "\u2713", "sealed": "\u25cf", "failed": "\u2717"}
+
+    for nd in report["nodes"]:
+        sym = _state_sym.get(nd["state"], "?")
+        name = nd["name"]
+        kind = nd["kind"]
+        cost_str = ""
+        if kind == "oracle" and nd["state"] == "fired":
+            cost_str = f"  ${nd['cost']['this_run']:.4f}"
+        lines.append(f"  {sym} {name}  ({kind}){cost_str}")
+
+    # Trial summaries from nodes (if any trial events exist in the trace)
+    for ev in report.get("_trial_summaries", []):
+        lines.append(f"  trial: {ev}")
+
+    # Footer
+    root = report.get("root", "none") or "none"
+    root_short = root[:10] if root != "none" else "none"
+    fuel = report["fuel"]
+    cost = report["cost"]
+    status = report["status"]
+    lines.append(
+        f"\n  {status}  root {root_short}  "
+        f"fuel {fuel['end']}/{fuel['start']}  "
+        f"${cost['paid']:.4f}"
+    )
+    return "\n".join(lines)
+
+
 def render_json(report: dict) -> str:
     """Render the Report as pretty-printed JSON."""
     return json.dumps(report, indent=2)

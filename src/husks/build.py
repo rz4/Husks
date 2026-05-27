@@ -527,6 +527,116 @@ def append_history(
         f.write(json.dumps(record, default=str) + "\n")
 
 
+# ── Trial report ──────────────────────────────────────────────────
+
+def write_trial_report(
+    S: Store,
+    rule_name: str,
+    winner_name: str,
+    results: list[dict[str, Any]],
+    scores: dict[str, float] | None,
+    branches_ir: list[dict[str, Any]],
+    outputs: list[str],
+) -> None:
+    """Write .traces/{rule_name}.trial.json after a trial verdict."""
+    branch_entries: list[dict[str, Any]] = []
+    branch_by_name = {b.get("name", ""): b for b in branches_ir}
+    for r in results:
+        bname = r["name"]
+        br = branch_by_name.get(bname, {})
+        kind = br.get("type", "oracle")
+        has_error = "error" in r
+        entry: dict[str, Any] = {
+            "name": bname,
+            "kind": kind,
+            "selected": bname == winner_name,
+            "elapsed_ms": round(r.get("elapsed", 0.0) * 1000, 1),
+            "cost_usd": r.get("cost_usd", 0.0) if not has_error else None,
+            "outputs": {
+                o: hashlib.sha256(r["outputs"][o].encode()).hexdigest()
+                for o in outputs if o in r.get("outputs", {})
+            },
+        }
+        if scores and bname in scores:
+            entry["score"] = scores[bname]
+        if has_error:
+            entry["error"] = r["error"]
+        branch_entries.append(entry)
+
+    report = {
+        "schema": "husks.trial.v1",
+        "rule": rule_name,
+        "run_id": S["run-id"],
+        "winner": winner_name,
+        "branches": branch_entries,
+    }
+    write_text(
+        site_path(S, f".traces/{rule_name}.trial.json"),
+        json.dumps(report, indent=2),
+    )
+
+
+# ── Build manifest ────────────────────────────────────────────────
+
+def _collect_rules(node: Node, seen: set[str] | None = None) -> list[dict[str, Any]]:
+    """Walk a node tree and collect rule info for the build manifest."""
+    if seen is None:
+        seen = set()
+    results: list[dict[str, Any]] = []
+    ntype = node.get("type", "")
+    if ntype == "rule":
+        name = node["name"]
+        if name not in seen:
+            seen.add(name)
+            recipe = node.get("recipe")
+            kind = recipe["type"] if recipe else "action"
+            results.append({
+                "name": name,
+                "kind": kind,
+                "inputs": node.get("inputs", []),
+                "outputs": node.get("outputs", []),
+            })
+        for child in node.get("children", []):
+            results.extend(_collect_rules(child, seen))
+    elif ntype == "cond":
+        results.extend(_collect_rules(node["then"], seen))
+        results.extend(_collect_rules(node["else"], seen))
+    return results
+
+
+def write_build_manifest(
+    S: Store,
+    name: str,
+    nodes: tuple[Node, ...],
+    *,
+    design_source: str | None = None,
+    design_kind: str | None = None,
+) -> None:
+    """Write .traces/build.manifest.json after a successful build."""
+    seen: set[str] = set()
+    rules: list[dict[str, Any]] = []
+    for node in nodes:
+        rules.extend(_collect_rules(node, seen))
+
+    manifest = {
+        "schema": "husks.build.manifest.v1",
+        "name": name,
+        "root": S.get("build-root"),
+        "site": S["site"],
+        "run_id": S["run-id"],
+        "rules": rules,
+    }
+    if design_source:
+        manifest["design_source"] = design_source
+    if design_kind:
+        manifest["design_kind"] = design_kind
+
+    write_text(
+        site_path(S, ".traces/build.manifest.json"),
+        json.dumps(manifest, indent=2),
+    )
+
+
 # ── Node constructors ─────────────────────────────────────────────
 
 def rule(
@@ -957,6 +1067,9 @@ def eval_trial(
         if o in winner["outputs"]:
             write_text(site_path(S, o), winner["outputs"][o])
 
+    # Write trial report
+    write_trial_report(S, rule_name, wname, results, scores, branches, outputs)
+
     S["trace"].append({"event": "trial", "rule": rule_name, "winner": wname})
 
 
@@ -1119,6 +1232,11 @@ def build(
             husk_bytes = encode(husk_form)
             husk_path = site_path(S, f"{name}.husk")
             Path(husk_path).write_bytes(husk_bytes)
+            write_build_manifest(
+                S, name, nodes,
+                design_source=kwargs.get("design_source"),
+                design_kind=kwargs.get("design_kind"),
+            )
         except Exception:
             S["build-root"] = None
 
