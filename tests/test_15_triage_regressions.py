@@ -353,3 +353,155 @@ def test_json_output_clean(tmp_path):
     except json.JSONDecodeError as e:
         pytest.fail(f"--json output is not valid JSON: {e}\nstdout:\n{stdout[:500]}")
     assert isinstance(parsed, dict)
+
+
+# ── litellm import isolation ──────────────────────────────────────
+
+def test_litellm_not_imported_at_module_level():
+    """Importing husks.oracle.kernel should not trigger litellm import."""
+    import subprocess
+    import sys
+
+    # Run in a subprocess to avoid already-imported litellm in this process
+    code = (
+        "import sys; "
+        "import husks.oracle.kernel; "
+        "print('litellm' in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, f"import failed: {result.stderr}"
+    assert result.stdout.strip() == "False", (
+        "litellm should not be imported at module level"
+    )
+
+
+# ── Import local name validation ─────────────────────────────────
+
+def test_check_rejects_traversal_import_name():
+    """check() rejects import local names with '..' components."""
+    from husks.designs.ir import check
+
+    design = {
+        "name": "test",
+        "fuel": 10,
+        "target": "a",
+        "imports": {"../outside": "/tmp"},
+        "rules": [
+            {"name": "a", "kind": "action", "inputs": [], "outputs": ["a.txt"]},
+        ],
+    }
+    errors = check(design)
+    assert any(".." in e for e in errors), f"expected path traversal error, got: {errors}"
+
+
+def test_check_rejects_absolute_import_name():
+    """check() rejects import local names with absolute paths."""
+    from husks.designs.ir import check
+
+    design = {
+        "name": "test",
+        "fuel": 10,
+        "target": "a",
+        "imports": {"/tmp/husks-import-escape": "/tmp"},
+        "rules": [
+            {"name": "a", "kind": "action", "inputs": [], "outputs": ["a.txt"]},
+        ],
+    }
+    errors = check(design)
+    assert any("absolute" in e for e in errors), f"expected absolute path error, got: {errors}"
+
+
+# ── Oracle fuel budget ────────────────────────────────────────────
+
+def test_check_rejects_oracle_fuel_exceeding_budget():
+    """check() rejects designs where total oracle fuel exceeds global fuel."""
+    from husks.designs.ir import check
+
+    design = {
+        "name": "fuel",
+        "fuel": 1,
+        "target": "a",
+        "rules": [
+            {
+                "name": "a",
+                "kind": "oracle",
+                "inputs": [],
+                "outputs": ["a.txt"],
+                "prompt": "do",
+                "tools": ["write-file"],
+                "fuel": 99,
+            },
+        ],
+    }
+    errors = check(design)
+    assert any("exceeds" in e for e in errors), f"expected fuel budget error, got: {errors}"
+
+
+def test_check_allows_oracle_fuel_within_budget():
+    """check() accepts designs where oracle fuel fits within the budget."""
+    from husks.designs.ir import check
+
+    design = {
+        "name": "fuel",
+        "fuel": 10,
+        "target": "a",
+        "rules": [
+            {
+                "name": "a",
+                "kind": "oracle",
+                "inputs": [],
+                "outputs": ["a.txt"],
+                "prompt": "do",
+                "tools": ["write-file"],
+                "fuel": 5,
+            },
+        ],
+    }
+    errors = check(design)
+    assert not errors, f"unexpected errors: {errors}"
+
+
+# ── Old seal without output hashes → stale ────────────────────────
+
+def test_old_seal_without_outputs_is_stale():
+    """A seal missing 'outputs' field is treated as stale for upgrade."""
+    from husks.build import (
+        fresh_store,
+        freshness_check,
+        site_path,
+        write_text,
+        ensure_dir,
+    )
+
+    site = tempfile.mkdtemp(prefix="seal-upgrade-test-")
+    try:
+        S = fresh_store(site, fuel=10)
+        ensure_dir(site_path(S, ".traces"))
+
+        # Write output
+        write_text(site_path(S, "result.txt"), "content\n")
+
+        # Write a v1 seal WITHOUT outputs (old format)
+        recipe = {"type": "action", "fn": lambda S: None}
+        recipe["fn"]._husks_cmd = "echo test"
+
+        from husks.build import compute_cse_seal, recipe_to_cse, recipe_digest
+        from husks.core import recipe_digest as core_rd
+
+        seal = compute_cse_seal(S, [], recipe)
+        recipe_form = recipe_to_cse(recipe)
+        rd = recipe_digest(recipe_form)
+        old_seal = {"v": 1, "seal": seal, "recipe_digest": rd, "inputs": {}}
+        write_text(
+            os.path.join(site, ".traces", "rule1.seal"),
+            json.dumps(old_seal, indent=2),
+        )
+
+        reason = freshness_check(S, "rule1", [], ["result.txt"], recipe)
+        assert reason is not None
+        assert "missing output hashes" in reason
+    finally:
+        shutil.rmtree(site, ignore_errors=True)

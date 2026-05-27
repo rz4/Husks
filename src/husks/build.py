@@ -441,13 +441,14 @@ def freshness_check(
         return "recipe changed"
 
     # Output hash comparison (tamper detection)
-    prior_outputs: dict[str, str] = prior.get("outputs", {})
-    if prior_outputs:
-        for o in sorted(outputs):
-            cur_hash = file_sig(site_path(S, o)).decode()
-            old_hash = prior_outputs.get(o, "")
-            if cur_hash != old_hash:
-                return f"{o} tampered"
+    if "outputs" not in prior:
+        return "seal missing output hashes"
+    prior_outputs: dict[str, str] = prior["outputs"]
+    for o in sorted(outputs):
+        cur_hash = file_sig(site_path(S, o)).decode()
+        old_hash = prior_outputs.get(o, "")
+        if cur_hash != old_hash:
+            return f"{o} tampered"
 
     return None
 

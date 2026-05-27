@@ -8,6 +8,9 @@ version = "0.1.0"
 requires-python = ">=3.10"
 description = "CSE v1 conformance vectors for Husks implementations"
 
+[project.scripts]
+husks-gate = "husks_conformance.gate:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/husks_conformance"]
 

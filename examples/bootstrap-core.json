@@ -18,7 +18,7 @@
       "kind": "action",
       "inputs": ["readers/generated_reader.py"],
       "outputs": ["readers/gate-report.txt", "readers/VERIFIED"],
-      "run": "husks-gate ."
+      "run": "husks-gate \"python readers/generated_reader.py\" --stamp-dir readers > readers/gate-report.txt"
     }
   ]
 }

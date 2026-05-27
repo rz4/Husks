@@ -18,19 +18,26 @@ const MAX_HUSK_BYTES = 10 * 1024 * 1024; // 10 MB
 // ── CSE codec ────────────────────────────────────────────────────
 
 function parse(buf, off = 0) {
+  if (off >= buf.length) throw new Error("unexpected EOF");
   if (buf[off] === 0x28) {          // '('
     const items = [];
     off++;
-    while (buf[off] !== 0x29) {     // ')'
+    while (off < buf.length && buf[off] !== 0x29) {
       const [v, next] = parse(buf, off);
       items.push(v);
       off = next;
     }
+    if (off >= buf.length) throw new Error("unterminated list");
     return [items, off + 1];
   }
   const colon = buf.indexOf(0x3a, off);  // ':'
-  const len = parseInt(buf.subarray(off, colon).toString(), 10);
+  if (colon < 0) throw new Error("missing colon in atom");
+  const lenStr = buf.subarray(off, colon).toString();
+  if (lenStr.length > 1 && lenStr[0] === "0") throw new Error("leading zero in atom length");
+  const len = parseInt(lenStr, 10);
+  if (isNaN(len) || len < 0) throw new Error("invalid atom length");
   const start = colon + 1;
+  if (start + len > buf.length) throw new Error("atom overruns input");
   return [buf.subarray(start, start + len), start + len];
 }
 
@@ -120,23 +127,28 @@ if (!huskPath || !siteDir) {
   process.exit(1);
 }
 
-const huskResolved = resolve(huskPath);
-const huskSize = statSync(huskResolved).size;
-if (huskSize > MAX_HUSK_BYTES) {
-  console.error(`error: husk file too large (${huskSize} bytes, max ${MAX_HUSK_BYTES})`);
-  process.exit(1);
-}
-const husk = readFileSync(huskResolved);
-const root = recomputeRoot(husk, resolve(siteDir));
-
-console.log(root);
-
-if (expectedRoot) {
-  if (root === expectedRoot.trim()) {
-    console.log("PASS — root matches");
-    process.exit(0);
-  } else {
-    console.error(`FAIL — expected ${expectedRoot.trim()}, got ${root}`);
+try {
+  const huskResolved = resolve(huskPath);
+  const huskSize = statSync(huskResolved).size;
+  if (huskSize > MAX_HUSK_BYTES) {
+    console.error(`error: husk file too large (${huskSize} bytes, max ${MAX_HUSK_BYTES})`);
     process.exit(1);
   }
+  const husk = readFileSync(huskResolved);
+  const root = recomputeRoot(husk, resolve(siteDir));
+
+  console.log(root);
+
+  if (expectedRoot) {
+    if (root === expectedRoot.trim()) {
+      console.log("PASS — root matches");
+      process.exit(0);
+    } else {
+      console.error(`FAIL — expected ${expectedRoot.trim()}, got ${root}`);
+      process.exit(1);
+    }
+  }
+} catch (e) {
+  console.error(`error: ${e.message}`);
+  process.exit(1);
 }

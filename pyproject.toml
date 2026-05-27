@@ -9,16 +9,16 @@ description = "A small build calculus for nondeterministic work."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
-dependencies = [
-    "litellm",
-]
+dependencies = []
 
 [project.optional-dependencies]
+llm = ["litellm"]
 hy = ["hy>=1.0.0"]
 
 [project.scripts]
 husks = "husks.cli:main"
-husks-gate = "husks_conformance.gate:main"
+# husks-gate lives in the conformance package (spec/conformance_pkg),
+# not the main wheel.  Install husks-conformance separately for the gate.
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/husks"]

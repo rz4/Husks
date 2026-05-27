@@ -311,6 +311,9 @@ def check(design: Design) -> list[str]:
                 for o in r.get("outputs", []):
                     rule_outputs.add(o)
             for local_name, ext_path in imports.items():
+                local_err = _validate_path(local_name)
+                if local_err:
+                    errors.append(f"import '{local_name}': local name {local_err}")
                 if not isinstance(ext_path, str):
                     errors.append(f"import '{local_name}': value must be a string path")
                 elif not os.path.isabs(ext_path):
@@ -332,6 +335,17 @@ def check(design: Design) -> list[str]:
         for t in targets:
             if t not in names:
                 errors.append(f"target '{t}' does not match any rule name")
+
+    # oracle fuel budget: total oracle fuel must not exceed global fuel
+    if fuel is not None and fuel > 0:
+        total_oracle_fuel = sum(
+            r.get("fuel", 0) for r in rules if r.get("kind") == "oracle"
+        )
+        if total_oracle_fuel > fuel:
+            errors.append(
+                f"total oracle fuel ({total_oracle_fuel}) exceeds "
+                f"global fuel budget ({fuel})"
+            )
 
     return errors
 

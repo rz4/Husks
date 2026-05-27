@@ -198,8 +198,9 @@ class TestReaderIndependence:
         with open(VERIFY_JS, "r") as f:
             lines = [l for l in f.readlines()
                      if l.strip() and not l.strip().startswith("//")]
-        # Design says ~40 lines; allow generous margin (bounded-read guard adds a few)
-        assert len(lines) < 110, (
+        # Design says ~40 lines; allow generous margin
+        # (bounded-read guard + parser safety checks add ~20 lines)
+        assert len(lines) < 120, (
             f"verify.mjs is {len(lines)} non-blank non-comment lines; "
             f"should be compact enough to audit"
         )

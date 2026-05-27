@@ -36,7 +36,17 @@ from __future__ import annotations
 
 from typing import Any
 
-import litellm
+
+def _litellm():
+    """Lazy import of litellm — only needed for live oracle calls."""
+    try:
+        import litellm
+        return litellm
+    except ModuleNotFoundError:
+        raise ModuleNotFoundError(
+            "litellm is required for live oracle calls. "
+            "Install it with: pip install litellm"
+        ) from None
 
 # ── Default model ─────────────────────────────────────────────────
 
@@ -69,7 +79,7 @@ class UsageTracker:
         inp: int = u.prompt_tokens or 0
         out: int = u.completion_tokens or 0
         try:
-            cost = litellm.completion_cost(completion_response=response)
+            cost = _litellm().completion_cost(completion_response=response)
         except Exception:
             cost = 0.0
 
@@ -137,7 +147,7 @@ def call(
         kwargs["tools"] = tools
     if temperature is not None:
         kwargs["temperature"] = temperature
-    r = litellm.completion(**kwargs)
+    r = _litellm().completion(**kwargs)
     (tracker or _usage).track(r)
     return r
 
@@ -187,7 +197,7 @@ def call_messages(
         kwargs["tools"] = tools
     if temperature is not None:
         kwargs["temperature"] = temperature
-    r = litellm.completion(**kwargs)
+    r = _litellm().completion(**kwargs)
     (tracker or _usage).track(r, rule=rule)
     return r
 
@@ -205,7 +215,7 @@ def meta(response: Any) -> dict[str, Any]:
     inp: int = u.prompt_tokens or 0
     out: int = u.completion_tokens or 0
     try:
-        cost = litellm.completion_cost(completion_response=response)
+        cost = _litellm().completion_cost(completion_response=response)
     except Exception:
         cost = 0.0
     return {
