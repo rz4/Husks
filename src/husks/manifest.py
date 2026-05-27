@@ -139,6 +139,26 @@ def compute_artifact_states(
     return results
 
 
+def compute_rule_states(
+    site: str, manifest: dict
+) -> list[dict[str, Any]]:
+    """Compute freshness state for every rule in a manifest.
+
+    Returns a list of dicts with keys: name, kind, state, reason.
+    """
+    result: list[dict[str, Any]] = []
+    for rule in manifest.get("rules", []):
+        seal = read_seal(site, rule["name"])
+        state, reason = compute_rule_state(site, rule, seal)
+        result.append({
+            "name": rule["name"],
+            "kind": rule["kind"],
+            "state": state,
+            "reason": reason,
+        })
+    return result
+
+
 def resolve_manifest(
     design_path: str | None, site_flag: str | None
 ) -> tuple[dict | None, str | None]:

@@ -5,6 +5,12 @@ Self-contained: resolves conformance vectors through the main package's
 bundled resources or repo-relative fallback.  Does not require the
 separate ``husks-conformance`` package.
 
+NOTE: This file intentionally duplicates logic from
+``spec/conformance_pkg/…/gate.py``.  The two packages must remain
+independently installable — ``husks-conformance`` adds import scanning
+and its own vector resolution, while this module is self-sufficient
+with zero cross-package dependencies.
+
     husks-gate "python my_reader.py"
     husks-gate "python my_reader.py" --stamp-dir stamps
 """

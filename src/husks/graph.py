@@ -58,15 +58,13 @@ def _extract_edges(design: dict[str, Any]) -> tuple[list[dict], list[tuple[str, 
     return nodes, edges
 
 
+_STATE_SYM = {"fresh": "\u2713", "stale": "\u25b8", "missing": "\u2717",
+              "dirty": "!", "failed": "\u2717"}
+
+
 def _state_symbol(state: str | None) -> str:
     """Map a freshness state to a display symbol."""
-    return {
-        "fresh": "\u2713",
-        "stale": "\u25b8",
-        "missing": "\u2717",
-        "dirty": "!",
-        "failed": "\u2717",
-    }.get(state or "", "")
+    return _STATE_SYM.get(state or "", "")
 
 
 def render_graph(
@@ -91,13 +89,11 @@ def render_graph(
     states: dict[str, str] = {}
     if site:
         try:
-            from husks.manifest import read_manifest, read_seal, compute_rule_state
+            from husks.manifest import read_manifest, compute_rule_states
             manifest = read_manifest(site)
             if manifest:
-                for rule in manifest.get("rules", []):
-                    seal = read_seal(site, rule["name"])
-                    st, _reason = compute_rule_state(site, rule, seal)
-                    states[rule["name"]] = st
+                for rs in compute_rule_states(site, manifest):
+                    states[rs["name"]] = rs["state"]
         except Exception:
             pass
 

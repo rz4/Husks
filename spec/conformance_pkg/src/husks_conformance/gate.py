@@ -5,6 +5,11 @@ Any reader that accepts ``<reader_cmd> <husk> <site>`` and prints the
 lowercase-hex root to stdout (exit 0 on success, nonzero on rejection)
 can be validated against the frozen conformance vectors.
 
+NOTE: This file intentionally duplicates the core gate loop from
+``src/husks/gate.py``.  This package adds import scanning and its
+own vector resolution, and must remain installable without the main
+``husks`` package.
+
     from husks_conformance.gate import gate
     assert gate(["python", "generated_reader.py"])
     assert gate(["./my_rust_reader"])

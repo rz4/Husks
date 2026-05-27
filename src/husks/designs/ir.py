@@ -1,120 +1,13 @@
 """
 ir.py -- Design intermediate representation for Husks builds.
 
-This module defines the contract between intent and execution.  A design
-is a JSON-native dict that declaratively specifies a build: its name,
-fuel budget, dependency graph of rules, and the terminal rule that
-constitutes a committed build.
+JSON-native build graph: static validation (check), pretty-print (show),
+compilation to runtime nodes (compile), and end-to-end execution (run).
+Imports from build.py for node constructors; does not import core.py
+directly.
 
-The IR supports all nine forms of the Husks calculus:
-
-  build   -- The top-level design envelope (implicit: the design dict).
-  rule    -- A work node with inputs, outputs, and a recipe.
-  action  -- A deterministic recipe (shell command or callable).
-  oracle  -- A bounded nondeterministic recipe (model call).
-  trial   -- A speculative fork: run branches, verdict picks winner.
-  commit  -- A terminal success node.
-  halt    -- A terminal failure node.
-  let     -- A shared sub-DAG: bind a rule name so multiple consumers
-             reference the same compiled node (compute once).
-  cond    -- A conditional branch: evaluate a predicate, dispatch to
-             exactly one of two named rules.
-
-Operations
-----------
-  check(design)    -- Static validation before execution.  Verifies
-                    structural integrity: names are unique, every input
-                    is produced by a prior rule or declared as a site
-                    input, every oracle has a prompt and fuel, the DAG
-                    is well-formed, and the global fuel budget is
-                    sufficient.  Returns a list of error strings
-                    (empty means valid).
-
-  show(design)     -- Pretty-print the design to stdout.  Human-readable
-                    summary of rules, their kinds, inputs, outputs,
-                    fuel, and the target.
-
-  compile(design)  -- Lower the design IR into runtime node dicts suitable
-                    for husks.build.build().  Resolves implicit
-                    dependencies, deduplicates let-bound rules, and
-                    wires cond predicates.  Returns
-                    (name, fuel, terminal_node, kwargs).
-
-  run(design)      -- End-to-end: check, compile, build.  Returns the
-                    final Store dict.
-
-  from_json(p)   -- Load a design from a JSON file path.
-  to_json(p, f)  -- Serialize a design to JSON string or file.
-
-Design IR schema
---------------
-A design is a dict with keys::
-
-    {
-      "name":        str,
-      "fuel":        int,           # global fuel budget (> 0)
-      "target":      str,           # name of the terminal rule/node
-      "site_inputs": [str, ...],    # pre-existing files (optional)
-      "predicates":  {str: callable},  # named predicates for cond (optional, not JSON-native)
-      "rules": [
-        # ── rule kinds ──
-
-        {"kind": "action", "name": str,
-         "inputs": [str], "outputs": [str],
-         "run": str,              # shell command (optional)
-         "action_fn": callable},  # Python callable (optional, not JSON-native)
-
-        {"kind": "oracle", "name": str,
-         "inputs": [str], "outputs": [str],
-         "prompt": str, "tools": [str], "fuel": int},
-
-        {"kind": "trial", "name": str,
-         "inputs": [str], "outputs": [str],
-         "branches": [recipe_dict, ...],
-         "verdict": callable},    # verdict function (optional, not JSON-native)
-
-        # ── structural kinds ──
-
-        {"kind": "commit", "name": str, "value": str},
-
-        {"kind": "halt", "name": str, "reason": str},
-
-        {"kind": "let", "name": str, "bind": str},
-            # bind: name of the rule to share.
-            # Multiple let entries may reference the same bind target.
-            # The compiler emits one node and wires it as a child
-            # everywhere it appears as a dependency.
-
-        {"kind": "cond", "name": str,
-         "predicate": str,        # key into design["predicates"]
-         "then": str,             # rule name for true branch
-         "else": str},            # rule name for false branch
-      ]
-    }
-
-Rules are ordered: a rule may only consume inputs produced by rules
-that precede it in the list (or listed in site_inputs).  This
-ordering is the topological sort of the dependency graph.
-
-Structural kinds (commit, halt, let, cond) do not produce outputs
-and are not subject to the output-uniqueness or input-availability
-checks that apply to action/oracle/trial rules.
-
-Interface with husks
--------------------------
-Imports from:
-
-  build.py  -- Node constructors (rule, action, oracle, trial, cond,
-               commit, halt) and the build() entry point.  Also
-               site_path and write_text for shell/touch action closures.
-
-Consumed by:
-
-  cli.py    -- The CLI's check/show/run/history commands all operate
-               on design IR loaded via from_json().
-
-Does NOT import core.py directly.  All cryptographic operations flow
-through build.py, which delegates to core.
+See docs/architecture.md for the full IR schema, operations reference,
+and supported rule kinds.
 """
 
 from __future__ import annotations
@@ -175,6 +68,47 @@ def _resolve_targets(design: Design) -> list[str] | None:
     return None
 
 
+# ── Rule-spec table & custom validators ──────────────────────────
+
+def _validate_trial(tag: str, r: dict, errors: list[str], _pred: dict) -> None:
+    verdict = r.get("verdict")
+    if verdict is not None:
+        if not callable(verdict) and not isinstance(verdict, str):
+            errors.append(f"{tag}: verdict must be a callable or a policy name string")
+
+
+def _validate_cond(tag: str, r: dict, errors: list[str], predicates: dict) -> None:
+    pred_name = r.get("predicate")
+    if pred_name and not callable(pred_name) and pred_name not in predicates:
+        if ":" in pred_name:
+            prefix = pred_name.split(":", 1)[0]
+            if prefix not in _BUILTIN_PREFIXES:
+                errors.append(f"{tag}: unknown built-in predicate prefix '{prefix}'")
+        else:
+            errors.append(f"{tag}: predicate '{pred_name}' not in design predicates")
+
+
+_RULE_SPECS: dict[str, dict] = {
+    "action":  {"producing": True},
+    "oracle":  {"producing": True,
+                "positive": {"fuel": "oracle rule has no fuel"},
+                "required": {"prompt": "oracle rule has no prompt"}},
+    "trial":   {"producing": True,
+                "required": {"branches": "trial has no branches"},
+                "validator": _validate_trial},
+    "commit":  {"present": {"value": "commit has no value"}},
+    "halt":    {"present": {"reason": "halt has no reason"}},
+    "let":     {"required": {"bind": "let has no bind target"},
+                "refs": {"bind": ("bind target", "not defined yet")}},
+    "cond":    {"required": {"predicate": "cond has no predicate",
+                             "then": "cond has no 'then' branch",
+                             "else": "cond has no 'else' branch"},
+                "refs": {"then": ("'then' target", "not defined yet"),
+                         "else": ("'else' target", "not defined yet")},
+                "validator": _validate_cond},
+}
+
+
 # ── Static checks ────────────────────────────────────────────────
 
 def check(design: Design) -> list[str]:
@@ -215,9 +149,12 @@ def check(design: Design) -> list[str]:
             )
             continue
 
-        # ── producing kinds: action, oracle, trial ──
-        if kind in _PRODUCING_KINDS:
-            # outputs
+        spec = _RULE_SPECS.get(kind)
+        if not spec:
+            continue
+
+        # producing-kind validation (outputs, inputs)
+        if spec.get("producing"):
             outputs = r.get("outputs", [])
             if not outputs:
                 errors.append(f"{tag}: no declared outputs")
@@ -228,8 +165,6 @@ def check(design: Design) -> list[str]:
                 if o in produced:
                     errors.append(f"{tag}: output '{o}' already produced by another rule")
                 produced.add(o)
-
-            # inputs available
             for inp in r.get("inputs", []):
                 path_err = _validate_path(inp)
                 if path_err:
@@ -237,68 +172,30 @@ def check(design: Design) -> list[str]:
                 if inp not in produced:
                     errors.append(f"{tag}: input '{inp}' not produced by any prior rule")
 
-        # ── oracle-specific ──
-        if kind == "oracle":
-            rf = r.get("fuel", 0)
-            if rf <= 0:
-                errors.append(f"{tag}: oracle rule has no fuel")
-            if not r.get("prompt"):
-                errors.append(f"{tag}: oracle rule has no prompt")
+        # present fields (key must exist in dict)
+        for field, msg in spec.get("present", {}).items():
+            if field not in r:
+                errors.append(f"{tag}: {msg}")
 
-        # ── trial-specific ──
-        if kind == "trial":
-            branches = r.get("branches", [])
-            if not branches:
-                errors.append(f"{tag}: trial has no branches")
-            verdict = r.get("verdict")
-            if verdict is not None:
-                if not callable(verdict) and not isinstance(verdict, str):
-                    errors.append(f"{tag}: verdict must be a callable or a policy name string")
+        # positive fields (> 0)
+        for field, msg in spec.get("positive", {}).items():
+            if r.get(field, 0) <= 0:
+                errors.append(f"{tag}: {msg}")
 
-        # ── commit-specific ──
-        if kind == "commit":
-            if "value" not in r:
-                errors.append(f"{tag}: commit has no value")
+        # required fields (value must be truthy)
+        for field, msg in spec.get("required", {}).items():
+            if not r.get(field):
+                errors.append(f"{tag}: {msg}")
 
-        # ── halt-specific ──
-        if kind == "halt":
-            if "reason" not in r:
-                errors.append(f"{tag}: halt has no reason")
+        # reference fields (value must be in names set)
+        for field, (label, suffix) in spec.get("refs", {}).items():
+            val = r.get(field)
+            if val and val not in names:
+                errors.append(f"{tag}: {kind} {label} '{val}' {suffix}")
 
-        # ── let-specific ──
-        if kind == "let":
-            bind = r.get("bind")
-            if not bind:
-                errors.append(f"{tag}: let has no bind target")
-            elif bind not in names:
-                errors.append(f"{tag}: let bind target '{bind}' not defined yet")
-
-        # ── cond-specific ──
-        if kind == "cond":
-            pred_name = r.get("predicate")
-            if not pred_name:
-                errors.append(f"{tag}: cond has no predicate")
-            elif not callable(pred_name) and pred_name not in predicates:
-                # Accept built-in prefix:arg patterns
-                if ":" in pred_name:
-                    prefix = pred_name.split(":", 1)[0]
-                    if prefix not in _BUILTIN_PREFIXES:
-                        errors.append(
-                            f"{tag}: unknown built-in predicate prefix '{prefix}'"
-                        )
-                else:
-                    errors.append(f"{tag}: predicate '{pred_name}' not in design predicates")
-
-            then_name = r.get("then")
-            else_name = r.get("else")
-            if not then_name:
-                errors.append(f"{tag}: cond has no 'then' branch")
-            elif then_name not in names:
-                errors.append(f"{tag}: cond 'then' target '{then_name}' not defined yet")
-            if not else_name:
-                errors.append(f"{tag}: cond has no 'else' branch")
-            elif else_name not in names:
-                errors.append(f"{tag}: cond 'else' target '{else_name}' not defined yet")
+        # custom validator
+        if "validator" in spec:
+            spec["validator"](tag, r, errors, predicates)
 
     # imports
     imports = design.get("imports")

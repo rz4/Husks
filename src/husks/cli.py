@@ -31,6 +31,35 @@ EXIT_MISSING_DEP = 3
 EXIT_DIRTY_STALE = 4
 EXIT_INTERNAL = 5
 
+# ── Shared symbols ────────────────────────────────────────────────
+
+_STATE_SYM = {"fresh": "\u2713", "stale": "\u25b8", "missing": "\u2717",
+              "dirty": "!", "modified": "!", "failed": "\u2717"}
+
+
+# ── CLI helpers ───────────────────────────────────────────────────
+
+def _load_manifest(args) -> tuple[dict, str]:
+    """Resolve manifest and site from CLI args, exit on failure."""
+    from husks.manifest import resolve_manifest, read_manifest
+
+    site = getattr(args, "site", None)
+    design = getattr(args, "design", None)
+
+    if site and not design:
+        manifest = read_manifest(site)
+    else:
+        manifest, site = resolve_manifest(design, site)
+
+    if not site:
+        print("error: no site directory. Use --site or provide a design.",
+              file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+    if not manifest:
+        print(f"error: no build manifest in {site}/.traces/", file=sys.stderr)
+        sys.exit(EXIT_BUILD_FAIL)
+    return manifest, site
+
 
 def main():
     p = argparse.ArgumentParser(prog="husks", description="Husks design CLI")
@@ -285,34 +314,10 @@ def _cmd_run(args, design):
 # ── status ────────────────────────────────────────────────────────
 
 def _cmd_status(args):
-    from husks.manifest import (
-        resolve_manifest, read_seal, compute_rule_state, compute_artifact_states,
-    )
+    from husks.manifest import compute_rule_states, compute_artifact_states
 
-    manifest, site = resolve_manifest(
-        getattr(args, "design", None), args.site
-    )
-    if not site:
-        print("error: no site directory. Use --site or provide a design with 'site' key.",
-              file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-    if not manifest:
-        print(f"error: no build manifest in {site}/.traces/", file=sys.stderr)
-        sys.exit(EXIT_BUILD_FAIL)
-
-    # Compute rule states
-    rule_states: list[dict] = []
-    for rule in manifest.get("rules", []):
-        seal = read_seal(site, rule["name"])
-        state, reason = compute_rule_state(site, rule, seal)
-        rule_states.append({
-            "name": rule["name"],
-            "kind": rule["kind"],
-            "state": state,
-            "reason": reason,
-        })
-
-    # Compute artifact states
+    manifest, site = _load_manifest(args)
+    rule_states = compute_rule_states(site, manifest)
     artifact_states = compute_artifact_states(site, manifest)
 
     if args.json_output:
@@ -328,23 +333,19 @@ def _cmd_status(args):
         print(f"  root: {root[:16]}...")
         print(f"  {'─' * 50}")
 
-        _sym = {"fresh": "\u2713", "stale": "\u25b8", "missing": "\u2717",
-                "dirty": "!", "modified": "!"}
-
         print("\n  rules:")
         for rs in rule_states:
-            sym = _sym.get(rs["state"], "?")
+            sym = _STATE_SYM.get(rs["state"], "?")
             reason = f"  ({rs['reason']})" if rs["reason"] else ""
             print(f"    {sym} {rs['name']:<20s} {rs['state']}{reason}")
 
         print("\n  artifacts:")
         for a in artifact_states:
-            sym = _sym.get(a["state"], "?")
+            sym = _STATE_SYM.get(a["state"], "?")
             print(f"    {sym} {a['path']:<24s} {a['state']}")
 
         print(f"  {'─' * 50}\n")
 
-    # Exit code checks
     if args.fail_if_dirty:
         if any(a["state"] == "modified" for a in artifact_states):
             sys.exit(EXIT_DIRTY_STALE)
@@ -356,19 +357,9 @@ def _cmd_status(args):
 # ── diff ──────────────────────────────────────────────────────────
 
 def _cmd_diff(args):
-    from husks.manifest import resolve_manifest, compute_artifact_states
+    from husks.manifest import compute_artifact_states
 
-    manifest, site = resolve_manifest(
-        getattr(args, "design", None), args.site
-    )
-    if not site:
-        print("error: no site directory. Use --site or provide a design.",
-              file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-    if not manifest:
-        print(f"error: no build manifest in {site}/.traces/", file=sys.stderr)
-        sys.exit(EXIT_BUILD_FAIL)
-
+    manifest, site = _load_manifest(args)
     artifacts = compute_artifact_states(site, manifest)
 
     # Filter to specific artifacts if given
@@ -426,18 +417,11 @@ def _cmd_diff(args):
 
 def _cmd_explain(args):
     from husks.manifest import (
-        read_manifest, read_seal, read_trial_report, compute_rule_state, file_hash,
+        read_seal, read_trial_report, compute_rule_state,
+        compute_artifact_states,
     )
 
-    site = args.site
-    if not site:
-        print("error: --site is required for explain", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    manifest = read_manifest(site)
-    if not manifest:
-        print(f"error: no build manifest in {site}/.traces/", file=sys.stderr)
-        sys.exit(EXIT_BUILD_FAIL)
+    manifest, site = _load_manifest(args)
 
     subject = args.subject
     rules = manifest.get("rules", [])
@@ -486,9 +470,12 @@ def _cmd_explain(args):
     elif subject in output_to_rule:
         rule = output_to_rule[subject]
         seal = read_seal(site, rule["name"])
-        sealed_hash = seal.get("outputs", {}).get(subject) if seal else None
-        current = file_hash(str(Path(site) / subject))
         state, _ = compute_rule_state(site, rule, seal)
+
+        # Use compute_artifact_states for this single rule's artifacts
+        mini_manifest = {"rules": [rule]}
+        artifacts = compute_artifact_states(site, mini_manifest)
+        art = next((a for a in artifacts if a["path"] == subject), None)
 
         info = {
             "type": "artifact",
@@ -496,9 +483,9 @@ def _cmd_explain(args):
             "producing_rule": rule["name"],
             "rule_kind": rule["kind"],
             "state": state,
-            "sealed_hash": sealed_hash,
-            "current_hash": current,
-            "modified": sealed_hash != current if sealed_hash and current else None,
+            "sealed_hash": art["sealed_hash"] if art else None,
+            "current_hash": art["current_hash"] if art else None,
+            "modified": art["state"] == "modified" if art else None,
         }
         trial = read_trial_report(site, rule["name"])
         if trial:
