@@ -128,7 +128,8 @@ def check(design: Design) -> list[str]:
         return errors
 
     names: set[str] = set()
-    produced: set[str] = set(design.get("site_inputs", []))
+    si = design.get("site_inputs", [])
+    produced: set[str] = set(si.keys() if isinstance(si, dict) else si)
     predicates = design.get("predicates", {})
 
     for i, r in enumerate(rules):
@@ -326,7 +327,8 @@ def show(design: Design) -> None:
     print(f"  {'─' * 50}")
 
     if site_inputs:
-        print(f"  site inputs: {', '.join(site_inputs)}")
+        si_names = list(site_inputs.keys()) if isinstance(site_inputs, dict) else site_inputs
+        print(f"  site inputs: {', '.join(si_names)}")
         print()
 
     for r in rules:
@@ -578,39 +580,10 @@ def _make_touch_action(outputs: list[str]):
 def _setup_imports(site: str, imports: dict[str, str]) -> list[str]:
     """Create symlinks in the site for each declared import.
 
-    Parameters
-    ----------
-    site : str
-        Absolute path to the site directory.
-    imports : dict
-        Mapping of local names (relative to site) to external absolute paths.
-
-    Returns
-    -------
-    list of str
-        Resolved absolute paths of the external targets (for read-only
-        sandbox registration).
-
-    Raises
-    ------
-    ValueError
-        If an external path does not exist.
+    Delegates to :func:`husks.build.site.setup_links`.
     """
-    readonly_dirs: list[str] = []
-    for local_name, ext_path in imports.items():
-        ext = Path(ext_path).resolve()
-        if not ext.exists():
-            raise ValueError(
-                f"import '{local_name}': external path does not exist: {ext_path}"
-            )
-        link = Path(site) / local_name
-        link.parent.mkdir(parents=True, exist_ok=True)
-        if link.exists() or link.is_symlink():
-            # Remove stale link from a previous run
-            link.unlink()
-        os.symlink(str(ext), str(link))
-        readonly_dirs.append(str(ext))
-    return readonly_dirs
+    from husks.build.site import setup_links
+    return setup_links(site, imports)
 
 
 # ── Run ───────────────────────────────────────────────────────────

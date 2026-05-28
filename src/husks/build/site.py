@@ -120,6 +120,42 @@ def burn(S: Store, label: str) -> None:
 
 # ── File signatures ───────────────────────────────────────────────
 
+def setup_links(site: str, mapping: dict[str, str]) -> list[str]:
+    """Create read-only symlinks in *site* for each name→path entry.
+
+    Parameters
+    ----------
+    site : str
+        Absolute path to the site directory.
+    mapping : dict
+        Mapping of local names (relative to site) to external paths.
+
+    Returns
+    -------
+    list of str
+        Resolved absolute paths of the external targets (for read-only
+        sandbox registration).
+    """
+    import os
+
+    readonly_dirs: list[str] = []
+    for local_name, ext_path in mapping.items():
+        link = Path(site) / local_name
+        # If the file already exists in the site (e.g. pre-created by
+        # tests or a previous run), skip — don't clobber it.
+        if link.exists() or link.is_symlink():
+            continue
+        ext = Path(ext_path).resolve()
+        if not ext.exists():
+            raise ValueError(
+                f"setup_links: external path does not exist: {ext_path}"
+            )
+        link.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(str(ext), str(link))
+        readonly_dirs.append(str(ext))
+    return readonly_dirs
+
+
 def file_sig(p: str) -> bytes:
     """Return the CSE bytes atom for a file: content hash or ABSENT."""
     path = Path(p)

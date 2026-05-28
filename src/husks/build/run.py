@@ -32,7 +32,7 @@ def build(
     oracle_backend: OracleBackend | None = None,
     oracle_model: str | None = None,
     readonly_dirs: list[str] | None = None,
-    site_inputs: list[str] | None = None,
+    site_inputs: list[str] | dict[str, str] | None = None,
     **kwargs: Any,
 ) -> Store:
     """Execute a build.
@@ -83,13 +83,13 @@ def build(
     if site is None:
         site = f"/tmp/mccarthy-{name}-{str(uuid.uuid4())[:8]}"
 
-    # Stage site_inputs: copy listed files into the site directory.
+    # Stage site_inputs: create read-only symlinks into the site directory.
     if site_inputs:
-        import shutil as _shutil
-        for si in site_inputs:
-            dest = str(Path(site) / Path(si).name)
-            ensure_dir(str(Path(dest).parent))
-            _shutil.copy2(si, dest)
+        from husks.build.site import setup_links
+        if isinstance(site_inputs, list):
+            site_inputs = {Path(si).name: si for si in site_inputs}
+        si_readonly = setup_links(site, site_inputs)
+        readonly_dirs = list(set((readonly_dirs or []) + si_readonly))
 
     # Clear trace state so sequential in-process builds don't accumulate.
     T.clear()

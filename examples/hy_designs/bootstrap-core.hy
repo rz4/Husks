@@ -39,7 +39,7 @@ Usage:
   :name "bootstrap-core"
   :fuel 12
   :site ".husks-bootstrap-core-site"
-  :site_inputs ["spec/CSE-v1.md" "spec/CSE-v2.md"]
+  :site_inputs {"CSE-v1.md" "spec/CSE-v1.md" "CSE-v2.md" "spec/CSE-v2.md"}
   :oracle_backend live_oracle
 
   (-> (rule :name "generate-reader"
