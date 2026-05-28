@@ -1,6 +1,7 @@
 """Shared CLI utilities."""
 
 import sys
+from pathlib import Path
 
 # ── Exit codes ────────────────────────────────────────────────────
 
@@ -18,6 +19,17 @@ _STATE_SYM = {"fresh": "\u2713", "stale": "\u25b8", "missing": "\u2717",
 
 
 # ── CLI helpers ───────────────────────────────────────────────────
+
+def resolve_design(args) -> str:
+    """Return design path from args or default to design.json."""
+    d = getattr(args, "design", None)
+    if d:
+        return d
+    if Path("design.json").exists():
+        return "design.json"
+    print("error: no design file specified and design.json not found", file=sys.stderr)
+    sys.exit(EXIT_USAGE)
+
 
 def _load_manifest(args) -> tuple[dict, str]:
     """Resolve manifest and site from CLI args, exit on failure."""

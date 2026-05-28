@@ -13,7 +13,7 @@ from husks.designs.convergence import read_history, convergence_summary
 from husks.utils.console import _shorthash
 
 from husks.cli.helpers import (
-    _load_manifest, _STATE_SYM,
+    _load_manifest, _STATE_SYM, resolve_design,
     EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_MISSING_DEP, EXIT_DIRTY_STALE,
 )
 
@@ -187,68 +187,26 @@ def _cmd_status(args):
             sys.exit(EXIT_DIRTY_STALE)
 
 
-# ── diff ──────────────────────────────────────────────────────────
-
-def _cmd_diff(args):
-    from husks.manifest import compute_artifact_states
-
-    manifest, site = _load_manifest(args)
-    artifacts = compute_artifact_states(site, manifest)
-
-    # Filter to specific artifacts if given
-    if args.artifact:
-        filter_set = set(args.artifact)
-        artifacts = [a for a in artifacts if a["path"] in filter_set]
-
-    # Categorize
-    modified = [a for a in artifacts if a["state"] == "modified"]
-    missing = [a for a in artifacts if a["state"] == "missing"]
-    fresh = [a for a in artifacts if a["state"] == "fresh"]
-
-    # Check for undeclared files in site (not in any rule's outputs)
-    declared = {a["path"] for a in artifacts}
-    undeclared: list[str] = []
-    site_path = Path(site)
-    if site_path.exists():
-        for f in site_path.iterdir():
-            if f.name.startswith(".") or f.name.endswith(".husk"):
-                continue
-            if f.is_file() and f.name not in declared:
-                undeclared.append(f.name)
-
-    if args.json_output:
-        print(json.dumps({
-            "site": site,
-            "modified": [a["path"] for a in modified],
-            "missing": [a["path"] for a in missing],
-            "fresh": [a["path"] for a in fresh],
-            "undeclared": undeclared,
-        }, indent=2))
-    else:
-        if not modified and not missing and not undeclared:
-            print("  no differences")
-            return
-
-        if modified:
-            print("\n  modified:")
-            for a in modified:
-                sealed = (a["sealed_hash"] or "")[:10]
-                current = (a["current_hash"] or "")[:10]
-                print(f"    {a['path']:<24s} {sealed} -> {current}")
-        if missing:
-            print("\n  missing:")
-            for a in missing:
-                print(f"    {a['path']}")
-        if undeclared:
-            print("\n  undeclared:")
-            for u in undeclared:
-                print(f"    {u}")
-        print()
-
-
 # ── explain ───────────────────────────────────────────────────────
 
 def _cmd_explain(args):
+    # Dispatch to the appropriate explain mode
+    if args.graph:
+        _explain_graph(args)
+    elif args.diff:
+        _explain_diff(args)
+    elif args.seal:
+        _explain_seal(args)
+    elif args.subject:
+        _explain_subject(args)
+    else:
+        print("error: explain requires SUBJECT, --graph, --diff, or --seal",
+              file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+
+def _explain_subject(args):
+    """Explain a rule, artifact, or root by name."""
     from husks.manifest import (
         read_seal, read_trial_report, compute_rule_state,
         compute_artifact_states,
@@ -333,6 +291,120 @@ def _cmd_explain(args):
         _render_explain(info)
 
 
+def _explain_graph(args):
+    """Render the dependency graph (formerly top-level 'graph' command)."""
+    from husks.graph import render_graph
+
+    design_path = resolve_design(args)
+    design = from_json(design_path)
+    print(render_graph(design, fmt=args.graph_format, site=args.site))
+
+
+def _explain_diff(args):
+    """Show differences between sealed and current artifacts (formerly top-level 'diff')."""
+    from husks.manifest import compute_artifact_states
+
+    manifest, site = _load_manifest(args)
+    artifacts = compute_artifact_states(site, manifest)
+
+    # Filter to specific artifacts if given
+    if args.artifact:
+        filter_set = set(args.artifact)
+        artifacts = [a for a in artifacts if a["path"] in filter_set]
+
+    # Categorize
+    modified = [a for a in artifacts if a["state"] == "modified"]
+    missing = [a for a in artifacts if a["state"] == "missing"]
+    fresh = [a for a in artifacts if a["state"] == "fresh"]
+
+    # Check for undeclared files in site (not in any rule's outputs)
+    declared = {a["path"] for a in artifacts}
+    undeclared: list[str] = []
+    site_path = Path(site)
+    if site_path.exists():
+        for f in site_path.iterdir():
+            if f.name.startswith(".") or f.name.endswith(".husk"):
+                continue
+            if f.is_file() and f.name not in declared:
+                undeclared.append(f.name)
+
+    if args.json_output:
+        print(json.dumps({
+            "site": site,
+            "modified": [a["path"] for a in modified],
+            "missing": [a["path"] for a in missing],
+            "fresh": [a["path"] for a in fresh],
+            "undeclared": undeclared,
+        }, indent=2))
+    else:
+        if not modified and not missing and not undeclared:
+            print("  no differences")
+            return
+
+        if modified:
+            print("\n  modified:")
+            for a in modified:
+                sealed = (a["sealed_hash"] or "")[:10]
+                current = (a["current_hash"] or "")[:10]
+                print(f"    {a['path']:<24s} {sealed} -> {current}")
+        if missing:
+            print("\n  missing:")
+            for a in missing:
+                print(f"    {a['path']}")
+        if undeclared:
+            print("\n  undeclared:")
+            for u in undeclared:
+                print(f"    {u}")
+        print()
+
+
+def _explain_seal(args):
+    """Show seal material for a rule, artifact, or root."""
+    from husks.manifest import read_seal
+
+    manifest, site = _load_manifest(args)
+    subject = args.seal
+
+    rules = manifest.get("rules", [])
+    rule_by_name = {r["name"]: r for r in rules}
+
+    # Build output -> rule mapping
+    output_to_rule: dict[str, dict] = {}
+    for r in rules:
+        for o in r.get("outputs", []):
+            output_to_rule[o] = r
+
+    if subject == "root":
+        info = {
+            "type": "root_seal",
+            "root": manifest.get("root"),
+        }
+    elif subject in rule_by_name:
+        seal = read_seal(site, subject)
+        info = {
+            "type": "rule_seal",
+            "name": subject,
+            "seal": seal,
+        }
+    elif subject in output_to_rule:
+        rule = output_to_rule[subject]
+        seal = read_seal(site, rule["name"])
+        info = {
+            "type": "artifact_seal",
+            "path": subject,
+            "producing_rule": rule["name"],
+            "seal": seal,
+        }
+    else:
+        print(f"error: '{subject}' is not a known rule or artifact", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    if args.json_output:
+        print(json.dumps(info, indent=2, default=str))
+    else:
+        print(json.dumps(info, indent=2, default=str))
+
+
 def _render_explain(info: dict) -> None:
     """Render explain output as text."""
     etype = info.get("type", "?")
@@ -385,13 +457,6 @@ def _render_explain(info: dict) -> None:
             print(f"\n  trial verdict: {trial.get('winner', '?')}")
 
     print()
-
-
-# ── graph ─────────────────────────────────────────────────────────
-
-def _cmd_graph(args, design):
-    from husks.graph import render_graph
-    print(render_graph(design, fmt=args.graph_format, site=args.site))
 
 
 # ── history ───────────────────────────────────────────────────────
@@ -454,27 +519,33 @@ def _cmd_history(args, design):
         print(f"  {'─' * 60}\n")
 
 
-# ── gate ──────────────────────────────────────────────────────────
-
-def _cmd_gate(args):
-    from husks.gate import gate
-
-    reader = args.reader_cmd.split()
-    cross_check = getattr(args, "cross_check", True)
-    verbose = args.verbose if not args.json_output else False
-
-    ok = gate(reader, stamp_dir=args.stamp_dir, cross_check=cross_check,
-              verbose=verbose)
-
-    if args.json_output:
-        print(json.dumps({"pass": ok}))
-
-    sys.exit(EXIT_OK if ok else EXIT_BUILD_FAIL)
-
-
 # ── doctor ────────────────────────────────────────────────────────
 
 def _cmd_doctor(args):
+    # Handle --selftest mode
+    if args.selftest:
+        from husks.setup import selftest
+        ok = selftest()
+        if not args.json_output:
+            print("selftest: pass" if ok else "selftest: FAIL")
+        else:
+            print(json.dumps({"selftest": ok}))
+        sys.exit(EXIT_OK if ok else EXIT_BUILD_FAIL)
+
+    # Handle --conformance mode
+    if args.conformance:
+        if not args.reader_cmd:
+            print("error: --conformance requires --reader", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+        _doctor_conformance(args)
+        return
+
+    # Handle --live mode
+    if args.live:
+        _doctor_live(args)
+        return
+
+    # Default: environment checks
     checks: list[dict] = []
 
     # 1. husks import
@@ -557,3 +628,63 @@ def _cmd_doctor(args):
         any_fail = any(c["ok"] is False for c in checks)
         if any_fail:
             sys.exit(EXIT_MISSING_DEP)
+
+
+def _doctor_conformance(args):
+    """Run external reader conformance gate (formerly top-level 'gate')."""
+    from husks.gate import gate
+
+    reader = args.reader_cmd.split()
+    cross_check = getattr(args, "cross_check", True)
+    verbose = args.verbose if not args.json_output else False
+
+    ok = gate(reader, stamp_dir=args.stamp_dir, cross_check=cross_check,
+              verbose=verbose)
+
+    if args.json_output:
+        print(json.dumps({"pass": ok}))
+
+    sys.exit(EXIT_OK if ok else EXIT_BUILD_FAIL)
+
+
+def _doctor_live(args):
+    """Check live oracle readiness (API key + test call)."""
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    checks = []
+
+    if key:
+        checks.append({"name": "ANTHROPIC_API_KEY", "ok": True,
+                        "detail": f"set ({key[:4]}...)"})
+    else:
+        checks.append({"name": "ANTHROPIC_API_KEY", "ok": False,
+                        "detail": "not set"})
+
+    try:
+        import litellm  # noqa: F401
+        checks.append({"name": "litellm", "ok": True, "detail": "importable"})
+    except ImportError:
+        checks.append({"name": "litellm", "ok": False, "detail": "not installed"})
+
+    if key:
+        try:
+            from litellm import completion
+            resp = completion(
+                model="anthropic/claude-haiku-4-5-20251001",
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1,
+            )
+            checks.append({"name": "oracle ping", "ok": True, "detail": "responded"})
+        except Exception as ex:
+            checks.append({"name": "oracle ping", "ok": False, "detail": str(ex)})
+
+    if args.json_output:
+        print(json.dumps({"checks": checks}, indent=2))
+    else:
+        print()
+        for c in checks:
+            sym = "\u2713" if c["ok"] else "\u2717"
+            print(f"  {sym} {c['name']:<20s} {c['detail']}")
+        print()
+
+    if any(c["ok"] is False for c in checks):
+        sys.exit(EXIT_MISSING_DEP)
