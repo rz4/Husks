@@ -90,7 +90,7 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
     def shell_action(S: dict) -> None:
         import subprocess as _sp
 
-        site = S["site"]
+        site = S.get("stage", S["site"])
         result = _sp.run(
             cmd,
             shell=True,

@@ -50,7 +50,12 @@ def site_path(S: Store, name: str, *, write: bool = False) -> str:
         base = Path(S["stage"]).resolve()
     else:
         base = site
-    target = (base / name).resolve()
+    raw = base / name
+    # When writing to stage, break symlinks so writes create real files
+    # in the stage directory instead of following through to the live site.
+    if write and "stage" in S and raw.is_symlink():
+        raw.unlink()
+    target = raw.resolve()
     if not target.is_relative_to(base):
         if write:
             raise ValueError(f"path escapes site (write denied): {name}")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import tempfile
 import time
@@ -33,13 +34,19 @@ def _staged(S: Store, outputs: list[str]):
     """Run recipe in a staging directory; promote outputs on success."""
     stage = tempfile.mkdtemp(prefix="husks-stage-")
     S["stage"] = stage
+    # Mirror site contents into stage so recipes can read inputs
+    site = Path(S["site"]).resolve()
+    for item in site.iterdir():
+        dst = Path(stage) / item.name
+        if not dst.exists():
+            os.symlink(str(item), str(dst))
     try:
         yield
-        # Promote staged outputs to live site
+        # Promote: move real (non-symlink) files that match declared outputs
         for o in outputs:
-            staged = Path(site_path(S, o, write=True))  # resolves in stage
-            if staged.exists():
-                live = Path(S["site"]).resolve() / o
+            staged = Path(stage) / o
+            if staged.exists() and not staged.is_symlink():
+                live = site / o
                 live.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(staged), str(live))
     finally:
@@ -61,8 +68,8 @@ def _check_declared_outputs(
     """
     require_nonempty = recipe is not None and recipe.get("type") == "oracle"
     for o in outputs:
-        # Check staging dir first, fall back to live site (shell commands
-        # write directly to S["site"] and bypass staging).
+        # Check staging dir first, fall back to live site (Python actions
+        # that call site_path without write=True bypass staging).
         op = Path(site_path(S, o, write=True))
         if not op.exists():
             op = Path(site_path(S, o))

@@ -412,7 +412,7 @@ def live_oracle(
     """
     from pathlib import Path as _Path
 
-    site: str = S["site"]
+    site: str = S.get("stage", S["site"])
     prompt: str = recipe.get("prompt", "")
     tool_names: list[str] = recipe.get(
         "tools", ["read-file", "write-file", "list-dir", "tree"]
