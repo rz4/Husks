@@ -29,7 +29,7 @@ A design is the contract. It becomes a Husk when it is lowered, sealed, and veri
 
 ---
 
-## 4. Execution model
+## 3. Execution model
 
 The graph owns control flow. Each rule declares its inputs and outputs up front. Each recipe runs in a bounded workspace. Each oracle gets an explicit tool allowlist and its own local fuel. As it walks, the runtime records reads, writes, hashes, cost, timing, what was stale and why, what was reused, and how it ended.
 
@@ -43,7 +43,7 @@ The target names completion. Reach it and the build commits; fail to and it halt
 
 ---
 
-## 5. Transport and spine
+## 4. Transport and spine
 
 There are two ways to hold a Husk, and they are not the same kind of thing.
 
@@ -99,7 +99,7 @@ The transport is allowed to change. New input dialects, new conveniences, new la
 
 ---
 
-## 6. The seal, and why a husk outlives its engine
+## 5. The seal, and why a husk outlives its engine
 
 A seal is content, never instrumentation. For each node it is a hash over the recipe and the hashes of the inputs:
 
@@ -124,23 +124,27 @@ A third reader has since joined those two — written from cold by a model that 
 
 ---
 
-## 7. Conformance
+## 6. Conformance
 
-Verification is only as strong as what you test it against. The repo ships a frozen conformance demo and an adversarial fixture, and the adversarial one is nasty on purpose — filenames and byte patterns that a casual JSON, regex, or whitespace parser will mishandle, because the only reader that survives them is one that honors the length prefix and reads exactly the bytes it is told to. Two more fixtures must be *rejected*, not parsed: `malformed-leadingzero.husk` and `malformed-truncated.husk`.
+Verification is only as strong as what you test it against. The repo ships six frozen conformance vectors — three positive cases that must reproduce their roots, and three malformed fixtures that must be *rejected*, not parsed.
 
-A reader clears Level 0 when all five hold:
+The positive cases are `demo`, `adversarial`, and `unsorted`. The adversarial one is nasty on purpose — filenames and byte patterns that a casual JSON, regex, or whitespace parser will mishandle, because the only reader that survives them is one that honors the length prefix and reads exactly the bytes it is told to. The malformed fixtures — `malformed-leadingzero`, `malformed-trailing`, and `malformed-truncated` — test that the parser rejects structurally invalid input rather than guessing its way past it.
+
+A reader clears Level 0 when all hold:
 
 1. it computes the frozen demo root;
 2. it computes the frozen adversarial root;
-3. it rejects the leading-zero input;
-4. it rejects the truncated input;
-5. it agrees with the independent JavaScript reader.
+3. it computes the frozen unsorted root;
+4. it rejects the leading-zero input;
+5. it rejects the trailing-bytes input;
+6. it rejects the truncated input;
+7. it agrees with the independent JavaScript reader.
 
 Anything less is a reader that works on the easy cases and lies on the hard ones. The point of the adversarial fixture is to make lying expensive: a parser that takes shortcuts produces a different root, and a different root is a failure you can see.
 
 ---
 
-## 8. Bootstrap validation
+## 7. Bootstrap validation
 
 `examples/bootstrap-core.json` turns that test on the framework itself. It has two nodes. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate, `husks_conformance.gate`, judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
 
@@ -148,7 +152,7 @@ The shape is the whole thesis in miniature: the oracle produces, the gate verifi
 
 ---
 
-## 9. Convergence and extraction
+## 8. Convergence and extraction
 
 A design is not written once. It is *worked*. You run it, read the trace, perturb the nodes that didn't satisfy, pin the ones that did, and run again. Across revisions this is not tuning a build. It is **program extraction against nondeterminism** — separating the part of a task you have managed to reduce to a deterministic rule from the part that has, so far, resisted that reduction.
 
@@ -165,7 +169,7 @@ The fixed point you are working toward is the maximal deterministic skeleton, wi
 
 ---
 
-## 10. The McCarthy version
+## 9. The McCarthy version
 
 Husks is a small evaluator over symbolic build expressions.
 

@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 from typing import Any
 
 from husks.designs.convergence import convergence_summary, read_history
+from husks.manifest import read_seal
 from husks.utils.events import BuildTrace
 
 
@@ -158,23 +158,19 @@ def assemble(
 
         # Seal info
         seal_info: dict[str, Any] | None = None
-        seal_path = Path(site) / ".traces" / f"{name}.seal"
-        if seal_path.exists():
-            try:
-                seal_data = json.loads(seal_path.read_text())
-                seal_hash = seal_data.get("seal", "")
-                cur_recipe_digest = seal_data.get("recipe_digest", "")
-                recipe_changed = False
-                if len(history) >= 2:
-                    prev_rd = history[-2].get("recipe_digest")
-                    if prev_rd is not None and cur_recipe_digest:
-                        recipe_changed = cur_recipe_digest != prev_rd
-                seal_info = {
-                    "hash": seal_hash,
-                    "recipe_changed": recipe_changed,
-                }
-            except Exception:
-                pass
+        seal_data = read_seal(site, name)
+        if seal_data:
+            seal_hash = seal_data.get("seal", "")
+            cur_recipe_digest = seal_data.get("recipe_digest", "")
+            recipe_changed = False
+            if len(history) >= 2:
+                prev_rd = history[-2].get("recipe_digest")
+                if prev_rd is not None and cur_recipe_digest:
+                    recipe_changed = cur_recipe_digest != prev_rd
+            seal_info = {
+                "hash": seal_hash,
+                "recipe_changed": recipe_changed,
+            }
 
         node_dict: dict[str, Any] = {
             "name": name,

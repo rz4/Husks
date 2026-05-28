@@ -1,69 +1,12 @@
 """
-kernel.py -- Agentic loop for Husks oracle execution.
+kernel.py -- Fuel-bounded agentic loop for Husks oracle execution.
 
-This module implements the agentic kernel: a fuel-bounded loop that
-mediates between the LLM and the tool registry.  The kernel receives
-a context (prompt, tool allowlist, model, fuel budget), invokes the
-LLM, parses the response into actions, dispatches tool calls through
-the sandboxed tool registry, and recurses until the LLM stops or
-fuel is exhausted.
+Mediates between the LLM and the sandboxed tool registry.  Loops
+iteratively until the LLM stops or fuel is exhausted.  live_oracle()
+adapts the kernel to the build's oracle backend signature.
 
-Execution flow
---------------
-  1. agent() builds the initial context: prompt, tool schemas, fuel.
-  2. step() calls the LLM (via invoke_llm), parses the response.
-  3. If the response is a tool call: validate the tool is allowed,
-     dispatch it, append the result to the conversation trace, and
-     loop (iteratively, not recursively -- avoids Python stack limits
-     at high fuel values).
-  4. If the response is "stop": return the result.
-  5. If fuel is exhausted: return a halt result.
-
-Context dict
-------------
-The kernel threads a context dict ``C`` through the loop:
-
-  prompt      str         -- the initial user prompt
-  tools       list[str]   -- allowed tool names
-  tool-defs   list[dict]  -- OpenAI function-calling schemas
-  system      str|None    -- system prompt
-  model       str         -- litellm model identifier
-  max-tokens  int         -- max output tokens per LLM call
-  rule        str|None    -- rule name (for usage tracking)
-  trace       list[dict]  -- conversation trace (tool calls + results)
-
-The trace is the conversation memory: each tool call appends an
-entry with the form, tool name, and output.  The trace is rebuilt
-into OpenAI messages format before each LLM call.
-
-live_oracle()
--------------
-Adapts the agentic kernel to the build's oracle backend signature::
-
-    def live_oracle(S, rule_name, recipe, outputs) -> dict
-
-This is what build.py calls when an oracle recipe fires.  It:
-  1. Sets the site root for tool sandboxing.
-  2. Constructs the system prompt (site location, required outputs).
-  3. Snapshots usage before/after to compute token deltas.
-  4. Runs agent() and returns usage dict.
-
-Interface with husks
--------------------------
-Imports from:
-
-  oracle/llm.py    -- call_messages(), get_usage() for LLM invocation
-                      and usage delta computation.
-  oracle/tools.py  -- schemas(), dispatch(), set_site_root() for
-                      tool management and sandboxing.
-
-Consumed by:
-
-  build.py         -- via the oracle_backend parameter passed to
-                      build().  cli.py sets oracle_backend=live_oracle
-                      for live runs.
-
-  oracle/__init__  -- re-exports live_oracle and set_oracle_model.
+See docs/architecture.md for context dict schema, execution flow,
+and the live_oracle adapter.
 """
 
 from __future__ import annotations

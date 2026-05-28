@@ -1,68 +1,12 @@
 """
 transport.py -- Bijective CSE <-> JSON mapping and flat-design elaboration.
 
-This module sits at the boundary between the permanent wire format
-(CSE byte trees, as defined by core.py) and the ergonomic authoring
-format (JSON dicts).  It provides two services:
+Lossless round-trip between CSE byte trees and JSON dicts, plus
+deterministic elaboration of flat rule lists into CSE AST trees.
+Also defines the OracleBackend typing Protocol.
 
-  1. Lossless CSE <-> JSON bijection.  A parsed CSE tree can be
-     converted to a canonical JSON dict and back without loss.
-     Round-tripping through JSON reproduces the original CSE bytes
-     exactly.  This enables tooling (editors, validators, debuggers)
-     that operates on JSON while preserving the canonical CSE form.
-
-  2. Flat-design elaboration.  A flat design (a linear list of rules with
-     implicit dependencies) is deterministically converted into a CSE
-     AST tree.  This is the bridge from the JSON IR authored by
-     humans/agents to the permanent CSE form that participates in
-     seals.  Elaboration is INPUT-ONLY and LOSSY UPWARD: the original
-     flat ordering and sharing intent cannot be reconstructed from the
-     CSE tree.
-
-CSE form tags
--------------
-The bijection recognizes these tagged forms:
-
-  husk     (4:husk <version> <build>)
-  build    (5:build <name> <fuel> <target-node> ...)
-  rule     (4:rule <name> <recipe> <inputs> <outputs> children...)
-  action   (6:action)                          -- no payload in CSE v1
-  oracle   (6:oracle <name> <prompt> <tools> <fuel>)
-  trial    (5:trial branch...)
-  commit   (6:commit <value>)
-  halt     (4:halt <reason>)
-  cond     (4:cond <predicate-name> <then-node> <else-node>)
-  let      (3:let <name> <bound-node>)
-
-Each form maps to a JSON dict with a ``"form"`` key identifying the
-tag.  Atoms become JSON strings; NIL becomes JSON null; lists of atoms
-become JSON arrays of strings.
-
-OracleBackend protocol
-----------------------
-Also defines the ``OracleBackend`` typing Protocol -- the content-keyed
-interface at the instrumentation boundary.  The protocol is defined here
-(rather than in build.py) because it describes the contract between the
-permanent specification layer and the volatile execution layer.  Nothing
-about the backend's identity participates in the seal.
-
-Interface with husks
--------------------------
-Imports from:
-
-  core.py  -- encode(), parse(), NIL for CSE codec operations.
-
-Consumed by:
-
-  designs/ir.py    -- (indirectly) the flat design is the JSON IR that
-                      ir.py validates and compiles.  elaborate() can
-                      produce the CSE AST from the same IR.
-
-  cli.py           -- May use to_json_str / from_json_str for
-                      debugging husk files.
-
-  External tools   -- The bijection enables third-party tooling to
-                      inspect and manipulate husk files via JSON.
+See docs/architecture.md for CSE form tags, the OracleBackend
+protocol, and elaboration semantics.
 """
 
 from __future__ import annotations

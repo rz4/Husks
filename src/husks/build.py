@@ -1,133 +1,12 @@
 """
 build.py -- Fuel-bounded build evaluator for the Husks calculus.
 
-This module is the runtime layer of Husks.  It takes a compiled
-dependency tree of rule nodes (produced by the design layer) and
-evaluates them depth-first against a site directory, producing sealed
-artifacts and a Merkle-rooted .husk record.
+Walks a compiled node tree depth-first, fires stale rules, seals fresh
+ones, and produces a Merkle-rooted .husk record.  All cryptographic
+operations are delegated to core.py.
 
-Execution model
----------------
-The evaluator walks the node tree depth-first.  For each rule node:
-
-  1. Resolve prerequisites -- recursively evaluate child nodes.
-  2. Freshness check -- compare the current state of inputs, outputs,
-     and recipe against the stored seal from the previous run.
-     If all match, the rule is *sealed* and its outputs are reused.
-  3. If stale -- burn one unit of fuel, dispatch the recipe (action,
-     oracle, or trial), guard oracle outputs, write a new seal, and
-     append a convergence history record.
-
-Fuel is the termination guarantee.  Every stale rule costs one fuel
-unit.  When fuel reaches zero the build halts.  Oracle recipes have
-an additional per-oracle fuel budget that bounds the number of agentic
-steps the kernel may take.
-
-Recipes
--------
-  action  -- A deterministic Python callable ``(Store) -> None``.
-             The build trusts that actions are pure functions of
-             their declared inputs.  Actions never call the oracle
-             subsystem.
-
-  oracle  -- A bounded, nondeterministic model call.  The evaluator
-             delegates to an oracle backend (a callable matching the
-             ``OracleBackend`` signature) and never inspects the
-             model's reasoning.  It checks only the residue: the
-             output files the oracle was required to produce.
-
-  trial   -- A speculative fork.  Each branch recipe is evaluated in
-             an isolated copy of the site.  A verdict function selects
-             the winner, and the winner's outputs are copied back to
-             the primary site.
-
-Node types
-----------
-  rule    -- Work node with inputs, outputs, children, and a recipe.
-  commit  -- Terminal success: sets status to "committed" and halts.
-  halt    -- Terminal failure: sets status to "halted" and halts.
-  cond    -- Conditional branch: evaluates a predicate callable
-             against the Store and dispatches to exactly one of two
-             child nodes (then_node / else_node).  Only the selected
-             branch fires; the other is never evaluated.
-  let     -- Shared sub-DAG reference.  At the runtime level, let
-             nodes are resolved during compilation: the compiler
-             emits the bound rule node once and wires it as a child
-             everywhere it is referenced.  The evaluator never sees
-             a "let" node type -- they are eliminated before
-             execution.
-
-Store
------
-The build state is a plain dict (``Store``) threaded through every
-function.  Keys:
-
-  site            str     -- absolute path to the site directory
-  fuel            int     -- remaining fuel budget
-  status          str     -- "running" | "committed" | "halted"
-  value           str|None -- terminal value or halt reason
-  trace           list    -- append-only event log (dicts)
-  oracle-backend  callable|None -- oracle dispatch function
-  run-id          str     -- UUID for this build invocation
-
-The store is mutable by design: fuel decrements, status transitions,
-and trace appends are side effects that accumulate during evaluation.
-
-Seal format (v1)
-----------------
-Each rule's seal is a JSON file at ``.traces/<rule>.seal`` containing:
-
-  v               int    -- format version (1)
-  seal            str    -- hex SHA-256 of the CSE seal preimage
-  recipe_digest   str    -- hex SHA-256 of the CSE-encoded recipe
-  inputs          dict   -- {filename: hex content hash} for each
-                            declared input
-
-The seal is the staleness oracle: if the current recipe digest and
-all input hashes match the stored seal, the rule is fresh and its
-outputs are reused without re-execution.
-
-Interface with husks
--------------------------
-Imports from:
-
-  core.py     -- CSE encoding, content hashing, seal computation,
-                 node digest computation.  All cryptographic operations
-                 are delegated to core; build.py never calls hashlib
-                 directly except inside recipe_to_cse (which defers
-                 to core.recipe_digest for the actual hash).
-
-  utils/      -- Event emission (events.py) and console rendering
-                 (console.py).  Currently uses husks.trace as a
-                 transitional bridge until the utils/ split lands.
-
-Consumed by:
-
-  designs/    -- The design layer compiles a design IR into node dicts
-                 and calls build() with the compiled tree.
-
-  cli.py      -- The CLI's ``run`` command calls build() after design
-                 compilation.
-
-Node dict schema
-----------------
-A rule node is a dict with keys:
-
-  type       "rule"
-  name       str          -- unique rule name
-  children   list[node]   -- prerequisite rule nodes
-  inputs     list[str]    -- declared input filenames (relative to site)
-  outputs    list[str]    -- declared output filenames (relative to site)
-  recipe     recipe|None  -- action/oracle/trial dict, or None
-
-A commit node:  {"type": "commit", "value": str}
-A halt node:    {"type": "halt", "reason": str}
-A cond node:    {"type": "cond", "predicate": callable,
-                 "then": node, "else": node}
-
-A recipe dict has key ``type`` ("action", "oracle", or "trial") plus
-recipe-specific fields.  See the node constructor functions (rule,
-action, oracle, trial, cond, commit, halt) for the canonical schemas.
+See docs/architecture.md for execution model, store schema, seal
+format, and node dict schemas.
 """
 
 from __future__ import annotations
@@ -329,13 +208,17 @@ def recipe_to_cse(recipe: Recipe) -> CseValue:
     kind: str = recipe["type"]
     if kind == "action":
         fn = recipe["fn"]
+        args = recipe.get("args", ())
         cmd: str = getattr(fn, "_husks_cmd", "")
         if cmd:
             # Shell action — command string is the sole identity
             return [b"action", cmd.encode()]
         else:
-            # Callable action — behavior digest
-            return [b"action", _fn_behavior_digest(fn).encode()]
+            # Callable action — behavior digest + args
+            parts = [b"action", _fn_behavior_digest(fn).encode()]
+            if args:
+                parts.append(repr(args).encode())
+            return parts
     if kind == "oracle":
         name = recipe.get("name")
         return [
@@ -640,26 +523,64 @@ def write_build_manifest(
 # ── Node constructors ─────────────────────────────────────────────
 
 def rule(
-    name: str,
-    *children: Node,
+    *args: Any,
+    name: str | None = None,
     inputs: list[str] | None = None,
     outputs: list[str] | None = None,
     recipe: Recipe = None,
 ) -> Node:
-    """Construct a rule node."""
+    """Construct a rule node.
+
+    The name may be passed positionally or as a keyword::
+
+        rule("greet", child1, child2, ...)   # positional
+        rule(child1, child2, :name "greet")  # keyword (Hy style)
+    """
+    children: list[Node] = []
+    for a in args:
+        if isinstance(a, str):
+            if name is not None:
+                raise TypeError("rule() got multiple values for 'name'")
+            name = a
+        elif isinstance(a, dict):
+            children.append(a)
+        else:
+            raise TypeError(f"rule() unexpected argument: {a!r}")
+    if name is None:
+        raise TypeError("rule() missing required argument: 'name'")
     return {
         "type": "rule",
         "name": name,
-        "children": list(children),
+        "children": children,
         "inputs": inputs if inputs is not None else [],
         "outputs": outputs if outputs is not None else [],
         "recipe": recipe,
     }
 
 
-def action(fn: Callable[[Store], None]) -> dict[str, Any]:
-    """Construct an action recipe from a deterministic callable."""
-    return {"type": "action", "fn": fn}
+_ACTION_ARG_TYPES = (str, int, float, bool, bytes, type(None))
+
+
+def action(fn: Callable[[Store], None], *args: Any) -> dict[str, Any]:
+    """Construct an action recipe from a deterministic callable.
+
+    Extra positional *args* are passed to *fn* after the Store::
+
+        action(my_func, "hello", 42)
+        # fn is called as my_func(S, "hello", 42)
+
+    Arguments must be deterministic (str, int, float, bool, bytes, None)
+    so that the recipe digest is reproducible.
+    """
+    for i, a in enumerate(args):
+        if not isinstance(a, _ACTION_ARG_TYPES):
+            raise TypeError(
+                f"action() arg {i + 1} has type {type(a).__name__}; "
+                f"only {', '.join(t.__name__ for t in _ACTION_ARG_TYPES)} "
+                f"are allowed"
+            )
+    return {"type": "action", "fn": fn, "args": args}
+
 
 
 def oracle(
@@ -857,7 +778,7 @@ def eval_recipe(
         return None
     kind: str = recipe["type"]
     if kind == "action":
-        recipe["fn"](S)
+        recipe["fn"](S, *recipe.get("args", ()))
         return None
     if kind == "oracle":
         return eval_oracle(S, rule_name, recipe, outputs)
@@ -1142,9 +1063,9 @@ def compute_build_root(S: Store, node: Node) -> str:
 # ── Top-level build ───────────────────────────────────────────────
 
 def build(
-    name: str,
-    fuel: int,
-    *nodes: Node,
+    *args: Any,
+    name: str | None = None,
+    fuel: int | None = None,
     site: str | None = None,
     oracle_backend: OracleBackend | None = None,
     oracle_model: str | None = None,
@@ -1152,6 +1073,11 @@ def build(
     **kwargs: Any,
 ) -> Store:
     """Execute a build.
+
+    Name and fuel may be passed positionally or as keywords::
+
+        build("my-build", 12, node, ...)        # positional
+        build(node, :name "my-build" :fuel 12)  # keyword (Hy style)
 
     Parameters
     ----------
@@ -1173,6 +1099,24 @@ def build(
     Store
         The final build state dict.
     """
+    nodes: list[Node] = []
+    for a in args:
+        if isinstance(a, str):
+            if name is not None:
+                raise TypeError("build() got multiple values for 'name'")
+            name = a
+        elif isinstance(a, int) and not isinstance(a, bool):
+            if fuel is not None:
+                raise TypeError("build() got multiple values for 'fuel'")
+            fuel = a
+        elif isinstance(a, dict):
+            nodes.append(a)
+        else:
+            raise TypeError(f"build() unexpected argument: {a!r}")
+    if name is None:
+        raise TypeError("build() missing required argument: 'name'")
+    if fuel is None:
+        raise TypeError("build() missing required argument: 'fuel'")
     if site is None:
         site = f"/tmp/mccarthy-{name}-{str(uuid.uuid4())[:8]}"
 

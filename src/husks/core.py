@@ -1,95 +1,12 @@
 """
-core.py -- Canonical S-Expression Encoding (CSE) codec, content-addressed
-seal computation, and Merkle DAG verification for Husks build records.
+core.py -- CSE codec, content-addressed seals, and Merkle DAG verification.
 
-This module is the permanence layer of the Husks build calculus.  It
-implements the frozen CSE v1 wire format, the seal preimage construction,
-and the recursive node-digest algorithm that produces a single build-root
-hash over an entire dependency tree.  A conformant reader in any language
-that implements the same functions against the same spec (CSE-v1.md)
-will reproduce identical hashes from identical inputs.
+The permanence layer.  Implements the frozen CSE v1 wire format, seal
+preimage construction, and node-digest algorithm.  Dependency-free:
+imports only stdlib (hashlib, os).  No sibling imports.
 
-Isolation contract
-------------------
-This module imports depends only on
-the Python standard library (hashlib, os).  It must remain portable to
-any environment where Python >= 3.10 is available.  No third-party
-packages, no sibling imports, no runtime configuration.
-
-Wire format (CSE v1)
---------------------
-  atom  ::= <decimal-length> ":" <exactly length bytes>
-  list  ::= "(" child* ")"
-  NIL   ::= 0:                          (zero-length atom, empty bytes)
-
-Length prefixes are ASCII decimal with no leading zeros except the
-literal "0" for zero-length atoms.  There is no whitespace, no escaping,
-and no comments.  The format is self-delimiting: a parser that consumes
-one value knows exactly where it ends.
-
-Seal preimage (CSE v1)
-----------------------
-  seal-preimage = (4:seal <version> <recipe-digest> ( (name hash)* ))
-  seal          = SHA-256( CSE( seal-preimage ) )
-
-  recipe-digest = SHA-256( CSE( recipe-form ) )    [hex string]
-
-The seal captures the recipe identity and the content hashes of every
-declared input.  It deliberately excludes model identity, token counts,
-cost, wall time, and any other volatile oracle metadata -- those are
-provenance, not verification.
-
-Node digest (Merkle DAG)
-------------------------
-  node-form = (4:node <name> <seal> ( (name hash)* ) ( digest* ))
-  digest    = SHA-256( CSE( node-form ) )
-
-Each node's digest covers its own seal, its output file hashes, and
-the digests of all child nodes (depth-first, bottom-up).  The root
-node's digest is the build-root: a single hash that transitively
-covers every recipe, every input, every output, and the full
-dependency structure of the build.
-
-Type discipline
----------------
-CSE values are represented in Python as:
-  atom  -> bytes
-  list  -> list[CseValue]   (recursive)
-  NIL   -> b""              (the empty bytes literal)
-
-All hash outputs are lowercase ASCII hex, returned as:
-  - bytes atoms (sha256_bytes, content_hash) for embedding in CSE trees
-  - str          (recipe_digest, compute_seal, compute_node_digest,
-                  recompute_root) for JSON-serializable seal records
-
-Functions that accept "CSE values" accept the union type CseValue.
-Functions that accept raw wire bytes accept bytes | memoryview.
-
-Interface with husks
---------------------
-This module is consumed by:
-
-  build.py     -- calls compute_seal() and compute_node_digest() to
-                  produce seals and the build-root after execution.
-                  Calls encode() and node structure helpers to serialize
-                  the .husk file.
-
-  designs/ir.py  -- (indirectly) the compiled design flows through build,
-                  which invokes core for all cryptographic operations.
-
-  transport.py -- calls encode() and parse() for the CSE <-> JSON
-                  bijection and flat-design elaboration.
-
-  setup.py     -- calls recompute_root() and verify() to run the
-                  selftest against frozen conformance vectors.
-
-  gate_level0  -- calls recompute_root() to validate generated readers
-                  against the same frozen vectors.
-
-No other module should call into core directly.  All seal and digest
-computation is centralized here so that a single audit of this file
-is sufficient to verify the cryptographic integrity of the system.
-
+See docs/architecture.md for wire format grammar, seal preimage
+construction, node digest algorithm, and type discipline.
 """
 
 from __future__ import annotations

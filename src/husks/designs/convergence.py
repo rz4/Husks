@@ -1,61 +1,12 @@
 """
 convergence.py -- Post-execution analysis of rule history.
 
-After a build runs, each fired rule appends a convergence record to
-its JSONL history log at ``.traces/<rule>.history.jsonl``.  This
-module reads those logs and classifies rule behavior across runs.
+Reads JSONL history logs from .traces/<rule>.history.jsonl and
+classifies rule behavior: stable, converging, prompt-loading,
+volatile, or no-data.  Self-contained (stdlib only).
 
-Classifications
----------------
-  stable         -- Output hashes are identical across all observed
-                    runs.  The oracle produces the same bytes every
-                    time, so re-execution is pure waste.
-
-  converging     -- Fuel consumption is falling or flat, and prompt
-                    length is falling or flat (or absent).  The oracle
-                    is settling toward a fixed point.
-
-  prompt-loading -- Fuel is falling or flat, but prompt length is
-                    rising.  The oracle is migrating signal into the
-                    prompt (expensive but potentially converging in
-                    output).
-
-  volatile       -- No clear trend.  The oracle's behavior varies
-                    across runs without settling.
-
-  no-data        -- No history entries exist for this rule.
-
-These classifications are advisory.  They inform prompt engineering
-and fuel tuning but do not affect seals or verification.
-
-History record schema
----------------------
-Each JSONL line is a dict::
-
-    {
-      "run_id":        str,           # UUID of the build invocation
-      "ts":            float,         # unix timestamp
-      "fuel_consumed": int,           # agentic steps taken
-      "prompt_length": int | null,    # oracle prompt length (null for actions)
-      "satisfaction":  bool | null,    # trial verdict (true=winner, false=loser, null=error)
-      "traced_reads":  [str, ...],    # files the oracle actually read
-      "output_hashes": [str, ...],    # hex content hashes of declared outputs
-    }
-
-Interface with husks
--------------------------
-This module is self-contained.  It reads JSONL files from the
-filesystem and returns plain dicts.  It imports nothing from
-husks except the standard library.
-
-Consumed by:
-
-  designs/__init__.py  -- re-exports convergence_summary and
-                          declared_vs_traced.
-
-  cli.py               -- The ``history`` command displays convergence
-                          data for individual rules and design-wide
-                          summaries.
+See docs/architecture.md for classification definitions and history
+record schema.
 """
 
 from __future__ import annotations

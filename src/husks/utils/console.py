@@ -1,48 +1,11 @@
 """
 console.py -- ANSI terminal renderer for Husks build events.
 
-This module renders build events to the terminal with color, alignment,
-and summary formatting.  It implements the TraceListener protocol
-defined in events.py: the ``notify(event)`` method receives each event
-dict as it is emitted, and dispatches to the appropriate formatting
-function.
+Implements TraceListener: receives event dicts and renders to stdout
+with color and alignment.  Pure side effect -- never modifies build
+state.  ANSI suppressed when stdout is not a TTY.
 
-Rendering is a pure side effect (print to stdout).  The console module
-never modifies event data or build state.  It can be omitted entirely
-for headless / CI / test execution -- the event stream in events.py is
-complete without it.
-
-Layout
-------
-  build_start     ═══ header bar with name, site, fuel, model ═══
-  rule_start      ▸ name  (stale: reason)
-  rule_done       ✓ name  elapsed
-  rule_sealed     ● name  reused by parent
-  rule_halted     ✗ name  reason
-  oracle_start    → oracle  "prompt preview..."
-  oracle_done       tokens · cost · elapsed
-  tool_call       → tool  {args}
-  tool_result       output preview
-  trial_branch    ⊢ branch · score · elapsed · cost
-  trial_verdict   ⊣ verdict → winner
-  build_end       ─── summary: nodes · artifacts · oracle · fuel ───
-
-ANSI escapes are suppressed when stdout is not a TTY.
-
-Interface with husks
--------------------------
-Imports from:
-
-  utils/events.py  -- TraceListener protocol (structural, not imported
-                      at runtime).
-
-Depends only on the standard library.
-
-Consumed by:
-
-  utils/__init__.py -- wired to the default BuildTrace via
-                       default_trace().
-  cli.py            -- may create additional Console instances.
+See docs/architecture.md for the event layout table.
 """
 
 from __future__ import annotations

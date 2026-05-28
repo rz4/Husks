@@ -1,46 +1,11 @@
 """
 tools.py -- Sandboxed filesystem tools for Husks oracle execution.
 
-This module provides the tool registry that oracles use to interact
-with the site directory during execution.  Four built-in tools:
+Four built-in tools (read-file, write-file, list-dir, tree) with
+site-root sandbox enforcement.  The @tool decorator auto-generates
+OpenAI function-calling schemas.  Stdlib only, no husks imports.
 
-  read-file   -- Read a file as UTF-8 text.
-  write-file  -- Write content to a file, creating parent directories.
-  list-dir    -- List names in a directory (one level).
-  tree        -- Recursive directory listing up to a given depth.
-
-All tool paths are resolved through a site-root sandbox.  When the
-sandbox is active, any path that resolves outside the site root
-raises ValueError, preventing oracle escape.
-
-Tool registration
------------------
-The ``@tool`` decorator registers a Python function in the module
-registry and auto-generates an OpenAI function-calling schema from
-the function's type hints and signature.  The tool name is derived
-from ``fn.__name__`` with underscores replaced by hyphens
-(``read_file`` becomes ``read-file``).
-
-Public API
-----------
-  set_site_root(path, readonly)  -- Activate/deactivate the sandbox.
-  sandbox(path, write)           -- Resolve a path within the sandbox.
-  schemas(names)                 -- Return OpenAI tool definitions.
-  dispatch(name, args)           -- Call a registered tool by name.
-
-Interface with husks
--------------------------
-Consumed by:
-
-  oracle/kernel.py -- calls dispatch() to execute tool calls from
-                      the LLM, and schemas() to build the tool
-                      definitions sent to the model.
-
-  build.py         -- calls set_site_root() before/after oracle
-                      evaluation (indirectly, via kernel.live_oracle).
-
-Does not import anything from husks.  This module is
-self-contained with stdlib-only dependencies.
+See docs/architecture.md for the tool list and sandbox details.
 """
 
 from __future__ import annotations

@@ -132,8 +132,8 @@ it's versioned with the engine, so it can't drift, and it's where lessons from
 real runs get encoded. The current stance:
 
 - **Design first.** Write `design.json` before exploring or running anything.
-- **Check, show, wait.** `check` then `show` the graph; wait for your approval
-  before `run`. Stub-first when the shape is new.
+- **Check, wait.** `check` the design (add `--verbose` to print the compiled
+  graph); wait for your approval before `run`. Stub-first when the shape is new.
 - **Two forms to start.** `action` (deterministic) and `oracle` (one bounded
   model call). The JSON IR also supports `let`, `cond`, and `trial`, but start
   with `action` + `oracle` until the simpler forms are routine.
@@ -172,9 +172,9 @@ step is ideal:
 What you should see, in order:
 
 1. **It writes `design.json` first** — before reading files or running anything.
-2. **`check` then `show`** — the build graph printed for you to read. This is the
-   contract: inputs, outputs, prompts, tools, and fuel, all visible *before* any
-   model call.
+2. **`check --verbose`** — validates the design and prints the compiled graph for
+   you to read. This is the contract: inputs, outputs, prompts, tools, and fuel,
+   all visible *before* any model call.
 3. **It stops and asks approval.** Approve.
 4. **Stub run** (if requested): `husks run design.json --site /tmp/husks-slug --stub`
    — confirms the graph executes and seals.
@@ -276,5 +276,7 @@ never saw the producing engine. That is the test the whole design is built to
 pass, and it's the natural endpoint once a live agent is reliably authoring
 two-form designs.
 
-For the engine internals and the permanence argument, see the repo `README.md`
-and `spec/CSE-v1.md` / `spec/CSE-v2.md`.
+For the engine internals, see [`architecture.md`](architecture.md).  For the
+permanence argument, see [`Theory.md`](Theory.md).  For the full CLI reference,
+see [`cli.md`](cli.md).  For the CSE wire format specs, see `spec/CSE-v1.md`
+and `spec/CSE-v2.md`.

@@ -1,61 +1,12 @@
 """
 events.py -- Structured event stream for Husks build tracing.
 
-This module is the observation backbone.  Every significant build event
-(rule fired, oracle called, tool dispatched, trial scored) is captured
-as a timestamped dict and appended to a JSONL backing store.  The event
-stream is the single source of truth for post-build analysis, cost
-reporting, and rendering.
+BuildTrace accumulates timestamped event dicts for a single build.
+Listeners (e.g. the console renderer) are notified via the
+TraceListener protocol.  Pure data -- no formatting, no I/O.
 
-Architecture
-------------
-The module maintains per-build state in a ``BuildTrace`` instance.
-Callers emit events through the instance methods; the instance
-accumulates structured records and per-category rollups.
-
-The event stream is pure data -- no formatting, no ANSI, no I/O.
-Rendering is the sole responsibility of the console module, which
-subscribes to events via the listener protocol.
-
-Listener protocol
------------------
-A listener is any object with a ``notify(event: dict)`` method.
-After each event is recorded, all registered listeners are notified
-with the event dict.  The console renderer is one such listener.
-
-Event schema
-------------
-Every event dict has at minimum::
-
-    {"event": str, "ts": float}
-
-Additional keys depend on the event type:
-
-  build_start    name, fuel, site
-  build_end      status, fuel_left, elapsed
-  rule_start     rule, stale_reason
-  rule_done      rule, elapsed
-  rule_sealed    rule, reused_by
-  rule_halted    rule, reason, elapsed
-  oracle_start   rule, oracle
-  oracle_done    rule, oracle, tokens_in, tokens_out, cost_usd, elapsed
-  tool_call      rule, tool, args
-  tool_result    tool, result_preview
-  trial_branch   rule, branch, score, tokens_in, tokens_out, cost_usd, elapsed
-  trial_note     rule, message
-  trial_verdict  rule, winner, scores
-  sealed_manifest  artifacts
-
-Interface with husks
--------------------------
-Depends only on the standard library.
-
-Consumed by:
-
-  build.py         -- emits events during evaluation.
-  oracle/kernel.py -- emits tool_call and tool_result events.
-  utils/console.py -- listens to events for ANSI rendering.
-  cli.py           -- calls to_jsonl() / to_dict() for export.
+See docs/architecture.md for the event type catalog and listener
+protocol.
 """
 
 from __future__ import annotations

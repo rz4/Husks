@@ -1,35 +1,9 @@
 """
 llm.py -- LiteLLM wrapper with cumulative usage tracking.
 
-This module wraps litellm.completion() to provide:
-
-  1. A uniform calling interface for single-shot and multi-turn LLM
-     calls, independent of the underlying provider (Anthropic, OpenAI,
-     etc.).
-
-  2. Cumulative usage tracking: every call accumulates input/output
-     token counts and cost.  The tracker is per-UsageTracker instance
-     rather than module-global, making it reentrant and testable.
-
-  3. Response metadata extraction: a single function to pull model
-     name, token counts, cost, finish reason, and text content from
-     the litellm response object.
-
-Model names use the litellm provider prefix convention:
-  "anthropic/claude-haiku-4-5-20251001"
-  "openai/gpt-4o"
-  etc.
-
-Interface with husks
--------------------------
-Consumed by:
-
-  oracle/kernel.py -- calls call_messages() in the agentic loop and
-                      uses UsageTracker to compute per-oracle token
-                      deltas for the build trace.
-
-Does not import anything from husks.  This module's only
-external dependency is litellm.
+Uniform calling interface for LLM providers via litellm.completion().
+Per-UsageTracker instance token/cost accumulation.  No husks imports;
+only external dependency is litellm.
 """
 
 from __future__ import annotations
