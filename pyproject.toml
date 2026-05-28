@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "husks"
 version = "0.1.0"
-description = "A small build calculus for nondeterministic work."
+description = "A small build system for nondeterministic work."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"

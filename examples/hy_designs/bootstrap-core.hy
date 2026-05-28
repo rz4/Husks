@@ -11,8 +11,7 @@ Usage:
 ;-
 (import husks.build [build rule oracle])
 (import husks.oracle [live_oracle set_oracle_model])
-(require husks.macros [deforacle]
-         hyrule [->])
+(require husks.macros [deforacle ->])
 
 (set_oracle_model "anthropic/claude-haiku-4-5-20251001")
 

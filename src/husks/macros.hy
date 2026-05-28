@@ -1,7 +1,12 @@
 "Hy macros for Husks design files.
 
     (require husks.macros [defaction deforacle])
+
+Automatically re-exports hyrule threading macros (-> ->> as->
+doto) so design files do not need a separate hyrule require.
 "
+
+(require hyrule [-> ->> as-> doto])
 
 (defmacro defaction [name params #* body]
   "Define an action recipe factory.
