@@ -564,10 +564,10 @@ def _make_touch_action(outputs: list[str]):
         from husks.build import site_path, write_text
 
         for o in outputs:
-            p = Path(site_path(S, o))
+            p = Path(site_path(S, o, write=True))
             if not p.exists():
                 p.parent.mkdir(parents=True, exist_ok=True)
-                write_text(site_path(S, o), "ok\n")
+                write_text(site_path(S, o, write=True), "ok\n")
 
     touch_action._husks_cmd = "__touch__"
     return touch_action

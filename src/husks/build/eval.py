@@ -7,6 +7,7 @@ import json
 import shutil
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,6 +26,27 @@ from husks.build.seal import (
 )
 
 
+# ── Staging context ───────────────────────────────────────────────
+
+@contextmanager
+def _staged(S: Store, outputs: list[str]):
+    """Run recipe in a staging directory; promote outputs on success."""
+    stage = tempfile.mkdtemp(prefix="husks-stage-")
+    S["stage"] = stage
+    try:
+        yield
+        # Promote staged outputs to live site
+        for o in outputs:
+            staged = Path(site_path(S, o, write=True))  # resolves in stage
+            if staged.exists():
+                live = Path(S["site"]).resolve() / o
+                live.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(staged), str(live))
+    finally:
+        S.pop("stage", None)
+        shutil.rmtree(stage, ignore_errors=True)
+
+
 # ── Output guard ──────────────────────────────────────────────────
 
 def _check_declared_outputs(
@@ -39,7 +61,11 @@ def _check_declared_outputs(
     """
     require_nonempty = recipe is not None and recipe.get("type") == "oracle"
     for o in outputs:
-        op = Path(site_path(S, o))
+        # Check staging dir first, fall back to live site (shell commands
+        # write directly to S["site"] and bypass staging).
+        op = Path(site_path(S, o, write=True))
+        if not op.exists():
+            op = Path(site_path(S, o))
         if not op.exists():
             raise RuntimeError(
                 f"rule '{rule_name}' did not produce declared output: {o}"
@@ -115,12 +141,14 @@ def eval_rule(S: Store, node: Node) -> None:
     burn(S, name)
     T.rule_start(name, stale_reason=reason)
     try:
-        usage = eval_recipe(S, name, recipe, inputs, outputs)
+        with _staged(S, outputs):
+            usage = eval_recipe(S, name, recipe, inputs, outputs)
 
-        # Output guard: all recipe types require declared outputs to exist.
-        # Oracle outputs must additionally be nonempty.
-        _check_declared_outputs(S, name, outputs, recipe)
+            # Output guard: all recipe types require declared outputs to exist.
+            # Oracle outputs must additionally be nonempty.
+            _check_declared_outputs(S, name, outputs, recipe)
 
+        # After staging context: outputs promoted to live site
         write_seal(S, name, inputs, recipe, outputs=outputs)
 
         fuel_consumed = 1
@@ -179,7 +207,7 @@ def default_oracle_backend(
     """Stub oracle backend that writes placeholder outputs."""
     for o in outputs:
         write_text(
-            site_path(S, o),
+            site_path(S, o, write=True),
             f"# oracle output: {rule_name}\n"
             f"# prompt: {recipe.get('prompt', '')}\n",
         )
@@ -366,7 +394,7 @@ def eval_trial(
     # Copy winner outputs to site
     for o in outputs:
         if o in winner["outputs"]:
-            write_text(site_path(S, o), winner["outputs"][o])
+            write_text(site_path(S, o, write=True), winner["outputs"][o])
 
     # Write trial report
     write_trial_report(S, rule_name, wname, results, scores, branches, outputs)

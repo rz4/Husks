@@ -77,7 +77,11 @@ def sandbox(
     """
     effective_root = _site_root if site_root is _SENTINEL else site_root
     effective_readonly = _readonly_roots if readonly_roots is None else readonly_roots
-    p = Path(path).resolve()
+    raw = Path(path)
+    if not raw.is_absolute() and effective_root is not None:
+        p = (effective_root / raw).resolve()
+    else:
+        p = raw.resolve()
     if effective_root is not None:
         try:
             p.relative_to(effective_root)

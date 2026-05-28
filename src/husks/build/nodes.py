@@ -99,12 +99,12 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
             text=True,
             timeout=120,
         )
-        if _outputs and not Path(site_path(S, _outputs[0])).exists():
+        if _outputs and not Path(site_path(S, _outputs[0], write=True)).exists():
             content = result.stdout
             if result.returncode != 0:
                 content += f"\n--- STDERR (exit {result.returncode}) ---\n"
                 content += result.stderr
-            write_text(site_path(S, _outputs[0]), content)
+            write_text(site_path(S, _outputs[0], write=True), content)
         if result.returncode != 0:
             raise RuntimeError(
                 f"command failed (exit {result.returncode}): {cmd}\n"

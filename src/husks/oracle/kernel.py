@@ -431,11 +431,11 @@ def live_oracle(
     tracker = llm.UsageTracker()
 
     # System prompt: tell the oracle where it is and what it must produce
-    output_lines = "\n".join(f"  - {site}/{o}" for o in outputs)
+    output_lines = "\n".join(f"  - {o}" for o in outputs)
     system = (
         "You are an oracle inside a build system.\n"
         f"Site directory: {site}\n"
-        "All file paths must be absolute, rooted at the site.\n"
+        "File paths are relative to the site directory.\n"
         "You must produce these outputs:\n"
         f"{output_lines}\n\n"
         "Use the available tools to read inputs and write outputs. "

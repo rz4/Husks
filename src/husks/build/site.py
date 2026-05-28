@@ -36,16 +36,24 @@ class Stop(Exception):
 
 # ── Site helpers ──────────────────────────────────────────────────
 
-def site_path(S: Store, name: str) -> str:
+def site_path(S: Store, name: str, *, write: bool = False) -> str:
     """Resolve *name* relative to the site directory.
 
     Raises ValueError if the resolved path escapes the site root
     (e.g. via ``..`` components or absolute paths).  Symlinked imports
-    (registered as read-only dirs) are permitted to resolve outside.
+    (registered as read-only dirs) are permitted to resolve outside
+    when *write* is False.  When *write* is True, paths that escape
+    the site root are always rejected.
     """
     site = Path(S["site"]).resolve()
-    target = (site / name).resolve()
-    if not target.is_relative_to(site):
+    if write and "stage" in S:
+        base = Path(S["stage"]).resolve()
+    else:
+        base = site
+    target = (base / name).resolve()
+    if not target.is_relative_to(base):
+        if write:
+            raise ValueError(f"path escapes site (write denied): {name}")
         # Allow paths that resolve into registered read-only dirs (imports)
         readonly_dirs = S.get("readonly-dirs", [])
         if not any(target.is_relative_to(Path(rd).resolve()) for rd in readonly_dirs):
