@@ -31,7 +31,11 @@ from husks.build.seal import (
 
 @contextmanager
 def _staged(S: Store, outputs: list[str]):
-    """Run recipe in a staging directory; promote outputs on success."""
+    """Run recipe in a staging directory; promote outputs on success.
+
+    Validates all declared outputs exist in staging before promoting any.
+    On promotion failure, restores original live outputs to maintain consistency.
+    """
     stage = tempfile.mkdtemp(prefix="husks-stage-")
     S["stage"] = stage
     # Mirror site contents into stage so recipes can read inputs
@@ -42,13 +46,50 @@ def _staged(S: Store, outputs: list[str]):
             os.symlink(str(item), str(dst))
     try:
         yield
-        # Promote: move real (non-symlink) files that match declared outputs
+
+        # Validate all outputs before promoting any (atomic check)
+        outputs_to_promote = []
         for o in outputs:
             staged = Path(stage) / o
             if staged.exists() and not staged.is_symlink():
+                outputs_to_promote.append(o)
+
+        # Backup existing live outputs for rollback
+        backups = {}
+        for o in outputs_to_promote:
+            live = site / o
+            if live.exists():
+                # Save backup to temporary location
+                backup_path = tempfile.mktemp(prefix=f"husks-backup-{live.name}-")
+                shutil.copy2(str(live), backup_path)
+                backups[o] = backup_path
+
+        # Promote: move real (non-symlink) files that match declared outputs
+        # On failure, restore backups to maintain consistency
+        promoted = []
+        try:
+            for o in outputs_to_promote:
+                staged = Path(stage) / o
                 live = site / o
                 live.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(staged), str(live))
+                promoted.append(o)
+        except Exception as e:
+            # Rollback: restore original live outputs
+            for o in promoted:
+                live = site / o
+                if live.exists():
+                    live.unlink()
+                if o in backups:
+                    shutil.move(backups[o], str(live))
+                    backups.pop(o)
+            raise RuntimeError(f"staged promotion failed: {e}") from e
+        finally:
+            # Clean up remaining backups
+            for backup_path in backups.values():
+                if os.path.exists(backup_path):
+                    os.unlink(backup_path)
+
     finally:
         S.pop("stage", None)
         shutil.rmtree(stage, ignore_errors=True)
@@ -65,14 +106,27 @@ def _check_declared_outputs(
     """Guard: all declared outputs must exist; oracle outputs must be nonempty.
 
     Raises RuntimeError if the guard fails — preventing the rule from sealing.
+    During staging, prefers staged outputs; only actions (not oracle/trial) may
+    fall back to live site for compatibility with legacy code.
     """
     require_nonempty = recipe is not None and recipe.get("type") == "oracle"
+    in_staging = "stage" in S
+    recipe_type = recipe.get("type") if recipe else None
+
     for o in outputs:
-        # Check staging dir first, fall back to live site (Python actions
-        # that call site_path without write=True bypass staging).
-        op = Path(site_path(S, o, write=True))
-        if not op.exists():
+        if in_staging:
+            # During staging: check staged output first
+            op = Path(site_path(S, o, write=True))
+            if not op.exists():
+                # Allow fallback to live site ONLY for action recipes (legacy compatibility)
+                # Oracle and trial recipes must write to staging correctly
+                if recipe_type == "action":
+                    op = Path(site_path(S, o))
+                # For non-action recipes or if live site also missing, fall through to error
+        else:
+            # Outside staging: check the live site
             op = Path(site_path(S, o))
+
         if not op.exists():
             raise RuntimeError(
                 f"rule '{rule_name}' did not produce declared output: {o}"
@@ -235,12 +289,33 @@ def eval_oracle(
     usage = backend(S, rule_name, recipe, outputs)
     elapsed = time.time() - t0
     u = usage or {}
+
+    # Accumulate usage in Store
+    cost_usd = u.get("cost_usd", 0.0)
+    tokens_in = u.get("tokens_in", 0)
+    tokens_out = u.get("tokens_out", 0)
+
+    S["usage"]["total_cost_usd"] += cost_usd
+    S["usage"]["total_input_tokens"] += tokens_in
+    S["usage"]["total_output_tokens"] += tokens_out
+
+    # Track per-rule usage
+    if rule_name not in S["usage"]["by_rule"]:
+        S["usage"]["by_rule"][rule_name] = {
+            "cost_usd": 0.0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+        }
+    S["usage"]["by_rule"][rule_name]["cost_usd"] += cost_usd
+    S["usage"]["by_rule"][rule_name]["input_tokens"] += tokens_in
+    S["usage"]["by_rule"][rule_name]["output_tokens"] += tokens_out
+
     T.oracle_done(
         rule_name,
         oname,
-        tokens_in=u.get("tokens_in", 0),
-        tokens_out=u.get("tokens_out", 0),
-        cost_usd=u.get("cost_usd", 0.0),
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_usd=cost_usd,
         elapsed=elapsed,
     )
     return u
@@ -295,7 +370,7 @@ def eval_trial(
             BS = fresh_store(tmp, S["fuel"], oracle_backend=S.get("oracle-backend"))
 
             # Fire branch
-            eval_recipe(BS, bname, branch, [], outputs)
+            usage = eval_recipe(BS, bname, branch, [], outputs)
             branch_elapsed = time.time() - t0
 
             # Collect outputs
@@ -305,16 +380,19 @@ def eval_trial(
                 if file_exists(op):
                     out_data[o] = read_text(op)
 
-            # Collect oracle cost for this branch from trace state
-            branch_cost = sum(
-                e[4] for e in T._oracle_events if e[1] == bname
-            )
-            branch_toks_in = sum(
-                e[2] for e in T._oracle_events if e[1] == bname
-            )
-            branch_toks_out = sum(
-                e[3] for e in T._oracle_events if e[1] == bname
-            )
+            # Extract metrics from usage (for oracle branches) or branch store (for others)
+            if usage and usage.get("fuel_steps"):
+                # Oracle branch: use usage dict directly from oracle call
+                branch_fuel_steps = usage.get("fuel_steps", 1)
+                branch_toks_in = usage.get("tokens_in", 0)
+                branch_toks_out = usage.get("tokens_out", 0)
+                branch_cost = usage.get("cost_usd", 0.0)
+            else:
+                # Action/trial branch: use accumulated usage from branch store
+                branch_fuel_steps = 1
+                branch_cost = BS["usage"]["total_cost_usd"]
+                branch_toks_in = BS["usage"]["total_input_tokens"]
+                branch_toks_out = BS["usage"]["total_output_tokens"]
             results.append({
                 "name": bname,
                 "outputs": out_data,
@@ -322,6 +400,7 @@ def eval_trial(
                 "tokens_in": branch_toks_in,
                 "tokens_out": branch_toks_out,
                 "cost_usd": branch_cost,
+                "fuel_steps": branch_fuel_steps,
             })
         except Exception as e:
             results.append({"name": bname, "error": str(e), "outputs": {}})
@@ -378,10 +457,14 @@ def eval_trial(
             branch_rd = recipe_digest(recipe_to_cse(branch_recipe))
         branch_cost_val: float | None = r.get("cost_usd") if not has_error else None
 
+        # Use actual fuel_steps from branch result (oracle tool steps)
+        # Global fuel burn is always 1 per branch, but history records actual oracle steps
+        branch_fuel_steps = r.get("fuel_steps", 1)
+
         record = {
             "run_id": S["run-id"],
             "ts": time.time(),
-            "fuel_consumed": 1,
+            "fuel_consumed": branch_fuel_steps,
             "prompt_length": prompt_length,
             "satisfaction": satisfaction,
             "traced_reads": [],

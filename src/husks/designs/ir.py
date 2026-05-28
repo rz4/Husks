@@ -24,6 +24,41 @@ from typing import Any, Callable
 Design = dict[str, Any]
 
 
+def _validate_rule_name(name: str) -> str | None:
+    """Return an error string if *name* is an unsafe rule name, else None.
+
+    Rule names are used to construct internal trace paths like
+    .traces/{name}.seal, so they must not contain path separators,
+    control characters, or reserved filenames.
+    """
+    if not name:
+        return "rule name is empty"
+
+    # Reject path separators (Unix / and Windows \)
+    if "/" in name or "\\" in name:
+        return f"rule name contains path separator: {name}"
+
+    # Reject path traversal
+    if name == ".." or name.startswith(".."):
+        return f"rule name contains '..': {name}"
+
+    # Reject control characters (0x00-0x1F, 0x7F)
+    for i, c in enumerate(name):
+        if ord(c) < 0x20 or ord(c) == 0x7F:
+            return f"rule name contains control character at position {i}: {name}"
+
+    # Reject reserved internal filenames
+    reserved = {"build.manifest"}
+    if name in reserved:
+        return f"rule name collides with internal file: {name}"
+
+    # Reject names that would create reserved extensions
+    if name.endswith(".seal") or name.endswith(".trial") or name.endswith(".history"):
+        return f"rule name uses reserved extension: {name}"
+
+    return None
+
+
 def _validate_path(name: str) -> str | None:
     """Return an error string if *name* is an unsafe relative path, else None."""
     if os.path.isabs(name):
@@ -31,6 +66,21 @@ def _validate_path(name: str) -> str | None:
     parts = Path(name).parts
     if ".." in parts:
         return f"path contains '..': {name}"
+
+    # Reject internal/reserved paths
+    if not parts:
+        return None
+
+    first = parts[0]
+
+    # Reject specific system metadata directories
+    if first in (".traces", ".husks"):
+        return f"path targets reserved directory: {name}"
+
+    # Reject .husk files anywhere in the path
+    if name.endswith(".husk"):
+        return f"path targets generated .husk file: {name}"
+
     return None
 
 # All valid rule kinds in the Husks calculus.
@@ -138,8 +188,12 @@ def check(design: Design) -> list[str]:
         # name
         if not r.get("name"):
             errors.append(f"{tag}: missing name")
-        elif r["name"] in names:
-            errors.append(f"{tag}: duplicate name")
+        else:
+            name_err = _validate_rule_name(r["name"])
+            if name_err:
+                errors.append(f"{tag}: {name_err}")
+            elif r["name"] in names:
+                errors.append(f"{tag}: duplicate name")
         names.add(r.get("name", ""))
 
         # kind
@@ -233,17 +287,6 @@ def check(design: Design) -> list[str]:
         for t in targets:
             if t not in names:
                 errors.append(f"target '{t}' does not match any rule name")
-
-    # oracle fuel budget: total oracle fuel must not exceed global fuel
-    if fuel is not None and fuel > 0:
-        total_oracle_fuel = sum(
-            r.get("fuel", 0) for r in rules if r.get("kind") == "oracle"
-        )
-        if total_oracle_fuel > fuel:
-            errors.append(
-                f"total oracle fuel ({total_oracle_fuel}) exceeds "
-                f"global fuel budget ({fuel})"
-            )
 
     return errors
 

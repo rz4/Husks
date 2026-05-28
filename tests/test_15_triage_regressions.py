@@ -416,8 +416,13 @@ def test_check_rejects_absolute_import_name():
 
 # ── Oracle fuel budget ────────────────────────────────────────────
 
-def test_check_rejects_oracle_fuel_exceeding_budget():
-    """check() rejects designs where total oracle fuel exceeds global fuel."""
+def test_check_allows_oracle_fuel_independent_of_global():
+    """check() allows oracle fuel > global fuel (they're independent).
+
+    Oracle fuel limits tool steps within that oracle.
+    Global fuel counts rule fires (including trial branches).
+    An oracle with fuel=99 is valid in a build with global fuel=1.
+    """
     from husks.designs.ir import check
 
     design = {
@@ -432,12 +437,12 @@ def test_check_rejects_oracle_fuel_exceeding_budget():
                 "outputs": ["a.txt"],
                 "prompt": "do",
                 "tools": ["write-file"],
-                "fuel": 99,
+                "fuel": 99,  # Oracle fuel > global fuel is allowed
             },
         ],
     }
     errors = check(design)
-    assert any("exceeds" in e for e in errors), f"expected fuel budget error, got: {errors}"
+    assert len(errors) == 0, f"should allow oracle fuel > global fuel, got: {errors}"
 
 
 def test_check_allows_oracle_fuel_within_budget():
@@ -505,3 +510,90 @@ def test_old_seal_without_outputs_is_stale():
         assert "missing output hashes" in reason
     finally:
         shutil.rmtree(site, ignore_errors=True)
+
+
+# ── Staged promotion atomicity ────────────────────────────────────
+
+def test_staging_promotion_is_atomic():
+    """Staged promotion validates all outputs before promoting any.
+
+    Demonstrates that builds producing only partial outputs are caught
+    by output validation before promotion.
+    """
+    from husks.build import build, rule
+    from pathlib import Path
+
+    tmpdir = tempfile.mkdtemp(prefix="atomic-promotion-")
+    try:
+        site = Path(tmpdir) / "site"
+        site.mkdir()
+
+        # Create existing outputs in live site
+        (site / "a.txt").write_text("original a\n")
+        (site / "b.txt").write_text("original b\n")
+
+        # Rule that updates both outputs
+        node = rule(
+            "updater",
+            outputs=["a.txt", "b.txt"],
+            run="echo 'new a' > a.txt && echo 'new b' > b.txt",
+        )
+
+        # First build: should succeed and update both outputs
+        S1 = build("atomic-test", 10, node, site=str(site))
+        assert S1["status"] == "committed", f"First build failed: {S1['status']}"
+        assert (site / "a.txt").read_text() == "new a\n"
+        assert (site / "b.txt").read_text() == "new b\n"
+
+        # Rule that only creates one of two declared outputs
+        node2 = rule(
+            "partial",
+            outputs=["c.txt", "d.txt"],
+            run="echo 'new c' > c.txt",  # Only creates c.txt, not d.txt
+        )
+
+        S2 = build("partial-test", 10, node2, site=str(site))
+        # Build should halt because d.txt is missing (caught by output guard)
+        assert S2["status"] == "halted", f"Expected halted, got {S2['status']}"
+        assert "did not produce declared output" in S2["value"]
+
+        # c.txt should NOT be promoted because validation failed
+        assert not (site / "c.txt").exists(), \
+            "Partial output should not be promoted when validation fails"
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_staging_promotion_preserves_backups():
+    """Staged promotion creates backups of existing live outputs."""
+    from husks.build.eval import _staged
+    from husks.build import fresh_store
+    from pathlib import Path
+
+    tmpdir = tempfile.mkdtemp(prefix="backup-test-")
+    try:
+        site = Path(tmpdir) / "site"
+        site.mkdir()
+
+        # Create existing outputs in live site
+        (site / "a.txt").write_text("original a\n")
+        (site / "b.txt").write_text("original b\n")
+
+        S = fresh_store(str(site), fuel=10)
+
+        # Normal promotion (should succeed)
+        with _staged(S, ["a.txt", "b.txt"]):
+            # Create new outputs in staging
+            stage_dir = Path(S["stage"])
+            (stage_dir / "a.txt").write_text("new a\n")
+            (stage_dir / "b.txt").write_text("new b\n")
+
+        # After successful promotion, outputs should be updated
+        assert (site / "a.txt").read_text() == "new a\n", \
+            "a.txt should be updated"
+        assert (site / "b.txt").read_text() == "new b\n", \
+            "b.txt should be updated"
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)

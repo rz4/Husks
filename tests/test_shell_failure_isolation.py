@@ -3,6 +3,7 @@
 import tempfile
 import shutil
 from pathlib import Path
+import os
 
 
 def test_failed_shell_action_does_not_mutate_live_site():
@@ -87,6 +88,76 @@ def test_failed_shell_preserves_existing_output():
         # not the partial output from the failed command
         assert (site / "out.txt").read_text() == "initial\n", \
             "Failed command corrupted existing live site output!"
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_bootstrap_core_with_stub_commits():
+    """Bootstrap-core design with stub oracle commits without path escape errors.
+
+    Regression test: nested output paths like "readers/generated_reader.py"
+    should work correctly with write_path() and staging. The design should
+    commit successfully when run with a stub oracle backend.
+    """
+    from husks.designs.ir import from_json, run
+    from husks.build import write_path
+
+    # Stub oracle that uses write_path for proper staging
+    def stub_oracle(S, rule_name, recipe, outputs):
+        """Oracle backend that writes placeholder outputs using write_path."""
+        for o in outputs:
+            output_path = write_path(S, o)
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_path).write_text(f"# Stub output from {rule_name}\n")
+        return {"tokens_in": 10, "tokens_out": 20, "cost_usd": 0.001, "fuel_steps": 1}
+
+    tmpdir = tempfile.mkdtemp(prefix="bootstrap-stub-test-")
+    try:
+        # Load the bootstrap-core design
+        design_path = Path(__file__).parent.parent / "examples" / "json_designs" / "bootstrap-core.json"
+        design = from_json(design_path)
+
+        # Create temporary site with required inputs
+        site = Path(tmpdir) / "site"
+        site.mkdir()
+
+        # Create stub input files
+        (site / "CSE-v1.md").write_text("# CSE v1 spec stub\n")
+        (site / "CSE-v2.md").write_text("# CSE v2 examples stub\n")
+
+        # Override site and oracle backend
+        design["site"] = str(site)
+
+        # Replace the gate rule's shell command with a simple one that will succeed
+        # The original uses husks-gate which may not be available in all environments
+        for rule in design["rules"]:
+            if rule["name"] == "gate":
+                # Simple command that creates the expected outputs in nested paths
+                rule["run"] = (
+                    "mkdir -p readers && "
+                    "echo 'Gate passed' > readers/gate-report.txt && "
+                    "touch readers/VERIFIED"
+                )
+
+        # Run with stub oracle
+        S = run(design, oracle_backend=stub_oracle)
+
+        # Build should commit successfully
+        assert S["status"] == "committed", \
+            f"Bootstrap-core with stub should commit, got: {S['status']}, {S.get('value')}"
+
+        # Verify nested outputs were created
+        assert (site / "readers" / "generated_reader.py").exists(), \
+            "Nested oracle output should be created"
+        assert (site / "readers" / "gate-report.txt").exists(), \
+            "Shell action nested output should be created"
+        assert (site / "readers" / "VERIFIED").exists(), \
+            "Shell action stamp file should be created"
+
+        # Verify no path escape errors
+        assert "path escapes site" not in S.get("value", ""), \
+            "Should not have path escape errors with nested paths"
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

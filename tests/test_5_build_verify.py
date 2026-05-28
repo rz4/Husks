@@ -278,9 +278,9 @@ def test_imports_readable():
 
 def _read_import_action(S):
     """Action that reads from an imported path and writes a result."""
-    from husks.build import site_path, write_text
-    data = open(site_path(S, "ref/data.csv")).read()
-    write_text(site_path(S, "result.txt"), f"read: {data}")
+    from husks.build import read_path, write_path, write_text
+    data = open(read_path(S, "ref/data.csv")).read()
+    write_text(write_path(S, "result.txt"), f"read: {data}")
 
 
 def test_imports_write_blocked():

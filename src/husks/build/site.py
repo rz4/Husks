@@ -44,6 +44,9 @@ def site_path(S: Store, name: str, *, write: bool = False) -> str:
     (registered as read-only dirs) are permitted to resolve outside
     when *write* is False.  When *write* is True, paths that escape
     the site root are always rejected.
+
+    .. deprecated::
+        Use read_path() or write_path() for clarity in action code.
     """
     site = Path(S["site"]).resolve()
     if write and "stage" in S:
@@ -51,10 +54,33 @@ def site_path(S: Store, name: str, *, write: bool = False) -> str:
     else:
         base = site
     raw = base / name
+
     # When writing to stage, break symlinks so writes create real files
     # in the stage directory instead of following through to the live site.
-    if write and "stage" in S and raw.is_symlink():
-        raw.unlink()
+    if write and "stage" in S:
+        # Break parent directory symlinks first (for nested paths like "dir/file.txt")
+        # This ensures we create real staged directories, not write through symlinks.
+        parts = Path(name).parts
+        for i in range(len(parts) - 1):  # Check all parent directories
+            parent = base / Path(*parts[:i+1])
+            if parent.is_symlink():
+                # Break symlink and create real directory
+                import os
+                target = parent.resolve()
+                parent.unlink()
+                parent.mkdir(parents=True, exist_ok=True)
+                # Mirror contents of the original directory (as symlinks)
+                # so existing files are still accessible
+                if target.is_dir():
+                    for item in target.iterdir():
+                        link = parent / item.name
+                        if not link.exists():
+                            os.symlink(str(item), str(link))
+
+        # Break final path symlink if it exists
+        if raw.is_symlink():
+            raw.unlink()
+
     target = raw.resolve()
     if not target.is_relative_to(base):
         if write:
@@ -64,6 +90,48 @@ def site_path(S: Store, name: str, *, write: bool = False) -> str:
         if not any(target.is_relative_to(Path(rd).resolve()) for rd in readonly_dirs):
             raise ValueError(f"path escapes site: {name}")
     return str(target)
+
+
+def read_path(S: Store, name: str) -> str:
+    """Resolve *name* for reading from the site.
+
+    Returns the path to read from, preferring staged versions during
+    staging contexts. Use this helper when reading inputs or checking
+    for file existence in actions.
+
+    Example:
+        def my_action(S):
+            data = Path(read_path(S, "input.txt")).read_text()
+            # Process data...
+
+    Raises ValueError if the path escapes the site root.
+    """
+    return site_path(S, name, write=False)
+
+
+def write_path(S: Store, name: str) -> str:
+    """Resolve *name* for writing to the site.
+
+    During staged builds, returns the staging path to ensure writes
+    are isolated from the live site. Outside staging, returns the
+    live site path. Use this helper when writing outputs in actions
+    to prevent accidental live-site mutation during staged builds.
+
+    Example:
+        def my_action(S):
+            output_path = write_path(S, "output.txt")
+            Path(output_path).write_text("result")
+
+    Migration from legacy pattern:
+        # Old (risky - bypasses staging):
+        path = site_path(S, "output.txt")
+
+        # New (safe - respects staging):
+        path = write_path(S, "output.txt")
+
+    Raises ValueError if the path escapes the site root.
+    """
+    return site_path(S, name, write=True)
 
 
 def ensure_dir(p: str) -> str:
@@ -108,6 +176,12 @@ def fresh_store(
         "oracle-backend": oracle_backend,
         "readonly-dirs": readonly_dirs or [],
         "run-id": str(uuid.uuid4()),
+        "usage": {
+            "total_cost_usd": 0.0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "by_rule": {},
+        },
     }
 
 

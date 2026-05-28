@@ -76,7 +76,7 @@ def main():
     # explain
     e = sub.add_parser("explain", help="Explain a rule, artifact, graph, diff, or seal")
     e.add_argument("subject", nargs="?", default=None,
-                   help="Rule name or artifact path")
+                   help="Subject: rule/artifact name, or design file for --graph mode")
     e.add_argument("--graph", action="store_true",
                    help="Render the dependency graph")
     e.add_argument("--diff", action="store_true",
@@ -86,10 +86,8 @@ def main():
     e.add_argument("--format", choices=["text", "mermaid", "dot", "json"],
                    default="text", dest="graph_format",
                    help="Output format for --graph (default: text)")
-    e.add_argument("design", nargs="?", default=None,
-                   help="Design file (used with --graph)")
-    e.add_argument("artifact", nargs="*", default=[],
-                   help="Specific artifacts to diff (used with --diff)")
+    e.add_argument("--artifact", dest="artifact", action="append", default=[],
+                   help="Specific artifact to include in diff (can be repeated)")
     e.add_argument("--site", help="Site directory")
     e.add_argument("--json", action="store_true", dest="json_output",
                    help="Output as JSON")

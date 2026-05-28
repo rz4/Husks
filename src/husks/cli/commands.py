@@ -61,9 +61,8 @@ def _cmd_run_hy(args):
     # Build Report
     from husks.report import assemble, render_text, render_concise, render_json
     from husks.utils import trace as T
-    from husks.oracle.llm import get_usage
 
-    report = assemble(S, T, {}, get_usage())
+    report = assemble(S, T, {})
     if args.json_output:
         print(render_json(report))
     elif args.verbose:
@@ -136,9 +135,8 @@ def _cmd_run(args, design):
     # Build Report
     from husks.report import assemble, render_text, render_concise, render_json
     from husks.utils import trace as T
-    from husks.oracle.llm import get_usage
 
-    report = assemble(S, T, design, get_usage())
+    report = assemble(S, T, design)
     if args.json_output:
         print(render_json(report))
     elif args.verbose:
@@ -196,8 +194,14 @@ def _cmd_status(args):
 # ── explain ───────────────────────────────────────────────────────
 
 def _cmd_explain(args):
-    # Dispatch to the appropriate explain mode
+    """Dispatch to the appropriate explain mode.
+
+    In graph mode, treat subject as the design file path.
+    """
     if args.graph:
+        # Graph mode: subject is the design file
+        if args.subject:
+            args.design = args.subject
         _explain_graph(args)
     elif args.diff:
         _explain_diff(args)

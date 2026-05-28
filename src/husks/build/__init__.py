@@ -7,6 +7,8 @@ from husks.build.site import (
     OracleBackend,
     Stop,
     site_path,
+    read_path,
+    write_path,
     ensure_dir,
     read_text,
     write_text,
@@ -68,7 +70,7 @@ from husks.core import recipe_digest
 
 __all__ = [
     "Store", "Node", "Recipe", "OracleBackend", "Stop",
-    "site_path", "ensure_dir", "read_text", "write_text", "file_exists",
+    "site_path", "read_path", "write_path", "ensure_dir", "read_text", "write_text", "file_exists",
     "fresh_store", "burn", "file_sig",
     "_fn_behavior_digest", "_pred_identity", "VERDICT_POLICIES",
     "recipe_to_cse", "_ACTION_ARG_TYPES",

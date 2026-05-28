@@ -264,6 +264,51 @@ def compute_node_digest(
 
 # ── Path validation (security) ────────────────────────────────────
 
+def _validate_rule_name(name: str) -> None:
+    """Validate a rule name from a .husk file, rejecting security violations.
+
+    Rule names are used to construct trace paths like .traces/{name}.seal,
+    so they must not contain path separators, control characters, or
+    reserved filenames.
+
+    Parameters
+    ----------
+    name : str
+        Rule name string from the .husk file.
+
+    Raises
+    ------
+    ValueError
+        If the name contains path separators, control chars, or reserved names.
+    """
+    if not name:
+        raise ValueError("empty rule name in .husk")
+
+    # Reject path separators (Unix / and Windows \)
+    if "/" in name or "\\" in name:
+        raise ValueError(f"rule name contains path separator in .husk: {name}")
+
+    # Reject path traversal
+    if name == ".." or name.startswith(".."):
+        raise ValueError(f"rule name contains '..' in .husk: {name}")
+
+    # Reject control characters (0x00-0x1F, 0x7F)
+    for i, c in enumerate(name):
+        if ord(c) < 0x20 or ord(c) == 0x7F:
+            raise ValueError(
+                f"rule name contains control character at position {i} in .husk: {name}"
+            )
+
+    # Reject reserved internal filenames
+    reserved = {"build.manifest"}
+    if name in reserved:
+        raise ValueError(f"rule name collides with internal file in .husk: {name}")
+
+    # Reject names that would create reserved extensions
+    if name.endswith(".seal") or name.endswith(".trial") or name.endswith(".history"):
+        raise ValueError(f"rule name uses reserved extension in .husk: {name}")
+
+
 def _validate_husk_path(name: str) -> None:
     """Validate a path from a .husk file, rejecting security violations.
 
@@ -300,6 +345,20 @@ def _validate_husk_path(name: str) -> None:
     for part in parts:
         if part == "..":
             raise ValueError(f"path traversal in .husk: {name}")
+
+    # Reject internal/reserved paths
+    # Get first component (handle both Unix / and Windows \)
+    first = name.split(os.sep)[0]
+    if os.altsep and os.altsep in first:
+        first = first.split(os.altsep)[0]
+
+    # Reject specific system metadata directories
+    if first in (".traces", ".husks"):
+        raise ValueError(f"reserved path in .husk: {name}")
+
+    # Reject .husk files anywhere in the path
+    if name.endswith(".husk"):
+        raise ValueError(f".husk file in .husk: {name}")
 
 
 # ── Husk structure extraction ─────────────────────────────────────
@@ -405,6 +464,10 @@ def _recompute_node(node: list[CseValue], site_dir: str, version: bytes) -> str:
 
     # Rule node
     name, recipe, inputs, outputs, children = _extract_rule_fields(node)
+
+    # Validate rule name (security: prevent path injection in .traces/)
+    name_str = atom_str(name)
+    _validate_rule_name(name_str)
 
     # Children first (depth-first)
     child_digests: list[bytes] = []

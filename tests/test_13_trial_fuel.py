@@ -101,3 +101,143 @@ def test_trial_halts_at_zero_fuel():
         assert S["status"] == "halted"
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_trial_branch_history_records_actual_fuel_steps():
+    """Trial branch history records actual oracle fuel_steps, not hardcoded 1.
+
+    Global fuel burn is always 1 per branch, but the convergence history
+    for each branch should record the actual fuel_steps (tool calls) that
+    the oracle used within that branch.
+    """
+    from husks.build import build, rule, trial, oracle
+    from husks.designs.convergence import read_history
+
+    tmpdir = tempfile.mkdtemp(prefix="trial-fuel-steps-")
+    try:
+        site = make_site(tmpdir)
+
+        # Oracle backend that uses 5 tool steps
+        def oracle_with_five_steps(S, rule_name, recipe, outputs):
+            from husks.build import site_path, write_text
+            write_text(site_path(S, outputs[0], write=True), f"output from {rule_name}\n")
+            return {
+                "tokens_in": 50,
+                "tokens_out": 25,
+                "cost_usd": 0.005,
+                "fuel_steps": 5,  # Oracle used 5 tool calls
+            }
+
+        # Trial with 2 branches, each oracle uses fuel=10 (allowing up to 10 steps)
+        branch_a = oracle(prompt="Branch A", fuel=10)
+        branch_a["name"] = "branch-a"
+        branch_b = oracle(prompt="Branch B", fuel=10)
+        branch_b["name"] = "branch-b"
+
+        node = rule(
+            "trial-rule",
+            inputs=["input.txt"],
+            outputs=["result.txt"],
+            recipe=trial(branch_a, branch_b),
+        )
+
+        # Build with global fuel=3 (1 for rule + 2 for branches)
+        S = build(
+            "trial-fuel-steps",
+            3,
+            node,
+            site=site,
+            oracle_backend=oracle_with_five_steps,
+        )
+
+        assert S["status"] == "committed", "Build should succeed"
+        # Global fuel should be 0 (1 rule + 2 branches = 3 burns)
+        assert S["fuel"] == 0, f"Expected fuel=0 after 3 burns, got {S['fuel']}"
+
+        # Check branch history: fuel_consumed should be 5 (actual steps), not 1
+        history_a = read_history(site, "trial-rule.branch-a")
+        assert len(history_a) == 1, "Branch A should have 1 history entry"
+        assert history_a[0]["fuel_consumed"] == 5, \
+            f"Branch A history should record fuel_consumed=5, got {history_a[0]['fuel_consumed']}"
+
+        history_b = read_history(site, "trial-rule.branch-b")
+        assert len(history_b) == 1, "Branch B should have 1 history entry"
+        assert history_b[0]["fuel_consumed"] == 5, \
+            f"Branch B history should record fuel_consumed=5, got {history_b[0]['fuel_consumed']}"
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_trial_action_branch_uses_store_usage():
+    """Trial action branch should use branch store usage, not global trace scan.
+
+    Action branches that make nested oracle calls should report usage from
+    the branch store's accumulated totals (BS["usage"]), not by scanning
+    global trace events which could be incorrect or mix costs.
+    """
+    from husks.build import build, rule, trial, action, oracle
+    from husks.build.eval import eval_oracle
+    from pathlib import Path
+    import json
+
+    tmpdir = tempfile.mkdtemp(prefix="trial-action-store-")
+    try:
+        site = make_site(tmpdir)
+
+        # Stub oracle backend with known usage
+        def stub_oracle_with_usage(S, rule_name, recipe, outputs):
+            from husks.build import write_text, site_path
+            write_text(site_path(S, outputs[0], write=True), "action output\n")
+            return {
+                "tokens_in": 150,
+                "tokens_out": 75,
+                "cost_usd": 0.0025,
+                "fuel_steps": 3,
+            }
+
+        # Action that calls an oracle, accumulating usage in S
+        def action_with_oracle(S):
+            from husks.build import write_text, site_path
+            # Call oracle directly - usage accumulates in S["usage"]
+            oracle_recipe = oracle(prompt="Test oracle", fuel=5)
+            eval_oracle(S, "nested-oracle", oracle_recipe, ["result.txt"])
+
+        # Trial with one action branch
+        branch = action(action_with_oracle)
+        branch["name"] = "action-branch"
+
+        node = rule(
+            "action-trial",
+            outputs=["result.txt"],
+            recipe=trial(branch),
+        )
+
+        S = build(
+            "trial-action-store",
+            2,  # 1 for trial rule + 1 for action branch
+            node,
+            site=site,
+            oracle_backend=stub_oracle_with_usage,
+        )
+
+        assert S["status"] == "committed", "Build should succeed"
+
+        # Read trial report to verify branch usage
+        report_path = Path(site) / ".traces" / "action-trial.trial.json"
+        assert report_path.exists(), "Trial report should exist"
+
+        with open(report_path) as f:
+            report = json.load(f)
+
+        assert len(report["branches"]) == 1, "Should have 1 branch"
+        branch = report["branches"][0]
+
+        # Verify cost matches what oracle returned (via store, not trace scan)
+        # This proves we're using BS["usage"] not T._oracle_events
+        assert branch["cost_usd"] == 0.0025, \
+            f"Expected cost_usd=0.0025 from store, got {branch['cost_usd']}"
+        assert branch["selected"] is True, "Branch should be selected as winner"
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)

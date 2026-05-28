@@ -7,7 +7,7 @@ source of truth.
 
 Public API
 ----------
-  assemble(store, trace, design, usage=None) -> dict
+  assemble(store, trace, design) -> dict
       Build the Report dict from post-build state.
 
   render_text(report) -> str
@@ -32,7 +32,6 @@ def assemble(
     store: dict[str, Any],
     trace: BuildTrace,
     design: dict[str, Any],
-    usage: dict[str, Any] | None = None,
 ) -> dict:
     """Build the Report dict from post-build state.
 
@@ -44,15 +43,14 @@ def assemble(
         The module-level trace instance with accumulated events.
     design : dict
         The design IR dict.
-    usage : dict, optional
-        Usage snapshot from get_usage() (cost tracking).
 
     Returns
     -------
     dict
         The complete Report dict.
     """
-    usage = usage or {}
+    # Extract usage from Store (accumulated during build)
+    usage = store.get("usage", {})
     site = store["site"]
     fuel_start = design.get("fuel", 0)
     elapsed = time.time() - trace._build_t0 if trace._build_t0 else 0.0
@@ -201,7 +199,7 @@ def assemble(
         nodes.append(node_dict)
 
     # -- Cost --
-    cost_paid = usage.get("cost_usd", 0.0)
+    cost_paid = usage.get("total_cost_usd", 0.0)
     cost_projected = cost_paid + cost_reused
 
     # -- Delta --
