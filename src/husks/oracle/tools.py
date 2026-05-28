@@ -168,7 +168,7 @@ def dispatch(name: str, args: dict[str, Any], *, context: dict[str, Any] | None 
     """Call a registered tool by name.
 
     Returns the tool's string output, or an error string if the
-    tool is not found.
+    tool is not found or if arguments are malformed.
 
     Parameters
     ----------
@@ -180,9 +180,18 @@ def dispatch(name: str, args: dict[str, Any], *, context: dict[str, Any] | None 
     entry = _REGISTRY.get(name)
     if entry is None:
         return f"Error: unknown tool '{name}'"
-    if context:
-        return entry["fn"](**args, **context)
-    return entry["fn"](**args)
+
+    # Catch malformed arguments to prevent crashing the oracle loop
+    try:
+        if context:
+            return entry["fn"](**args, **context)
+        return entry["fn"](**args)
+    except TypeError as e:
+        # Handle argument errors (wrong types, missing/extra params)
+        return f"Error: tool argument error for '{name}': {e}"
+    except Exception as e:
+        # Catch any other unexpected errors from the tool
+        return f"Error: tool execution failed for '{name}': {e}"
 
 
 # ── Core tools ────────────────────────────────────────────────────
@@ -253,13 +262,34 @@ def tree(path: str, depth: int = 3, *, site_root=None, readonly_roots=None) -> s
         return f"Error: '{path}' does not exist."
     if not root.is_dir():
         return f"Error: '{path}' is not a directory."
+
+    # Convert to Path for sandbox validation during recursion
+    # Use global sandbox if no explicit override
+    effective_site_root = _site_root if site_root is None else (
+        Path(site_root) if not isinstance(site_root, Path) else site_root
+    )
+    effective_readonly = _readonly_roots if readonly_roots is None else (
+        {Path(p) if not isinstance(p, Path) else p for p in readonly_roots}
+    )
+
     lines: list[str] = []
-    _walk(root, root, depth, lines)
+    _walk(root, root, depth, lines, effective_site_root, effective_readonly)
     return "\n".join(lines)
 
 
-def _walk(base: Path, current: Path, depth: int, lines: list[str]) -> None:
-    """Recursive helper for tree.  Skips hidden files and __pycache__."""
+def _walk(
+    base: Path,
+    current: Path,
+    depth: int,
+    lines: list[str],
+    site_root: Path | None = None,
+    readonly_roots: set[Path] | None = None,
+) -> None:
+    """Recursive helper for tree.  Skips hidden files and __pycache__.
+
+    Validates each child before recursing to prevent symlink traversal
+    outside the sandbox.
+    """
     if depth < 0:
         return
     rel = current.relative_to(base)
@@ -274,4 +304,31 @@ def _walk(base: Path, current: Path, depth: int, lines: list[str]) -> None:
         for child in children:
             if child.name.startswith(".") or child.name == "__pycache__":
                 continue
-            _walk(base, child, depth - (1 if child.is_dir() else 0), lines)
+
+            # Security: resolve and validate child before recursing
+            # Skip symlinks that escape the sandbox
+            if site_root is not None:
+                try:
+                    resolved = child.resolve()
+                    # Check if resolved path is within allowed roots
+                    try:
+                        resolved.relative_to(site_root)
+                    except ValueError:
+                        # Not under site root - check readonly roots
+                        allowed = False
+                        for ro in (readonly_roots or set()):
+                            try:
+                                resolved.relative_to(ro)
+                                allowed = True
+                                break
+                            except ValueError:
+                                continue
+                        if not allowed:
+                            # Skip this child - it escapes the sandbox
+                            continue
+                except (OSError, RuntimeError):
+                    # Broken symlink or resolution error - skip it
+                    continue
+
+            _walk(base, child, depth - (1 if child.is_dir() else 0), lines,
+                  site_root, readonly_roots)

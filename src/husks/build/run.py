@@ -126,6 +126,9 @@ def build(
     T.sealed_manifest()
 
     # Compute build-root (Merkle DAG) and write .husk file
+    # CRITICAL: These verification artifacts are required for build integrity.
+    # If we can't write them, the build must fail - we cannot claim "committed"
+    # status without a verifiable build-root, .husk file, and manifest.
     if nodes and S["status"] in ("committed", "halted"):
         try:
             if len(nodes) == 1:
@@ -152,8 +155,16 @@ def build(
                 design_source=kwargs.get("design_source"),
                 design_kind=kwargs.get("design_kind"),
             )
-        except Exception:
+        except Exception as e:
+            # Verification artifact write failure is FATAL
+            # Cannot claim committed status without verifiable artifacts
+            S["status"] = "halted"
+            S["value"] = f"failed to write verification artifacts: {e}"
             S["build-root"] = None
+            S["trace"].append({
+                "event": "error",
+                "message": f"verification artifact write failed: {e}"
+            })
 
     S["trace"].append({"event": "build-end", "status": S["status"]})
     T.build_end(S["status"], S["fuel"], fuel)

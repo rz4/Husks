@@ -459,6 +459,23 @@ def live_oracle(
     finally:
         tools.set_site_root(None)
 
+    # Check agent result status - only "stop" is successful
+    result_type = result.get("type")
+    if result_type != "stop":
+        # Agent failed - raise to prevent sealing partial outputs
+        if result_type == "error":
+            error_msg = result.get("error", "unknown error")
+            raise RuntimeError(f"oracle agent error: {error_msg}")
+        elif result_type == "halt":
+            raise RuntimeError("oracle agent ran out of fuel")
+        elif result_type == "kill":
+            raise RuntimeError("oracle agent interrupted")
+        elif result_type == "say":
+            text = result.get("text", "")
+            raise RuntimeError(f"oracle agent produced text without stopping: {text[:100]}")
+        else:
+            raise RuntimeError(f"oracle agent returned unexpected type: {result_type}")
+
     # Compute deltas from the local tracker
     snap = tracker.snapshot()
     return {

@@ -71,11 +71,16 @@ def freshness_check(
     Returns a human-readable reason string if the rule is stale and
     must be re-evaluated.
 
+    Freshness is determined by comparing the current seal (computed from
+    the recipe and input bindings) against the prior seal. The seal is the
+    canonical representation of a rule's dependencies - if seals match,
+    nothing changed; if different, we diagnose why for better messages.
+
     Staleness hierarchy (checked in order):
       1. Any declared output file is missing.
       2. No prior seal exists (first build, or corrupt seal file).
-      3. Any declared input's content hash differs from the sealed value.
-      4. The recipe digest differs from the sealed value.
+      3. The current seal differs from the prior seal (dependencies changed).
+      4. Output files were tampered with (content hash mismatch).
     """
     # Missing outputs
     for o in outputs:
@@ -87,19 +92,15 @@ def freshness_check(
     if prior is None:
         return "no prior build"
 
-    # Input hash comparison
-    prior_inputs: dict[str, str] = prior.get("inputs", {})
-    for i in sorted(inputs):
-        cur_hash = file_sig(site_path(S, i)).decode()
-        old_hash = prior_inputs.get(i, "")
-        if cur_hash != old_hash:
-            return f"{i} changed"
+    # Compute current seal and compare to prior seal
+    # The seal is the authoritative representation of dependencies:
+    # seal = hash(recipe_digest + input_bindings)
+    current_seal = compute_cse_seal(S, inputs, recipe)
+    prior_seal = prior.get("seal", "")
 
-    # Recipe digest comparison
-    recipe_form = recipe_to_cse(recipe)
-    cur_rd = recipe_digest(recipe_form)
-    if cur_rd != prior.get("recipe_digest", ""):
-        return "recipe changed"
+    if current_seal != prior_seal:
+        # Dependencies changed - diagnose why for a helpful error message
+        return _diagnose_staleness(S, inputs, recipe, prior)
 
     # Output hash comparison (tamper detection)
     if "outputs" not in prior:
@@ -112,6 +113,50 @@ def freshness_check(
             return f"{o} tampered"
 
     return None
+
+
+def _diagnose_staleness(
+    S: Store,
+    inputs: list[str],
+    recipe: Recipe,
+    prior: dict,
+) -> str:
+    """Diagnose why a seal changed, returning a specific error message.
+
+    Called when current_seal != prior_seal. Checks recipe and input bindings
+    to determine what changed, providing actionable error messages.
+    """
+    # Check recipe first (common cause of staleness)
+    recipe_form = recipe_to_cse(recipe)
+    cur_rd = recipe_digest(recipe_form)
+    if cur_rd != prior.get("recipe_digest", ""):
+        return "recipe changed"
+
+    # Check input set changes
+    prior_inputs: dict[str, str] = prior.get("inputs", {})
+    current_input_set = set(inputs)
+    prior_input_set = set(prior_inputs.keys())
+
+    # Removed inputs (present in prior but not current)
+    removed = prior_input_set - current_input_set
+    if removed:
+        return f"{sorted(removed)[0]} removed"
+
+    # Added inputs (present in current but not prior)
+    added = current_input_set - prior_input_set
+    if added:
+        return f"{sorted(added)[0]} changed"
+
+    # Input content changes (hash mismatch)
+    for i in sorted(inputs):
+        cur_hash = file_sig(site_path(S, i)).decode()
+        old_hash = prior_inputs.get(i, "")
+        if cur_hash != old_hash:
+            return f"{i} changed"
+
+    # Seal changed but we can't determine why (shouldn't normally happen)
+    # This could occur if CSE_VERSION changed or seal computation logic changed
+    return "dependencies changed"
 
 
 def write_seal(

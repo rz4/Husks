@@ -89,27 +89,61 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
 
     def shell_action(S: dict) -> None:
         import subprocess as _sp
+        from pathlib import Path as _Path
 
         site = S.get("stage", S["site"])
-        result = _sp.run(
-            cmd,
-            shell=True,
-            cwd=site,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if _outputs and not Path(site_path(S, _outputs[0], write=True)).exists():
-            content = result.stdout
-            if result.returncode != 0:
-                content += f"\n--- STDERR (exit {result.returncode}) ---\n"
-                content += result.stderr
-            write_text(site_path(S, _outputs[0], write=True), content)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"command failed (exit {result.returncode}): {cmd}\n"
-                f"{result.stderr[:500]}"
+        live_site = _Path(S["site"])
+
+        # Snapshot live site outputs before running command to enable rollback
+        snapshots = {}
+        if "stage" in S:
+            for o in _outputs:
+                live_out = live_site / o
+                if live_out.exists():
+                    snapshots[o] = live_out.read_bytes()
+
+        # When staging: break symlinks for declared outputs so commands
+        # write to stage instead of following symlinks to the live site
+        for o in _outputs:
+            site_path(S, o, write=True)
+
+        try:
+            result = _sp.run(
+                cmd,
+                shell=True,
+                cwd=site,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
+            # Guard: detect symlinks created by command to bypass staging isolation
+            if "stage" in S:
+                stage_dir = _Path(S["stage"])
+                for o in _outputs:
+                    out_path = stage_dir / o
+                    if out_path.is_symlink():
+                        raise RuntimeError(
+                            f"shell command created symlink for output '{o}' "
+                            f"(staging isolation violation): {cmd}"
+                        )
+            if _outputs and not Path(site_path(S, _outputs[0], write=True)).exists():
+                content = result.stdout
+                if result.returncode != 0:
+                    content += f"\n--- STDERR (exit {result.returncode}) ---\n"
+                    content += result.stderr
+                write_text(site_path(S, _outputs[0], write=True), content)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"command failed (exit {result.returncode}): {cmd}\n"
+                    f"{result.stderr[:500]}"
+                )
+        except Exception:
+            # Rollback: restore live site outputs if command failed or violated isolation
+            if "stage" in S:
+                for o, content in snapshots.items():
+                    live_out = live_site / o
+                    live_out.write_bytes(content)
+            raise
 
     shell_action._husks_cmd = cmd
     return shell_action

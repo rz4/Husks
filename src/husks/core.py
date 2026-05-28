@@ -262,6 +262,46 @@ def compute_node_digest(
     return hashlib.sha256(encode(node_form)).hexdigest()
 
 
+# ── Path validation (security) ────────────────────────────────────
+
+def _validate_husk_path(name: str) -> None:
+    """Validate a path from a .husk file, rejecting security violations.
+
+    A malicious .husk file could contain absolute paths (e.g., "/etc/passwd")
+    or traversal paths (e.g., "../../secret") in its input/output declarations.
+    This function rejects such paths to ensure recompute_root() only reads
+    files inside the site directory.
+
+    Parameters
+    ----------
+    name : str
+        Path string from the .husk file (from inputs or outputs list).
+
+    Raises
+    ------
+    ValueError
+        If the path is empty, absolute, or contains .. components.
+    """
+    if not name:
+        raise ValueError("empty path in .husk")
+
+    # Reject absolute paths (Unix: /foo, Windows: C:\foo or C:/foo)
+    if os.path.isabs(name):
+        raise ValueError(f"absolute path in .husk: {name}")
+
+    # Reject path traversal attempts
+    # Check each component for ".." to prevent escaping site directory
+    parts = name.split(os.sep)
+    if os.altsep:  # Windows supports both \ and /
+        for part in parts:
+            if os.altsep in part:
+                parts.extend(part.split(os.altsep))
+
+    for part in parts:
+        if part == "..":
+            raise ValueError(f"path traversal in .husk: {name}")
+
+
 # ── Husk structure extraction ─────────────────────────────────────
 
 def _extract_rule_fields(
@@ -375,7 +415,9 @@ def _recompute_node(node: list[CseValue], site_dir: str, version: bytes) -> str:
     # Input bindings: (name, content_hash)
     input_bindings: list[tuple[bytes, bytes]] = []
     for inp in inputs:
-        path = os.path.join(site_dir, atom_str(inp))
+        inp_str = atom_str(inp)
+        _validate_husk_path(inp_str)  # Security: reject absolute/traversal paths
+        path = os.path.join(site_dir, inp_str)
         h = content_hash_or_absent(path)
         input_bindings.append((inp, h))
 
@@ -385,7 +427,9 @@ def _recompute_node(node: list[CseValue], site_dir: str, version: bytes) -> str:
     # Output bindings: (name, content_hash)
     output_bindings: list[tuple[bytes, bytes]] = []
     for out in outputs:
-        path = os.path.join(site_dir, atom_str(out))
+        out_str = atom_str(out)
+        _validate_husk_path(out_str)  # Security: reject absolute/traversal paths
+        path = os.path.join(site_dir, out_str)
         h = content_hash_or_absent(path)
         output_bindings.append((out, h))
 

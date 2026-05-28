@@ -165,8 +165,13 @@ def setup_links(site: str, mapping: dict[str, str]) -> list[str]:
 
 
 def file_sig(p: str) -> bytes:
-    """Return the CSE bytes atom for a file: content hash or ABSENT."""
+    """Return the CSE bytes atom for a file: content hash or ABSENT.
+
+    Directories, symlinks to directories, and missing paths all yield
+    ABSENT. Only regular files are hashed. This matches the behavior
+    of content_hash_or_absent in core.py.
+    """
     path = Path(p)
-    if path.exists():
+    if path.is_file():
         return content_hash(path.read_bytes())
     return ABSENT
