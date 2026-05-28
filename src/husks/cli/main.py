@@ -25,6 +25,15 @@ def main():
 
     sub = p.add_subparsers(dest="cmd")
 
+    # init
+    i = sub.add_parser("init", help="Create a runnable Husks project")
+    i.add_argument("target", nargs="?", default=".",
+                   help="Target directory (default: .)")
+    i.add_argument("--example", default=None, metavar="NAME",
+                   help="Start from a bundled example (default: minimal)")
+    i.add_argument("--force", action="store_true",
+                   help="Overwrite existing files")
+
     # check
     c = sub.add_parser("check", help="Validate a design (exit 1 if errors)")
     c.add_argument("design", nargs="?", default=None,
@@ -114,15 +123,6 @@ def main():
     doc.add_argument("--verbose", "-v", action="store_true",
                      help="Verbose output")
 
-    # init
-    i = sub.add_parser("init", help="Create a runnable Husks project")
-    i.add_argument("target", nargs="?", default=".",
-                   help="Target directory (default: .)")
-    i.add_argument("--example", default=None, metavar="NAME",
-                   help="Start from a bundled example (default: minimal)")
-    i.add_argument("--force", action="store_true",
-                   help="Overwrite existing files")
-
     args = p.parse_args()
 
     # --version
@@ -138,26 +138,27 @@ def main():
         p.print_help()
         sys.exit(EXIT_USAGE)
 
-    # ── Commands that take no design file ─────────────────────
+    # ── init ──────────────────────────────────────────────────
     if args.cmd == "init":
         from husks.setup import init
         sys.exit(init(args.target, claude_code=True, force=args.force))
 
-    if args.cmd == "doctor":
-        _cmd_doctor(args)
-        return
-
-    # ── explain (multiple modes) ──────────────────────────────
-    if args.cmd == "explain":
-        _cmd_explain(args)
-        return
-
-    # ── Commands that may or may not need a design ────────────
+    # ── status (may or may not need a design) ────────────────
     if args.cmd == "status":
         _cmd_status(args)
         return
 
-    # ── Commands that require a design ────────────────────────
+    # ── explain (multiple modes) ─────────────────────────────
+    if args.cmd == "explain":
+        _cmd_explain(args)
+        return
+
+    # ── doctor ───────────────────────────────────────────────
+    if args.cmd == "doctor":
+        _cmd_doctor(args)
+        return
+
+    # ── Commands that require a design ───────────────────────
     design_path = resolve_design(args)
     args.design = design_path
     is_hy = design_path.endswith(".hy")
