@@ -528,6 +528,7 @@ def rule(
     inputs: list[str] | None = None,
     outputs: list[str] | None = None,
     recipe: Recipe = None,
+    run: str | None = None,
 ) -> Node:
     """Construct a rule node.
 
@@ -535,7 +536,13 @@ def rule(
 
         rule("greet", child1, child2, ...)   # positional
         rule(child1, child2, :name "greet")  # keyword (Hy style)
+
+    A shell command may be provided via *run* instead of *recipe*::
+
+        rule(:name "gate" :run "husks-gate ..." :outputs ["report.txt"])
     """
+    if run is not None and recipe is not None:
+        raise TypeError("rule() cannot have both 'run' and 'recipe'")
     children: list[Node] = []
     for a in args:
         if isinstance(a, str):
@@ -548,6 +555,8 @@ def rule(
             raise TypeError(f"rule() unexpected argument: {a!r}")
     if name is None:
         raise TypeError("rule() missing required argument: 'name'")
+    if run is not None:
+        recipe = action(_make_shell_action(run, outputs))
     return {
         "type": "rule",
         "name": name,
@@ -581,6 +590,44 @@ def action(fn: Callable[[Store], None], *args: Any) -> dict[str, Any]:
             )
     return {"type": "action", "fn": fn, "args": args}
 
+
+
+def _make_shell_action(cmd: str, outputs: list[str] | None = None):
+    """Create an action function that runs a shell command.
+
+    The command runs in the site directory.  If the first declared
+    output does not yet exist, stdout (and stderr on failure) are
+    captured into it.  A nonzero exit code raises RuntimeError,
+    which halts the build.
+    """
+    _outputs = outputs or []
+
+    def shell_action(S: dict) -> None:
+        import subprocess as _sp
+
+        site = S["site"]
+        result = _sp.run(
+            cmd,
+            shell=True,
+            cwd=site,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if _outputs and not Path(site_path(S, _outputs[0])).exists():
+            content = result.stdout
+            if result.returncode != 0:
+                content += f"\n--- STDERR (exit {result.returncode}) ---\n"
+                content += result.stderr
+            write_text(site_path(S, _outputs[0]), content)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"command failed (exit {result.returncode}): {cmd}\n"
+                f"{result.stderr[:500]}"
+            )
+
+    shell_action._husks_cmd = cmd
+    return shell_action
 
 
 def oracle(
@@ -1070,6 +1117,7 @@ def build(
     oracle_backend: OracleBackend | None = None,
     oracle_model: str | None = None,
     readonly_dirs: list[str] | None = None,
+    site_inputs: list[str] | None = None,
     **kwargs: Any,
 ) -> Store:
     """Execute a build.
@@ -1119,6 +1167,14 @@ def build(
         raise TypeError("build() missing required argument: 'fuel'")
     if site is None:
         site = f"/tmp/mccarthy-{name}-{str(uuid.uuid4())[:8]}"
+
+    # Stage site_inputs: copy listed files into the site directory.
+    if site_inputs:
+        import shutil as _shutil
+        for si in site_inputs:
+            dest = str(Path(site) / Path(si).name)
+            ensure_dir(str(Path(dest).parent))
+            _shutil.copy2(si, dest)
 
     # Clear trace state so sequential in-process builds don't accumulate.
     T.clear()

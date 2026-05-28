@@ -551,40 +551,7 @@ def compile(design: Design) -> tuple[str, int, list[dict], dict[str, Any]]:
 
 # ── Action factories ──────────────────────────────────────────────
 
-def _make_shell_action(cmd: str, outputs: list[str]):
-    """Create an action function that runs a shell command.
-
-    The command runs in the site directory.  If the first declared
-    output does not yet exist, stdout (and stderr on failure) are
-    captured into it.  A nonzero exit code raises RuntimeError,
-    which halts the build.
-    """
-    def shell_action(S: dict) -> None:
-        from husks.build import site_path, write_text
-
-        site = S["site"]
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            cwd=site,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if outputs and not Path(site_path(S, outputs[0])).exists():
-            content = result.stdout
-            if result.returncode != 0:
-                content += f"\n--- STDERR (exit {result.returncode}) ---\n"
-                content += result.stderr
-            write_text(site_path(S, outputs[0]), content)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"command failed (exit {result.returncode}): {cmd}\n"
-                f"{result.stderr[:500]}"
-            )
-
-    shell_action._husks_cmd = cmd
-    return shell_action
+from husks.build import _make_shell_action  # re-exported for tests
 
 
 def _make_touch_action(outputs: list[str]):
