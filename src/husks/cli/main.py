@@ -29,8 +29,8 @@ def main():
     i = sub.add_parser("init", help="Create a runnable Husks project")
     i.add_argument("target", nargs="?", default=".",
                    help="Target directory (default: .)")
-    i.add_argument("--example", default=None, metavar="NAME",
-                   help="Start from a bundled example (default: minimal)")
+    i.add_argument("template", nargs="?", default="demo",
+                   help="Project template (default: demo)")
     i.add_argument("--force", action="store_true",
                    help="Overwrite existing files")
 
@@ -141,7 +141,7 @@ def main():
     # ── init ──────────────────────────────────────────────────
     if args.cmd == "init":
         from husks.setup import init
-        sys.exit(init(args.target, claude_code=True, force=args.force))
+        sys.exit(init(args.target, template=args.template, claude_code=True, force=args.force))
 
     # ── status (may or may not need a design) ────────────────
     if args.cmd == "status":

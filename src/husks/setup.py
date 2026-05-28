@@ -154,6 +154,100 @@ def selftest(verbose=True, conformance=None):
     return all_ok
 
 
+# ── template scaffolding ──────────────────────────────────────────────
+import json
+import textwrap
+
+_DEMO_DESIGN = {
+    "name": "demo",
+    "fuel": 10,
+    "target": "validate",
+    "site_inputs": ["spec.md"],
+    "rules": [
+        {
+            "name": "write-greeting",
+            "kind": "oracle",
+            "inputs": ["spec.md"],
+            "outputs": ["greeting.txt"],
+            "prompt": "Read spec.md and write a greeting to greeting.txt following the spec.",
+            "tools": ["read-file", "write-file"],
+            "fuel": 5,
+        },
+        {
+            "name": "validate",
+            "kind": "action",
+            "inputs": ["greeting.txt"],
+            "outputs": ["result.txt"],
+            "run": "python scripts/check_greeting.py",
+        },
+    ],
+}
+
+_DEMO_CHECK_GREETING = textwrap.dedent("""\
+    \"\"\"Check that greeting.txt matches the spec.\"\"\"
+    import sys
+
+    text = open("greeting.txt").read().strip()
+    lines = text.splitlines()
+
+    ok = True
+    if not lines:
+        print("FAIL: empty file", file=sys.stderr)
+        ok = False
+    elif len(lines) != 1:
+        print(f"FAIL: expected 1 line, got {len(lines)}", file=sys.stderr)
+        ok = False
+    else:
+        line = lines[0]
+        if not line.startswith("Hello"):
+            print(f"FAIL: must start with 'Hello'", file=sys.stderr)
+            ok = False
+        if not line.endswith("!"):
+            print(f"FAIL: must end with '!'", file=sys.stderr)
+            ok = False
+
+    with open("result.txt", "w") as f:
+        f.write("pass\\n" if ok else "fail\\n")
+
+    sys.exit(0 if ok else 1)
+""")
+
+_DEMO_SPEC_MD = textwrap.dedent("""\
+    # Greeting Spec
+
+    Write a short, friendly greeting that:
+    - Starts with "Hello"
+    - Is exactly one line
+    - Ends with an exclamation mark
+""")
+
+
+def _write_if(path: Path, content: str, force: bool) -> bool:
+    """Write content to path if it doesn't exist or force is set. Returns True if written."""
+    if path.exists() and not force:
+        print(f"        {path.name} exists (use --force to overwrite)")
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    print(f"        wrote {path.relative_to(path.parent.parent) if path.parent.parent != path.parent else path.name}")
+    return True
+
+
+def _scaffold_template(target: Path, template: str, force: bool) -> bool:
+    """Scaffold project files for the given template. Returns True on success."""
+    if template == "demo":
+        _write_if(target / "design.json",
+                  json.dumps(_DEMO_DESIGN, indent=2) + "\n", force)
+        _write_if(target / "scripts" / "check_greeting.py",
+                  _DEMO_CHECK_GREETING, force)
+        _write_if(target / "inputs" / "spec.md",
+                  _DEMO_SPEC_MD, force)
+        return True
+    else:
+        print(f"  error: unknown template '{template}'", file=sys.stderr)
+        return False
+
+
 # ── init ────────────────────────────────────────────────────────────────
 def _ensure_gitignored(target: Path, entry: str):
     gi = target / ".gitignore"
@@ -163,22 +257,28 @@ def _ensure_gitignored(target: Path, entry: str):
             f.write(("" if not lines or lines[-1] == "" else "\n") + entry + "\n")
 
 
-def init(target=".", claude_code=True, force=False):
-    """Wire `target` to drive Husks from Claude Code."""
+def init(target=".", template="demo", claude_code=True, force=False):
+    """Scaffold a Husks project and wire it to Claude Code."""
     target = Path(target).resolve()
     target.mkdir(parents=True, exist_ok=True)
     print(f"  husks init → {target}\n")
 
-    # 1. soundness gate — refuse to wire up an engine that doesn't verify
-    print("  [1/4] verifying engine soundness")
+    # 1. scaffold template files
+    print(f"  [1/5] scaffolding '{template}' template")
+    if not _scaffold_template(target, template, force):
+        return 1
+    print()
+
+    # 2. soundness gate — refuse to wire up an engine that doesn't verify
+    print("  [2/5] verifying engine soundness")
     if not selftest():
         print("\n  aborted: engine selftest failed. Fix conformance before wiring up.",
               file=sys.stderr)
         return 1
     print()
 
-    # 2. API key
-    print("  [2/4] checking ANTHROPIC_API_KEY")
+    # 3. API key
+    print("  [3/5] checking ANTHROPIC_API_KEY")
     if os.environ.get("ANTHROPIC_API_KEY"):
         print("        present in environment ✓")
     else:
@@ -191,8 +291,8 @@ def init(target=".", claude_code=True, force=False):
         print("        (needed only for live runs, not --stub)")
     print()
 
-    # 3. Claude Code skill hookup
-    print("  [3/4] wiring the husks skill into Claude Code")
+    # 4. Claude Code skill hookup
+    print("  [4/5] wiring the husks skill into Claude Code")
     if claude_code:
         skill_src = _skill_dir()
         if not (skill_src / "SKILL.md").exists():
@@ -228,8 +328,8 @@ def init(target=".", claude_code=True, force=False):
         print("        skipped (--no-claude-code)")
     print()
 
-    # 4. CLAUDE.md
-    print("  [4/4] emitting CLAUDE.md (canonical stance)")
+    # 5. CLAUDE.md
+    print("  [5/5] emitting CLAUDE.md (canonical stance)")
     claude_md = target / "CLAUDE.md"
     if claude_md.exists() and not force:
         print(f"        {claude_md} exists (use --force to overwrite)")
@@ -238,7 +338,9 @@ def init(target=".", claude_code=True, force=False):
         print("        wrote CLAUDE.md")
     print()
 
+    rel = os.path.relpath(target)
     print("  done. Next:")
-    print("    claude doctor        # confirm the husks skill loaded")
-    print("    claude               # start a session; ask it to use the husks skill")
+    print(f"    cd {rel}")
+    print("    husks check")
+    print("    husks run --stub")
     return 0
