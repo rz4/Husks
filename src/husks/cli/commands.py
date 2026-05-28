@@ -1,20 +1,10 @@
-#- cli.py — command-line interface for Husks designs
-#
-# Commands:
-#   husks check   design.json [--verbose] [--json]
-#   husks run     design.json [--site ...] [--model ...] [--verbose] [--json]
-#   husks status  [design.json] --site SITE [--json] [--fail-if-dirty] [--fail-if-stale]
-#   husks diff    [design.json] --site SITE [artifact...] [--json]
-#   husks explain subject --site SITE [--json]
-#   husks graph   design.json [--format text|mermaid|dot|json] [--site SITE]
-#   husks history design.json [rule] [--site SITE] [-n N]
-#   husks gate    reader_cmd [--stamp-dir DIR] [--no-cross-check] [--json] [--verbose]
-#   husks doctor  [--json]
-#   husks selftest [--conformance DIR]
-#   husks init    [target] [--no-claude-code] [--force]
+"""All _cmd_* command functions."""
 
-import argparse
+from __future__ import annotations
+
 import json
+import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -22,218 +12,61 @@ from husks.designs.ir import check, check_categorized, show, run, from_json
 from husks.designs.convergence import read_history, convergence_summary
 from husks.utils.console import _shorthash
 
-# ── Exit codes ────────────────────────────────────────────────────
-
-EXIT_OK = 0
-EXIT_BUILD_FAIL = 1
-EXIT_USAGE = 2
-EXIT_MISSING_DEP = 3
-EXIT_DIRTY_STALE = 4
-EXIT_INTERNAL = 5
-
-# ── Shared symbols ────────────────────────────────────────────────
-
-_STATE_SYM = {"fresh": "\u2713", "stale": "\u25b8", "missing": "\u2717",
-              "dirty": "!", "modified": "!", "failed": "\u2717"}
+from husks.cli.helpers import (
+    _load_manifest, _STATE_SYM,
+    EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_MISSING_DEP, EXIT_DIRTY_STALE,
+)
 
 
-# ── CLI helpers ───────────────────────────────────────────────────
+# ── run (Hy) ──────────────────────────────────────────────────────
 
-def _load_manifest(args) -> tuple[dict, str]:
-    """Resolve manifest and site from CLI args, exit on failure."""
-    from husks.manifest import resolve_manifest, read_manifest
+def _cmd_run_hy(args):
+    """Execute a .hy design file directly."""
+    design_path = str(Path(args.design).resolve())
 
-    site = getattr(args, "site", None)
-    design = getattr(args, "design", None)
+    # Suppress console trace in JSON mode or non-verbose default mode
+    if args.json_output or not args.verbose:
+        from husks.utils import trace as T_pre
+        T_pre.clear_listeners()
 
-    if site and not design:
-        manifest = read_manifest(site)
-    else:
-        manifest, site = resolve_manifest(design, site)
+    # Configure oracle model before executing the .hy file
+    if not args.stub:
+        from husks.oracle import set_oracle_model
+        set_oracle_model(args.model)
 
-    if not site:
-        print("error: no site directory. Use --site or provide a design.",
-              file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-    if not manifest:
-        print(f"error: no build manifest in {site}/.traces/", file=sys.stderr)
+    # Execute the .hy design
+    try:
+        import hy  # noqa: F401
+        import runpy
+        runpy.run_path(design_path, run_name="__main__")
+    except ImportError:
+        print("error: hy is not installed (pip install hy)", file=sys.stderr)
+        sys.exit(EXIT_MISSING_DEP)
+    except Exception as e:
+        print(f"error: {e}", file=sys.stderr)
         sys.exit(EXIT_BUILD_FAIL)
-    return manifest, site
 
+    # Retrieve the Store captured by build()
+    from husks.build import _last_store as S
+    if S is None:
+        print("error: .hy design did not call build()", file=sys.stderr)
+        sys.exit(EXIT_BUILD_FAIL)
 
-def main():
-    p = argparse.ArgumentParser(prog="husks", description="Husks design CLI")
+    # Build Report
+    from husks.report import assemble, render_text, render_concise, render_json
+    from husks.utils import trace as T
+    from husks.oracle.llm import get_usage
 
-    # Global options
-    p.add_argument("--color", choices=["auto", "always", "never"], default="auto",
-                   help="Color output mode")
-    p.add_argument("--quiet", "-q", action="store_true",
-                   help="Suppress non-essential output")
-    p.add_argument("--version", action="store_true",
-                   help="Print version and exit")
+    report = assemble(S, T, {}, get_usage())
+    if args.json_output:
+        print(render_json(report))
+    elif args.verbose:
+        print(render_text(report))
+    else:
+        print(render_concise(report))
 
-    sub = p.add_subparsers(dest="cmd")
-
-    # check
-    c = sub.add_parser("check", help="Validate a design (exit 1 if errors)")
-    c.add_argument("design", help="Path to design JSON file")
-    c.add_argument("--verbose", "-v", action="store_true",
-                   help="Show full design details after validation (replaces old 'show')")
-    c.add_argument("--json", action="store_true", dest="json_output",
-                   help="Output categorized check results as JSON")
-
-    # run
-    r = sub.add_parser("run", help="Check, compile, and execute a design")
-    r.add_argument("design", help="Path to design JSON file")
-    r.add_argument("--site", help="Override site directory")
-    r.add_argument("--model", help="LLM model for oracle rules",
-                   default="anthropic/claude-haiku-4-5-20251001")
-    r.add_argument("--stub", action="store_true",
-                   help="Use stub oracle (no LLM, placeholder outputs)")
-    r.add_argument("--hy", action="store_true",
-                   help="Use original Hy kernel backend instead of Python")
-    r.add_argument("--json", action="store_true", dest="json_output",
-                   help="Output full Report as JSON instead of text")
-    r.add_argument("--soft-fail", action="store_true",
-                   help="Exit 0 even when the build halts")
-    r.add_argument("--verbose", "-v", action="store_true",
-                   help="Verbose output (full trace + detailed report)")
-
-    # status
-    st_cmd = sub.add_parser("status", help="Show freshness state of a built site")
-    st_cmd.add_argument("design", nargs="?", default=None,
-                        help="Path to design JSON file (optional)")
-    st_cmd.add_argument("--site", help="Site directory")
-    st_cmd.add_argument("--json", action="store_true", dest="json_output",
-                        help="Output as JSON")
-    st_cmd.add_argument("--fail-if-dirty", action="store_true",
-                        help="Exit 4 if any artifact is modified")
-    st_cmd.add_argument("--fail-if-stale", action="store_true",
-                        help="Exit 4 if any rule is stale")
-
-    # diff
-    d = sub.add_parser("diff", help="Show differences between sealed and current artifacts")
-    d.add_argument("design", nargs="?", default=None,
-                   help="Path to design JSON file (optional)")
-    d.add_argument("artifact", nargs="*", default=[],
-                   help="Specific artifacts to diff (default: all)")
-    d.add_argument("--site", help="Site directory")
-    d.add_argument("--json", action="store_true", dest="json_output",
-                   help="Output as JSON")
-
-    # explain
-    e = sub.add_parser("explain", help="Explain a rule or artifact")
-    e.add_argument("subject", help="Rule name or artifact path")
-    e.add_argument("--site", help="Site directory (required)")
-    e.add_argument("--json", action="store_true", dest="json_output",
-                   help="Output as JSON")
-
-    # graph
-    g = sub.add_parser("graph", help="Render the dependency graph")
-    g.add_argument("design", help="Path to design JSON file")
-    g.add_argument("--format", choices=["text", "mermaid", "dot", "json"],
-                   default="text", dest="graph_format",
-                   help="Output format (default: text)")
-    g.add_argument("--site", help="Site directory (for freshness overlay)")
-
-    # history
-    h = sub.add_parser("history", help="Show convergence history for rules")
-    h.add_argument("design", help="Path to design JSON file")
-    h.add_argument("rule", nargs="?", default=None,
-                   help="Rule name (omit for summary of all rules)")
-    h.add_argument("--site", help="Override site directory")
-    h.add_argument("-n", type=int, default=5,
-                   help="Number of recent entries to show (default: 5)")
-
-    # gate
-    gt = sub.add_parser("gate", help="Run the conformance gate against a CSE reader")
-    gt.add_argument("reader_cmd", help='Reader command, e.g. "python my_reader.py"')
-    gt.add_argument("--stamp-dir", default=None,
-                    help="Write VERIFIED stamp here on pass")
-    gt.add_argument("--no-cross-check", action="store_false", dest="cross_check",
-                    help="Disable JS cross-check")
-    gt.add_argument("--json", action="store_true", dest="json_output",
-                    help="Output as JSON")
-    gt.add_argument("--verbose", "-v", action="store_true",
-                    help="Verbose output")
-
-    # doctor
-    doc = sub.add_parser("doctor", help="Check environment and dependencies")
-    doc.add_argument("--json", action="store_true", dest="json_output",
-                     help="Output as JSON")
-
-    # selftest
-    st = sub.add_parser("selftest", help="Verify engine against frozen conformance vectors")
-    st.add_argument("--conformance", help="Path to conformance vector directory")
-
-    # init
-    i = sub.add_parser("init", help="Wire a project to drive Husks from Claude Code")
-    i.add_argument("target", nargs="?", default=".",
-                   help="Target directory (default: .)")
-    i.add_argument("--no-claude-code", action="store_true",
-                   help="Skip Claude Code skill hookup")
-    i.add_argument("--force", action="store_true",
-                   help="Overwrite existing skill symlink and CLAUDE.md")
-
-    args = p.parse_args()
-
-    # --version
-    if args.version:
-        try:
-            from importlib.metadata import version as pkg_version
-            print(f"husks {pkg_version('husks')}")
-        except Exception:
-            print("husks (version unknown)")
-        sys.exit(EXIT_OK)
-
-    if args.cmd is None:
-        p.print_help()
-        sys.exit(EXIT_USAGE)
-
-    # ── Commands that take no design file ─────────────────────
-    if args.cmd == "selftest":
-        from husks.setup import selftest
-        sys.exit(EXIT_OK if selftest(conformance=args.conformance) else EXIT_BUILD_FAIL)
-
-    if args.cmd == "init":
-        from husks.setup import init
-        sys.exit(init(args.target, claude_code=not args.no_claude_code, force=args.force))
-
-    if args.cmd == "doctor":
-        _cmd_doctor(args)
-        return
-
-    if args.cmd == "gate":
-        _cmd_gate(args)
-        return
-
-    # ── Commands that may or may not need a design ────────────
-    if args.cmd == "status":
-        _cmd_status(args)
-        return
-
-    if args.cmd == "diff":
-        _cmd_diff(args)
-        return
-
-    if args.cmd == "explain":
-        _cmd_explain(args)
-        return
-
-    # ── Commands that require a design ────────────────────────
-    design = from_json(args.design)
-
-    if args.cmd == "check":
-        _cmd_check(args, design)
-
-    elif args.cmd == "run":
-        _cmd_run(args, design)
-
-    elif args.cmd == "graph":
-        _cmd_graph(args, design)
-
-    elif args.cmd == "history":
-        _cmd_history(args, design)
+    if S.get("status") == "halted" and not args.soft_fail:
+        sys.exit(EXIT_BUILD_FAIL)
 
 
 # ── check ─────────────────────────────────────────────────────────
@@ -686,7 +519,6 @@ def _cmd_doctor(args):
                         "detail": "not installed (required for live oracle)"})
 
     # 6. ANTHROPIC_API_KEY
-    import os
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if key:
         checks.append({"name": "ANTHROPIC_API_KEY", "ok": True,
@@ -696,7 +528,6 @@ def _cmd_doctor(args):
                         "detail": "not set (needed for live runs)"})
 
     # 7. git
-    import shutil
     if shutil.which("git"):
         checks.append({"name": "git", "ok": True, "detail": "found"})
     else:
@@ -726,7 +557,3 @@ def _cmd_doctor(args):
         any_fail = any(c["ok"] is False for c in checks)
         if any_fail:
             sys.exit(EXIT_MISSING_DEP)
-
-
-if __name__ == "__main__":
-    main()
