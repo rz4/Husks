@@ -29,8 +29,13 @@ def _cmd_run_hy(args):
         from husks.utils import trace as T_pre
         T_pre.clear_listeners()
 
-    # Configure oracle model before executing the .hy file
-    if not args.stub:
+    # Configure oracle backend before executing the .hy file
+    if args.stub:
+        # Replace live_oracle in the module so the .hy file picks up the stub
+        import husks.oracle as _omod
+        from husks.build.eval import default_oracle_backend
+        _omod.live_oracle = default_oracle_backend
+    else:
         from husks.oracle import set_oracle_model
         set_oracle_model(args.model)
 
@@ -47,7 +52,8 @@ def _cmd_run_hy(args):
         sys.exit(EXIT_BUILD_FAIL)
 
     # Retrieve the Store captured by build()
-    from husks.build import _last_store as S
+    import husks.build.run as _brun
+    S = _brun._last_store
     if S is None:
         print("error: .hy design did not call build()", file=sys.stderr)
         sys.exit(EXIT_BUILD_FAIL)

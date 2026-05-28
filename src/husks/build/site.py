@@ -152,7 +152,10 @@ def setup_links(site: str, mapping: dict[str, str]) -> list[str]:
             )
         link.parent.mkdir(parents=True, exist_ok=True)
         os.symlink(str(ext), str(link))
-        readonly_dirs.append(str(ext))
+        # Register the containing directory (not the file itself) so that
+        # site_path's is_relative_to check passes for files inside it.
+        rd = str(ext.parent) if ext.is_file() else str(ext)
+        readonly_dirs.append(rd)
     return readonly_dirs
 
 

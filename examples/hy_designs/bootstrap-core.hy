@@ -49,6 +49,6 @@ Usage:
 
       (rule :name "gate"
             :inputs ["readers/generated_reader.py"]
-            :run "husks-gate python readers/generated_reader.py --stamp-dir readers"
+            :run "husks-gate 'python readers/generated_reader.py' --stamp-dir readers"
             :outputs ["readers/gate-report.txt" "readers/VERIFIED"])))
 
