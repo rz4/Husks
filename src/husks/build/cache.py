@@ -143,6 +143,12 @@ def cache_get(
         if seal_data.get("recipe_digest") != recipe_rd:
             return None
 
+        # Beta Hardening Task 5: Verify input signatures match seal
+        # The cache key already depends on inputs, but seal validation should also check
+        seal_inputs = seal_data.get("inputs", {})
+        if seal_inputs != input_sigs:
+            return None  # Input signatures don't match seal
+
         # 3. Verify output names match declared outputs (prevents output set mismatch)
         cached_output_names = set(outputs.keys())
         seal_output_names = set(seal_data.get("outputs", {}).keys())
@@ -162,8 +168,8 @@ def cache_get(
             if expected_hash is None:
                 return None  # Output not in seal
 
-            # Compute hash of cached content
-            actual_hash = hashlib.sha256(content.encode()).hexdigest()[:10]
+            # Beta Hardening Task 6: Validate full SHA-256 hash (not 10-char prefix)
+            actual_hash = hashlib.sha256(content.encode()).hexdigest()
             if actual_hash != expected_hash:
                 return None  # Content hash mismatch
 
@@ -229,10 +235,10 @@ def cache_put(
 
     # Beta Gate D2: Generate seal data if not provided
     if seal_data is None:
-        # Compute output hashes for validation
+        # Beta Hardening Task 6: Store full SHA-256 hashes (not 10-char prefixes)
         output_hashes = {}
         for name, content in outputs.items():
-            content_hash = hashlib.sha256(content.encode()).hexdigest()[:10]
+            content_hash = hashlib.sha256(content.encode()).hexdigest()
             output_hashes[name] = content_hash
 
         seal_data = {

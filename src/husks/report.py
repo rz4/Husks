@@ -507,6 +507,7 @@ def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
     errors = []
 
     # Top-level required fields (Task 9: Added schema_version)
+    # Beta Hardening Task 1/3: Added oracle evidence fields
     required_top = {
         "schema_version": str,
         "status": str,
@@ -519,6 +520,10 @@ def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
         "cost": dict,
         "delta": dict,
         "nodes": list,
+        # Beta Hardening Task 1: Require oracle evidence fields
+        "oracle_calls": int,
+        "cache_hits": int,
+        "cached_nodes": list,
     }
 
     for field, expected_type in required_top.items():
@@ -537,6 +542,12 @@ def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
                 f"unsupported schema_version: {report['schema_version']} "
                 f"(expected 'beta-1')"
             )
+
+    # Beta Hardening Task 2: Committed reports must have non-empty root
+    if "status" in report and report["status"] == "committed":
+        root = report.get("root")
+        if not root or not isinstance(root, str) or len(root.strip()) == 0:
+            errors.append("committed reports must have non-empty root string")
 
     # Validate fuel dict
     if "fuel" in report and isinstance(report["fuel"], dict):

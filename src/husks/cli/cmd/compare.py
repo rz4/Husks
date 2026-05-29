@@ -324,6 +324,73 @@ def _cmd_compare_runs(args):
         else:
             comparison["checks"]["m1_m3_comparable_cost"] = True
 
+        # Beta Hardening Task 3/4: Cross-check proof fields against actual nodes
+        # Don't allow empty nodes lists to pass (Task 4)
+        for i, run in enumerate([m1, m2, m3], 1):
+            nodes = reports[i-1]["data"].get("nodes", [])
+            if len(nodes) == 0:
+                comparison["violations"].append(f"M{i} has empty nodes list (invalid proof)")
+                comparison["equivalent"] = False
+
+        # Beta Hardening Task 3: M1 must have actual oracle nodes that fired
+        m1_nodes = reports[0]["data"].get("nodes", [])
+        m1_fired_oracles = [
+            n for n in m1_nodes
+            if n.get("kind") == "oracle"
+            and n.get("state") == "fired"
+            and not n.get("cached", False)
+            and n.get("cost", {}).get("this_run", 0) > 0
+        ]
+        if len(m1_fired_oracles) == 0:
+            comparison["violations"].append(
+                "M1 must have at least one oracle node that fired (state=fired, cached=false, cost.this_run>0)"
+            )
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m1_node_level_oracle_evidence"] = True
+
+        # Beta Hardening Task 3: M3 must have actual oracle nodes that fired
+        m3_nodes = reports[2]["data"].get("nodes", [])
+        m3_fired_oracles = [
+            n for n in m3_nodes
+            if n.get("kind") == "oracle"
+            and n.get("state") == "fired"
+            and not n.get("cached", False)
+            and n.get("cost", {}).get("this_run", 0) > 0
+        ]
+        if len(m3_fired_oracles) == 0:
+            comparison["violations"].append(
+                "M3 must have at least one oracle node that fired (state=fired, cached=false, cost.this_run>0)"
+            )
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m3_node_level_oracle_evidence"] = True
+
+        # Beta Hardening Task 3: M2 must have actual cached oracle nodes
+        m2_nodes = reports[1]["data"].get("nodes", [])
+        m2_cached_oracles = [
+            n for n in m2_nodes
+            if n.get("kind") == "oracle" and n.get("cached") is True
+        ]
+        if len(m2_cached_oracles) == 0:
+            comparison["violations"].append(
+                "M2 must have at least one oracle node with cached=true (cache reuse evidence)"
+            )
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m2_node_level_cache_evidence"] = True
+
+        # Beta Hardening Task 3: Verify cached_nodes names real oracle nodes
+        m2_oracle_names = {n["name"] for n in m2_nodes if n.get("kind") == "oracle"}
+        for cached_name in m2["cached_nodes"]:
+            if cached_name not in m2_oracle_names:
+                comparison["violations"].append(
+                    f"M2 cached_nodes references non-existent oracle: {cached_name}"
+                )
+                comparison["equivalent"] = False
+        if all(name in m2_oracle_names for name in m2["cached_nodes"]):
+            comparison["checks"]["m2_cached_nodes_valid"] = True
+
         # Check: All have same root (if all committed successfully)
         roots = [r["root"] for r in comparison["runs"] if r["root"]]
         if len(set(roots)) > 1:

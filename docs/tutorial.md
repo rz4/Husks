@@ -8,7 +8,7 @@ model touches anything, the runtime fires only what is stale, and every claim
 the system makes is a claim about sealed residue you can recompute yourself.
 
 > Install is a single `pip install` from the GitHub URL — no checkout required.
-> Setup is two commands after that: `husks selftest` and `husks init`.
+> Setup is two commands after that: `husks doctor --selftest` and `husks init`.
 
 ---
 
@@ -50,7 +50,7 @@ pip install "husks[llm] @ git+https://github.com/rz4/Husks.git"
 ```
 
 That's the whole install. The `[llm]` extra pulls in `litellm` for live oracle
-calls. Without it, `check`, `selftest`, `init`, and `--stub` runs still work —
+calls. Without it, `check`, `doctor --selftest`, `init`, and `--stub` runs still work —
 only live oracle execution requires `litellm`. The wheel also ships the
 conformance vectors and the skill.
 
@@ -70,7 +70,7 @@ conformance vectors and the skill.
 Recompute the frozen conformance roots. One command, no model, no network:
 
 ```bash
-husks selftest
+husks doctor --selftest
 ```
 
 Expected: every positive vector reproduces its frozen root (`demo` →
@@ -80,7 +80,7 @@ gate and reads the vectors bundled in the install. If anything here is not green
 stop — the permanence property is what the rest of this rests on.
 
 (`python -m pytest tests/ -q` runs the full suite, but that needs a source
-checkout; `selftest` is the install-level soundness check.)
+checkout; `doctor --selftest` is the install-level soundness check.)
 
 ---
 
@@ -97,7 +97,7 @@ husks init                     # sets up the current directory
 `husks init` does four things, and refuses to continue past the first if the
 engine doesn't verify:
 
-1. **Soundness gate** — runs `selftest`; aborts if the engine doesn't reproduce
+1. **Soundness gate** — runs `doctor --selftest`; aborts if the engine doesn't reproduce
    its roots.
 2. **API key check** — confirms `ANTHROPIC_API_KEY` if it's in your environment;
    otherwise writes a gitignored `.env` placeholder and prints the

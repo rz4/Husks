@@ -188,75 +188,129 @@ def test_wheel_build_and_install():
         assert output_file.exists(), "Output file should be created"
         assert "smoke-test" in output_file.read_text(), "Output file should contain expected content"
 
-        # Task 8 (New): Test beta seed with stub oracle (full beta flow proof)
-        beta_design_dir = Path(tmpdir) / "beta_design"
-        beta_design_dir.mkdir()
+        # Beta Hardening Task 7: Run canonical beta seed three-machine proof
+        # Copy canonical beta_seed from repo (it's in examples/beta_seed/)
+        beta_seed_src = repo_root / "examples" / "beta_seed"
+        beta_seed_dir = Path(tmpdir) / "beta_seed"
+        shutil.copytree(beta_seed_src, beta_seed_dir)
 
-        beta_design_file = beta_design_dir / "design.json"
-        beta_design_file.write_text(json.dumps({
-            "name": "beta-seed",
-            "fuel": 20,
-            "target": "validate",
-            "site_inputs": ["prompt.txt"],
-            "rules": [
-                {
-                    "name": "generate",
-                    "kind": "oracle",
-                    "inputs": ["prompt.txt"],
-                    "outputs": ["response.txt"],
-                    "prompt": "Read the prompt and provide a brief, factual answer.",
-                    "tools": [],
-                    "fuel": 8,
-                },
-                {
-                    "name": "validate",
-                    "kind": "action",
-                    "inputs": ["response.txt"],
-                    "outputs": ["validation.txt"],
-                    "run": "python3 -c \"text = open('response.txt').read(); valid = len(text.strip()) > 0; open('validation.txt', 'w').write('PASS\\\\n' if valid else 'FAIL\\\\n')\"",
-                },
-            ],
-        }))
+        design_file = beta_seed_dir / "design.json"
 
-        # site_inputs are relative to the design file directory
-        (beta_design_dir / "prompt.txt").write_text("What is the capital of France?\n")
+        # Machine 1: Build with stub oracle
+        m1_site = Path(tmpdir) / "m1_site"
+        m1_site.mkdir()
 
-        beta_site_dir = Path(tmpdir) / "beta_site"
-        beta_site_dir.mkdir()
-
-        beta_run_result = subprocess.run(
-            [str(venv_python), "-m", "husks.cli", "run", str(beta_design_file),
-             "--site", str(beta_site_dir), "--stub", "--json"],
+        m1_result = subprocess.run(
+            [str(venv_python), "-m", "husks.cli", "run", str(design_file),
+             "--site", str(m1_site), "--stub", "--json"],
             capture_output=True,
             text=True,
             timeout=30,
         )
 
-        assert beta_run_result.returncode == 0, (
-            f"Beta seed run failed:\n"
-            f"stdout: {beta_run_result.stdout}\n"
-            f"stderr: {beta_run_result.stderr}"
+        assert m1_result.returncode == 0, (
+            f"M1 run failed:\n"
+            f"stdout: {m1_result.stdout}\n"
+            f"stderr: {m1_result.stderr}"
         )
 
-        # Verify beta report structure
-        beta_report = json.loads(beta_run_result.stdout)
-        assert beta_report["status"] == "committed", f"Beta build should commit, got {beta_report['status']}"
-        assert beta_report["schema_version"] == "beta-1", "Should have beta-1 schema"
-        assert "oracle_calls" in beta_report, "Report should include oracle_calls"
-        assert "cache_hits" in beta_report, "Report should include cache_hits"
-        assert "cached_nodes" in beta_report, "Report should include cached_nodes"
-        assert beta_report["oracle_calls"] > 0, "Should have fired oracle with stub"
-        assert beta_report["cache_hits"] == 0, "First run should have no cache hits"
+        m1_report_file = Path(tmpdir) / "m1.json"
+        m1_report_file.write_text(m1_result.stdout)
 
-        # Verify oracle node was executed
-        oracle_nodes = [n for n in beta_report["nodes"] if n["kind"] == "oracle"]
-        assert len(oracle_nodes) == 1, "Should have 1 oracle node"
-        assert oracle_nodes[0]["state"] == "fired", "Oracle should have fired"
+        # Export cache from M1
+        cache_file = Path(tmpdir) / "cache.tar.gz"
+        export_result = subprocess.run(
+            [str(venv_python), "-m", "husks.cli", "cache", "export",
+             str(cache_file), "--site", str(m1_site)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
 
-        # Verify validation passed
-        validation_file = beta_site_dir / "validation.txt"
-        assert validation_file.exists(), "Validation output should be created"
-        assert "PASS" in validation_file.read_text(), "Validation should pass"
+        assert export_result.returncode == 0, (
+            f"Cache export failed:\n"
+            f"stdout: {export_result.stdout}\n"
+            f"stderr: {export_result.stderr}"
+        )
+        assert cache_file.exists(), "Cache file should be created"
+
+        # Machine 2: Import cache and reuse
+        m2_site = Path(tmpdir) / "m2_site"
+        m2_site.mkdir()
+
+        import_result = subprocess.run(
+            [str(venv_python), "-m", "husks.cli", "cache", "import",
+             str(cache_file), "--site", str(m2_site)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert import_result.returncode == 0, (
+            f"Cache import failed:\n"
+            f"stdout: {import_result.stdout}\n"
+            f"stderr: {import_result.stderr}"
+        )
+
+        m2_result = subprocess.run(
+            [str(venv_python), "-m", "husks.cli", "run", str(design_file),
+             "--site", str(m2_site), "--reuse-only", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert m2_result.returncode == 0, (
+            f"M2 run failed:\n"
+            f"stdout: {m2_result.stdout}\n"
+            f"stderr: {m2_result.stderr}"
+        )
+
+        m2_report_file = Path(tmpdir) / "m2.json"
+        m2_report_file.write_text(m2_result.stdout)
+
+        # Machine 3: Independent build
+        m3_site = Path(tmpdir) / "m3_site"
+        m3_site.mkdir()
+
+        m3_result = subprocess.run(
+            [str(venv_python), "-m", "husks.cli", "run", str(design_file),
+             "--site", str(m3_site), "--stub", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert m3_result.returncode == 0, (
+            f"M3 run failed:\n"
+            f"stdout: {m3_result.stdout}\n"
+            f"stderr: {m3_result.stderr}"
+        )
+
+        m3_report_file = Path(tmpdir) / "m3.json"
+        m3_report_file.write_text(m3_result.stdout)
+
+        # Compare the three runs
+        compare_result = subprocess.run(
+            [str(venv_python), "-m", "husks.cli", "compare-runs",
+             str(m1_report_file), str(m2_report_file), str(m3_report_file), "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert compare_result.returncode == 0, (
+            f"compare-runs failed:\n"
+            f"stdout: {compare_result.stdout}\n"
+            f"stderr: {compare_result.stderr}"
+        )
+
+        comparison = json.loads(compare_result.stdout)
+        assert comparison["reports"] == 3, "Should compare 3 reports"
+        assert comparison["equivalent"] is True, (
+            f"Three-machine proof should pass\n"
+            f"Violations: {comparison.get('violations', [])}"
+        )
 
         # Test 4: Verify conformance vectors are included
         # The wheel should include spec/conformance/* as husks/_resources/conformance/*
