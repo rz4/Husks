@@ -206,7 +206,47 @@ def test_three_machine_cli_acceptance_stub():
         assert (m3_site / "validation.txt").read_text().strip() == "PASS"
 
         # ──────────────────────────────────────────────────────────
-        # Compare all three machines
+        # Beta Gate G4: Save JSON reports to files for compare-runs
+        # ──────────────────────────────────────────────────────────
+        m1_json_file = Path(tmpdir) / "m1.json"
+        m2_json_file = Path(tmpdir) / "m2.json"
+        m3_json_file = Path(tmpdir) / "m3.json"
+
+        m1_json_file.write_text(m1_result.stdout)
+        m2_json_file.write_text(m2_result.stdout)
+        m3_json_file.write_text(m3_result.stdout)
+
+        # ──────────────────────────────────────────────────────────
+        # Beta Gate C/F/G: Compare runs via compare-runs command
+        # ──────────────────────────────────────────────────────────
+        compare_runs_result = run_husks_cli(
+            "compare-runs",
+            str(m1_json_file), str(m2_json_file), str(m3_json_file),
+            "--json",
+        )
+
+        assert compare_runs_result.returncode == 0, (
+            f"compare-runs should validate three-machine proof\n"
+            f"stdout: {compare_runs_result.stdout}\n"
+            f"stderr: {compare_runs_result.stderr}"
+        )
+
+        # Validate the three-machine proof via compare-runs
+        proof = json.loads(compare_runs_result.stdout)
+        assert proof["equivalent"] is True, (
+            f"Three-machine proof should be equivalent\n"
+            f"Violations: {proof.get('violations', [])}"
+        )
+
+        # Verify all checks passed
+        checks = proof["checks"]
+        assert checks["m1_paid_cost"] is True, "M1 should have paid cost"
+        assert checks["m2_zero_oracle_calls"] is True, "M2 should have zero oracle calls"
+        assert checks["m2_zero_cost"] is True, "M2 should have zero cost"
+        assert checks["m3_paid_cost"] is True, "M3 should have paid cost"
+
+        # ──────────────────────────────────────────────────────────
+        # Legacy site-level compare (keep for compatibility)
         # ──────────────────────────────────────────────────────────
         compare_result = run_husks_cli(
             "compare",
@@ -228,6 +268,7 @@ def test_three_machine_cli_acceptance_stub():
         print(f"  M1 cost: ${m1_cost:.4f} (oracle)")
         print(f"  M2 cost: ${m2_cost:.4f} (cache hit)")
         print(f"  M3 cost: ${m3_cost:.4f} (oracle)")
+        print(f"  compare-runs: {proof['checks']}")
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

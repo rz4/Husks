@@ -8,7 +8,7 @@ from husks.designs.ir import from_json
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, resolve_design
 from husks.cli.commands import (
     _cmd_check, _cmd_run, _cmd_run_hy, _cmd_status,
-    _cmd_explain, _cmd_history, _cmd_doctor, _cmd_compare,
+    _cmd_explain, _cmd_history, _cmd_doctor, _cmd_compare, _cmd_compare_runs,
     _cmd_cache_export, _cmd_cache_import,
 )
 
@@ -135,6 +135,14 @@ def main():
     cmp.add_argument("--hashes-only", action="store_true",
                      help="Compare output hashes only (skip root checks)")
 
+    # compare-runs (Beta Gate C/F/G) - compare JSON reports from multiple runs
+    cmp_runs = sub.add_parser("compare-runs",
+                              help="Compare JSON reports from multiple runs (three-machine proof)")
+    cmp_runs.add_argument("reports", nargs="+",
+                          help="JSON report files from husks run --json (2 or more)")
+    cmp_runs.add_argument("--json", action="store_true", dest="json_output",
+                          help="Output comparison result as JSON")
+
     # cache (Beta Gate G1/D5) - nested subcommands
     cache_parser = sub.add_parser("cache", help="Cache management commands")
     cache_sub = cache_parser.add_subparsers(dest="cache_cmd", required=True)
@@ -195,6 +203,11 @@ def main():
         _cmd_compare(args)
         return
 
+    # ── compare-runs (Beta Gate C/F/G) ───────────────────────
+    if args.cmd == "compare-runs":
+        _cmd_compare_runs(args)
+        return
+
     # ── cache commands (Beta Gate G1/D5) ──────────────────────────
     if args.cmd == "cache":
         if args.cache_cmd == "export":
@@ -217,7 +230,23 @@ def main():
               file=sys.stderr)
         sys.exit(EXIT_USAGE)
 
-    design = from_json(design_path)
+    # Beta Gate F/G: Catch design loading errors and emit JSON when --json specified
+    try:
+        design = from_json(design_path)
+    except Exception as e:
+        json_mode = getattr(args, 'json_output', False)
+        if json_mode:
+            import json
+            error_report = {
+                "status": "error",
+                "error_type": "design_load_failure",
+                "error": str(e),
+                "design_path": design_path,
+            }
+            print(json.dumps(error_report, indent=2))
+        else:
+            print(f"error loading design: {e}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
 
     if args.cmd == "check":
         _cmd_check(args, design)

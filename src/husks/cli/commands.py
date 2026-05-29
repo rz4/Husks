@@ -110,6 +110,7 @@ def _cmd_check(args, design):
 # ── run ───────────────────────────────────────────────────────────
 
 def _cmd_run(args, design):
+    """Run a design, producing JSON error output on setup/validation failures when --json specified."""
     overrides = {}
     if args.site:
         overrides["site"] = args.site
@@ -135,7 +136,50 @@ def _cmd_run(args, design):
         from husks.utils import trace as T_pre
         T_pre.clear_listeners()
 
-    S = run(design, **overrides)
+    # Beta Gate F/G: Catch setup/validation failures and emit JSON errors when --json specified
+    try:
+        S = run(design, **overrides)
+    except ValueError as e:
+        # Design validation, missing site_inputs, reuse-only cache miss, etc.
+        if args.json_output:
+            error_report = {
+                "status": "error",
+                "error_type": "setup_failure",
+                "error": str(e),
+                "build": design.get("name", "unknown"),
+                "site": overrides.get("site") or design.get("site", "unknown"),
+            }
+            print(json.dumps(error_report, indent=2))
+        else:
+            print(f"error: {e}", file=sys.stderr)
+        sys.exit(EXIT_BUILD_FAIL)
+    except FileNotFoundError as e:
+        # Missing files, site directories, etc.
+        if args.json_output:
+            error_report = {
+                "status": "error",
+                "error_type": "file_not_found",
+                "error": str(e),
+                "build": design.get("name", "unknown"),
+            }
+            print(json.dumps(error_report, indent=2))
+        else:
+            print(f"error: {e}", file=sys.stderr)
+        sys.exit(EXIT_BUILD_FAIL)
+    except Exception as e:
+        # Unexpected errors
+        if args.json_output:
+            error_report = {
+                "status": "error",
+                "error_type": "unexpected",
+                "error": str(e),
+                "error_class": type(e).__name__,
+                "build": design.get("name", "unknown"),
+            }
+            print(json.dumps(error_report, indent=2))
+        else:
+            print(f"error: {e}", file=sys.stderr)
+        sys.exit(EXIT_BUILD_FAIL)
 
     # Build Report
     from husks.report import assemble, render_text, render_concise, render_json
@@ -817,6 +861,161 @@ def _cmd_compare(args):
         print()
 
     sys.exit(EXIT_OK if all_equivalent else EXIT_BUILD_FAIL)
+
+
+def _cmd_compare_runs(args):
+    """Compare JSON reports from multiple runs (Beta Gate C/F/G).
+
+    Validates the three-machine proof:
+    - M1 paid oracle cost (cost > 0)
+    - M2 reused cache (cost = 0, oracle_calls = 0)
+    - M3 cost comparable to M1
+    - Artifacts equivalent (via output hashes)
+    """
+    if len(args.reports) < 2:
+        print("error: compare-runs requires at least 2 report files", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    # Load all reports
+    reports = []
+    for path in args.reports:
+        try:
+            with open(path, 'r') as f:
+                report = json.load(f)
+                reports.append({"path": path, "data": report})
+        except FileNotFoundError:
+            print(f"error: report file not found: {path}", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+        except json.JSONDecodeError as e:
+            print(f"error: invalid JSON in {path}: {e}", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+
+    # Analyze reports
+    comparison = {
+        "reports": len(reports),
+        "runs": [],
+        "checks": {},
+        "equivalent": True,
+        "violations": [],
+    }
+
+    # Extract key metrics from each report
+    for i, r in enumerate(reports):
+        data = r["data"]
+        run_info = {
+            "index": i,
+            "path": r["path"],
+            "status": data.get("status"),
+            "cost_paid": data.get("cost", {}).get("paid", 0.0),
+            "cost_reused": data.get("cost", {}).get("reused", 0.0),
+            "root": data.get("root"),
+        }
+
+        # Count oracle calls and cache hits
+        oracle_calls = 0
+        cache_hits = 0
+        oracle_nodes = []
+
+        for node in data.get("nodes", []):
+            if node.get("kind") == "oracle":
+                oracle_nodes.append(node["name"])
+                if node.get("state") == "fired" and node.get("cost", {}).get("this_run", 0) > 0:
+                    oracle_calls += 1
+                elif node.get("cached") is True or node.get("state") == "sealed":
+                    cache_hits += 1
+
+        run_info["oracle_calls"] = oracle_calls
+        run_info["cache_hits"] = cache_hits
+        run_info["oracle_nodes"] = oracle_nodes
+
+        comparison["runs"].append(run_info)
+
+    # Three-machine proof checks (if exactly 3 reports)
+    if len(reports) == 3:
+        m1, m2, m3 = comparison["runs"]
+
+        # Check: M1 paid oracle cost
+        if m1["cost_paid"] <= 0:
+            comparison["violations"].append("M1 should have oracle cost > 0")
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m1_paid_cost"] = True
+
+        # Check: M2 reused cache (zero oracle calls, zero cost)
+        if m2["oracle_calls"] > 0:
+            comparison["violations"].append(f"M2 should have 0 oracle calls, got {m2['oracle_calls']}")
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m2_zero_oracle_calls"] = True
+
+        if m2["cost_paid"] != 0.0:
+            comparison["violations"].append(f"M2 should have cost = 0, got {m2['cost_paid']}")
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m2_zero_cost"] = True
+
+        # Check: M3 paid comparable cost to M1
+        if m3["cost_paid"] <= 0:
+            comparison["violations"].append("M3 should have oracle cost > 0")
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m3_paid_cost"] = True
+
+        # For stub oracle, costs should be exactly equal
+        # For live oracle, allow some variance
+        cost_diff = abs(m1["cost_paid"] - m3["cost_paid"])
+        cost_tolerance = max(m1["cost_paid"] * 0.1, 0.0001)  # 10% or small epsilon
+
+        if cost_diff > cost_tolerance:
+            comparison["violations"].append(
+                f"M1 and M3 costs differ significantly: {m1['cost_paid']} vs {m3['cost_paid']}"
+            )
+            # Don't mark as non-equivalent - costs can vary with live oracle
+            comparison["checks"]["m1_m3_comparable_cost"] = "warning"
+        else:
+            comparison["checks"]["m1_m3_comparable_cost"] = True
+
+        # Check: All have same root (if all committed successfully)
+        roots = [r["root"] for r in comparison["runs"] if r["root"]]
+        if len(set(roots)) > 1:
+            comparison["violations"].append(f"Build roots differ: {roots}")
+            comparison["equivalent"] = False
+        elif len(roots) == 3:
+            comparison["checks"]["same_root"] = True
+
+    # Output
+    if args.json_output:
+        print(json.dumps(comparison, indent=2))
+    else:
+        print()
+        print(f"Comparing {len(reports)} runs:")
+        for run in comparison["runs"]:
+            print(f"  [{run['index']}] {run['path']}")
+            print(f"      status: {run['status']}")
+            print(f"      cost: ${run['cost_paid']:.6f}")
+            print(f"      oracle calls: {run['oracle_calls']}, cache hits: {run['cache_hits']}")
+            print()
+
+        if comparison["checks"]:
+            print("Checks:")
+            for check, result in comparison["checks"].items():
+                sym = "✓" if result is True else ("⚠" if result == "warning" else "✗")
+                print(f"  {sym} {check}")
+            print()
+
+        if comparison["violations"]:
+            print("Violations:")
+            for v in comparison["violations"]:
+                print(f"  ✗ {v}")
+            print()
+
+        if comparison["equivalent"]:
+            print("  ✓ Three-machine proof validated")
+        else:
+            print("  ✗ Proof validation failed")
+        print()
+
+    sys.exit(EXIT_OK if comparison["equivalent"] else EXIT_BUILD_FAIL)
 
 
 def _cmd_cache_export(args):
