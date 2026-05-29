@@ -153,22 +153,58 @@ def _cmd_run(args, design):
 
 def _cmd_status(args):
     from husks.manifest import compute_rule_states, compute_artifact_states
+    from husks.core import recompute_root
+    from pathlib import Path
 
     manifest, site = _load_manifest(args)
     rule_states = compute_rule_states(site, manifest)
     artifact_states = compute_artifact_states(site, manifest)
 
+    # Beta Gate C3: Verify .husk root against live site
+    manifest_root = manifest.get("root")
+    root_valid = None
+    recomputed_root = None
+
+    if manifest_root:
+        # Try to read and verify the .husk file
+        build_name = manifest.get("name")
+        if build_name:
+            husk_path = Path(site) / f"{build_name}.husk"
+            if husk_path.exists():
+                try:
+                    husk_bytes = husk_path.read_bytes()
+                    recomputed_root = recompute_root(husk_bytes, site)
+                    root_valid = (recomputed_root == manifest_root)
+                except Exception:
+                    # Recomputation failed (corrupt husk, missing files, etc.)
+                    root_valid = False
+
     if args.json_output:
-        print(json.dumps({
+        output = {
             "site": site,
-            "root": manifest.get("root"),
+            "root": manifest_root,
             "rules": rule_states,
             "artifacts": artifact_states,
-        }, indent=2))
+        }
+        # Beta C3: Add root verification fields
+        if root_valid is not None:
+            output["root_valid"] = root_valid
+        if recomputed_root is not None:
+            output["recomputed_root"] = recomputed_root
+        print(json.dumps(output, indent=2))
     else:
         print(f"\n  site: {site}")
-        root = manifest.get("root", "none") or "none"
-        print(f"  root: {root[:16]}...")
+        root = manifest_root or "none"
+        root_display = root if root == "none" else f"{root[:16]}..."
+
+        # Beta C3: Show root validity
+        if root_valid is True:
+            print(f"  root: {root_display} (verified)")
+        elif root_valid is False:
+            print(f"  root: {root_display} (INVALID)")
+        else:
+            print(f"  root: {root_display}")
+
         print(f"  {'─' * 50}")
 
         print("\n  rules:")

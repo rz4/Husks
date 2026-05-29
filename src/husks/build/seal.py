@@ -166,7 +166,12 @@ def write_seal(
     recipe: Recipe,
     outputs: list[str] | None = None,
 ) -> None:
-    """Write the v1 seal: CSE seal + recipe digest + per-input/output hashes."""
+    """Write seal format v1: CSE seal + recipe digest + per-input/output hashes.
+
+    Note: "v1" refers to seal format version (stored as {"v": 1} in JSON),
+    which is independent of CSE wire version (currently 2). See core.py
+    for version terminology clarification.
+    """
     seal = compute_cse_seal(S, inputs, recipe)
     recipe_form = recipe_to_cse(recipe)
     rd = recipe_digest(recipe_form)

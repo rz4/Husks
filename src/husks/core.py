@@ -23,6 +23,32 @@ CseValue = Union[bytes, list["CseValue"]]
 # ── Constants ─────────────────────────────────────────────────────
 
 NIL: bytes = b""
+
+# Beta Gate C5: Version terminology clarification
+#
+# Husks uses three independent version schemes:
+#
+# 1. CSE_VERSION (wire format version, currently "2")
+#    - Embedded in .husk files: (husk <version> <build-form>)
+#    - Determines wire encoding and verification algorithm
+#    - See spec/CSE-v1.md and spec/CSE-v2.md for format specifications
+#    - v2 clarified verifier/elaborator boundary and child ordering
+#
+# 2. Seal format version (currently 1)
+#    - Stored in .traces/{rule}.seal JSON as {"v": 1, ...}
+#    - Determines seal file structure and required fields
+#    - Independent of CSE wire version
+#
+# 3. Recipe identity scheme (implicitly "v2" in code comments)
+#    - Determines how recipe dicts map to CSE forms for digests
+#    - v2: callable actions use behavior digest (source/bytecode hash)
+#    - v1: (legacy) callable actions used function name or __qualname__
+#    - Oracle/trial recipes unchanged between v1 and v2
+#
+# These are independent: CSE wire version 2 works with seal format v1
+# and recipe identity v2. Version bumps are coordinated only when
+# necessary for compatibility.
+
 CSE_VERSION: bytes = b"2"
 ABSENT: bytes = b"absent"
 

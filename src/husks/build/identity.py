@@ -64,11 +64,13 @@ def recipe_to_cse(recipe: Recipe) -> CseValue:
     be deterministic: the same recipe dict always produces the same
     CSE value.
 
-    v2 recipe identity:
+    Recipe identity scheme v2 (independent of CSE wire version):
       - Shell actions: (action <cmd>) — command string is the identity.
       - Callable actions: (action <behavior-digest>) — source/bytecode
-        digest is the identity.
+        digest is the identity. (v1 used function __qualname__)
       - Oracle/trial: unchanged from v1.
+
+    See core.py for version terminology clarification.
     """
     # Import here to avoid circular import; first_valid is defined in eval.py
     from husks.build.eval import first_valid
