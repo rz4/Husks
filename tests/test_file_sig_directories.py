@@ -153,16 +153,16 @@ def test_build_with_directory_output_does_not_crash():
             run="mkdir -p outdir && echo 'file' > outdir/file.txt",
         )
 
-        # Build should complete without crashing during seal computation
+        # Beta B3: Directory outputs are now rejected at validation time
         S = build("dir-output-test", 10, node, site=str(site))
 
-        # Build should succeed - the directory will be created
-        # During sealing, file_sig("outdir") will return ABSENT (not crash)
-        assert S["status"] == "committed", f"Build failed: {S['status']}, {S.get('value')}"
+        # Build should halt with directory rejection (Beta Gate B3)
+        assert S["status"] == "halted", f"Expected halted, got {S['status']}"
+        assert "produced directory output" in S["value"], \
+            f"Expected directory rejection error, got: {S['value']}"
 
-        # Verify the directory was actually created
-        assert (site / "outdir").is_dir(), "Output directory should exist"
-        assert (site / "outdir" / "file.txt").exists(), "File in directory should exist"
+        # Directory was created in staging but not promoted
+        # (validation failed before promotion)
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

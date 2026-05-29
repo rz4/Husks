@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -644,7 +645,8 @@ def _doctor_conformance(args):
     """Run external reader conformance gate (formerly top-level 'gate')."""
     from husks.gate import gate
 
-    reader = args.reader_cmd.split()
+    # Beta B6: Use shlex.split() to handle quoted arguments
+    reader = shlex.split(args.reader_cmd)
     cross_check = getattr(args, "cross_check", True)
     verbose = args.verbose if not args.json_output else False
 

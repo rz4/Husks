@@ -16,6 +16,7 @@ with zero cross-package dependencies.
 """
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -211,7 +212,8 @@ def main(argv=None):
     p.add_argument("--quiet", action="store_false", dest="verbose")
     args = p.parse_args(argv)
 
-    reader = args.reader_cmd.split()
+    # Beta B6: Use shlex.split() to handle quoted arguments
+    reader = shlex.split(args.reader_cmd)
     ok = gate(reader, stamp_dir=args.stamp_dir, cross_check=args.cross_check,
               verbose=args.verbose)
     sys.exit(0 if ok else 1)

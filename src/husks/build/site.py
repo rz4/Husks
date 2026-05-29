@@ -202,6 +202,10 @@ def burn(S: Store, label: str) -> None:
 def setup_links(site: str, mapping: dict[str, str]) -> list[str]:
     """Create read-only symlinks in *site* for each name→path entry.
 
+    **Beta Gate B4**: Validates import local names at runtime. Rejects internal
+    paths (.traces, etc.), path traversal, and existing symlinks pointing to
+    wrong targets.
+
     Parameters
     ----------
     site : str
@@ -214,23 +218,64 @@ def setup_links(site: str, mapping: dict[str, str]) -> list[str]:
     list of str
         Resolved absolute paths of the external targets (for read-only
         sandbox registration).
+
+    Raises
+    ------
+    ValueError
+        If local name is invalid, external path doesn't exist, or symlink
+        collision is detected.
     """
     import os
 
     readonly_dirs: list[str] = []
     for local_name, ext_path in mapping.items():
+        # Beta B4: Validate local name
+        # Reject internal paths
+        if local_name.startswith('.'):
+            raise ValueError(
+                f"setup_links: local name cannot start with '.': {local_name}"
+            )
+        # Reject path traversal
+        if '..' in Path(local_name).parts:
+            raise ValueError(
+                f"setup_links: local name contains path traversal: {local_name}"
+            )
+        # Reject absolute paths
+        if Path(local_name).is_absolute():
+            raise ValueError(
+                f"setup_links: local name must be relative: {local_name}"
+            )
+
         link = Path(site) / local_name
-        # If the file already exists in the site (e.g. pre-created by
-        # tests or a previous run), skip — don't clobber it.
-        if link.exists() or link.is_symlink():
-            continue
         ext = Path(ext_path).resolve()
+
+        # Check external path exists
         if not ext.exists():
             raise ValueError(
                 f"setup_links: external path does not exist: {ext_path}"
             )
-        link.parent.mkdir(parents=True, exist_ok=True)
-        os.symlink(str(ext), str(link))
+
+        # Beta B4: Handle existing links/files
+        if link.is_symlink():
+            # Symlink exists - verify it points to the correct target
+            existing_target = link.resolve()
+            if existing_target != ext:
+                raise ValueError(
+                    f"setup_links: symlink '{local_name}' already exists but "
+                    f"points to wrong target (expected {ext}, got {existing_target})"
+                )
+            # Correct symlink already exists, skip creation
+        elif link.exists():
+            # Regular file/directory exists where we want to create a link
+            raise ValueError(
+                f"setup_links: cannot create import link '{local_name}' "
+                f"(file or directory already exists at that path)"
+            )
+        else:
+            # Create the symlink
+            link.parent.mkdir(parents=True, exist_ok=True)
+            os.symlink(str(ext), str(link))
+
         # Register the containing directory (not the file itself) so that
         # site_path's is_relative_to check passes for files inside it.
         rd = str(ext.parent) if ext.is_file() else str(ext)

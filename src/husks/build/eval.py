@@ -27,49 +27,154 @@ from husks.build.seal import (
 )
 
 
-# ── Staging context ───────────────────────────────────────────────
+# ── Build Transaction ─────────────────────────────────────────────
 
-@contextmanager
-def _staged(S: Store, outputs: list[str]):
-    """Run recipe in a staging directory; promote outputs on success.
+class BuildTransaction:
+    """Transactional execution context for rule outputs.
 
-    Validates all declared outputs exist in staging before promoting any.
-    On promotion failure, restores original live outputs to maintain consistency.
+    Responsibilities:
+    - Prepare staging area with mirrored site contents
+    - Provide safe read/write paths via S["stage"]
+    - Validate all declared outputs exist before promotion
+    - Atomically promote outputs with rollback on failure
+    - Clean up staging area
+
+    Invariant: A rule may observe committed inputs, but may not mutate
+    committed state until all declared outputs pass validation.
+
+    Usage::
+
+        with BuildTransaction(S, outputs) as txn:
+            # Recipe runs here, writes to staging via site_path(..., write=True)
+            eval_recipe(S, rule_name, recipe, inputs, outputs)
+
+            # Validate all outputs before promotion
+            txn.validate_outputs(rule_name, recipe)
+
+            # Explicitly promote outputs to live site
+            txn.promote()
     """
-    stage = tempfile.mkdtemp(prefix="husks-stage-")
-    S["stage"] = stage
-    # Mirror site contents into stage so recipes can read inputs
-    site = Path(S["site"]).resolve()
-    for item in site.iterdir():
-        dst = Path(stage) / item.name
-        if not dst.exists():
-            os.symlink(str(item), str(dst))
-    try:
-        yield
 
-        # Validate all outputs before promoting any (atomic check)
+    def __init__(self, S: Store, outputs: list[str]):
+        """Initialize transaction for the given outputs.
+
+        Parameters
+        ----------
+        S : Store
+            Build store (will have S["stage"] set during transaction)
+        outputs : list[str]
+            Declared outputs that must be validated and promoted
+        """
+        self.S = S
+        self.outputs = outputs
+        self.stage_dir: str | None = None
+        self.backups: dict[str, str] = {}
+
+    def __enter__(self) -> "BuildTransaction":
+        """Set up staging directory and mirror site contents."""
+        self.stage_dir = tempfile.mkdtemp(prefix="husks-stage-")
+        self.S["stage"] = self.stage_dir
+
+        # Mirror site contents into stage so recipes can read inputs
+        site = Path(self.S["site"]).resolve()
+        for item in site.iterdir():
+            dst = Path(self.stage_dir) / item.name
+            if not dst.exists():
+                os.symlink(str(item), str(dst))
+
+        return self
+
+    def validate_outputs(self, rule_name: str, recipe: Recipe) -> None:
+        """Validate all declared outputs exist in staging.
+
+        Oracle outputs must additionally be nonempty.
+        Raises RuntimeError if validation fails.
+
+        **Beta Gate B2**: No fallback to live site. All recipes (action, oracle, trial)
+        must write to staging using the staged write API (site_path with write=True).
+        This prevents live-site corruption from bypassed writes.
+
+        **Beta Gate B3**: Declared outputs must be regular files only. Rejects
+        directories, symlinks (broken or not), and special files before sealing.
+
+        Parameters
+        ----------
+        rule_name : str
+            Name of the rule (for error messages)
+        recipe : Recipe
+            Recipe dict (determines validation rules)
+        """
+        require_nonempty = recipe is not None and recipe.get("type") == "oracle"
+
+        for o in self.outputs:
+            # Beta B3: Check file type BEFORE calling site_path (which breaks symlinks)
+            # Construct raw staging path directly
+            stage = Path(self.S["stage"])
+            op = stage / o
+
+            # Check for symlinks first (is_symlink works even for broken links)
+            if op.is_symlink():
+                raise RuntimeError(
+                    f"rule '{rule_name}' produced symlink output: {o} "
+                    f"(declared outputs must be regular files, not symlinks)"
+                )
+
+            if not op.exists():
+                raise RuntimeError(
+                    f"rule '{rule_name}' did not produce declared output: {o} "
+                    f"(outputs must be written to staging using write=True)"
+                )
+
+            # Check for directories
+            if op.is_dir():
+                raise RuntimeError(
+                    f"rule '{rule_name}' produced directory output: {o} "
+                    f"(declared outputs must be regular files, not directories)"
+                )
+
+            # Check for special files (sockets, FIFOs, etc.)
+            if not op.is_file():
+                raise RuntimeError(
+                    f"rule '{rule_name}' produced special file output: {o} "
+                    f"(declared outputs must be regular files)"
+                )
+
+            if require_nonempty and op.stat().st_size == 0:
+                raise RuntimeError(
+                    f"oracle '{rule_name}' produced empty output: {o}"
+                )
+
+    def promote(self) -> None:
+        """Atomically promote staged outputs to live site with rollback on failure.
+
+        Only promotes real files (not symlinks). Maintains backups of existing
+        outputs for rollback. On any error during promotion, restores all
+        backups to maintain consistency.
+        """
+        site = Path(self.S["site"]).resolve()
+        stage = Path(self.stage_dir)
+
+        # Collect outputs to promote (real files, not symlinks)
         outputs_to_promote = []
-        for o in outputs:
-            staged = Path(stage) / o
+        for o in self.outputs:
+            staged = stage / o
             if staged.exists() and not staged.is_symlink():
                 outputs_to_promote.append(o)
 
         # Backup existing live outputs for rollback
-        backups = {}
         for o in outputs_to_promote:
             live = site / o
             if live.exists():
-                # Save backup to temporary location
                 backup_path = tempfile.mktemp(prefix=f"husks-backup-{live.name}-")
                 shutil.copy2(str(live), backup_path)
-                backups[o] = backup_path
+                self.backups[o] = backup_path
 
-        # Promote: move real (non-symlink) files that match declared outputs
+        # Promote: move real files from staging to live site
         # On failure, restore backups to maintain consistency
         promoted = []
         try:
             for o in outputs_to_promote:
-                staged = Path(stage) / o
+                staged = stage / o
                 live = site / o
                 live.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(staged), str(live))
@@ -80,19 +185,46 @@ def _staged(S: Store, outputs: list[str]):
                 live = site / o
                 if live.exists():
                     live.unlink()
-                if o in backups:
-                    shutil.move(backups[o], str(live))
-                    backups.pop(o)
+                if o in self.backups:
+                    shutil.move(self.backups[o], str(live))
+                    self.backups.pop(o)
             raise RuntimeError(f"staged promotion failed: {e}") from e
-        finally:
-            # Clean up remaining backups
-            for backup_path in backups.values():
-                if os.path.exists(backup_path):
-                    os.unlink(backup_path)
 
-    finally:
-        S.pop("stage", None)
-        shutil.rmtree(stage, ignore_errors=True)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Clean up staging directory and backups."""
+        # Clean up remaining backups (successful promotion case)
+        for backup_path in self.backups.values():
+            if os.path.exists(backup_path):
+                os.unlink(backup_path)
+        self.backups.clear()
+
+        # Remove staging directory
+        self.S.pop("stage", None)
+        if self.stage_dir:
+            shutil.rmtree(self.stage_dir, ignore_errors=True)
+
+        # Don't suppress exceptions
+        return False
+
+
+# ── Staging context (backward compatibility) ─────────────────────
+
+@contextmanager
+def _staged(S: Store, outputs: list[str]):
+    """Run recipe in a staging directory; promote outputs on success.
+
+    .. deprecated::
+        Use BuildTransaction directly for explicit validation and promotion.
+        This wrapper is kept for backward compatibility with any external code.
+
+    Validates all declared outputs exist in staging before promoting any.
+    On promotion failure, restores original live outputs to maintain consistency.
+    """
+    with BuildTransaction(S, outputs) as txn:
+        yield
+        # Automatic promotion on successful exit (no explicit validation)
+        # This maintains backward compatibility with old _staged() behavior
+        txn.promote()
 
 
 # ── Output guard ──────────────────────────────────────────────────
@@ -105,24 +237,21 @@ def _check_declared_outputs(
 ) -> None:
     """Guard: all declared outputs must exist; oracle outputs must be nonempty.
 
+    .. deprecated::
+        Use BuildTransaction.validate_outputs() instead.
+
     Raises RuntimeError if the guard fails — preventing the rule from sealing.
-    During staging, prefers staged outputs; only actions (not oracle/trial) may
-    fall back to live site for compatibility with legacy code.
+
+    **Beta Gate B2**: During staging, no fallback to live site. All recipe types
+    must write to staging correctly.
     """
     require_nonempty = recipe is not None and recipe.get("type") == "oracle"
     in_staging = "stage" in S
-    recipe_type = recipe.get("type") if recipe else None
 
     for o in outputs:
         if in_staging:
-            # During staging: check staged output first
+            # During staging: check staged output only (no fallback)
             op = Path(site_path(S, o, write=True))
-            if not op.exists():
-                # Allow fallback to live site ONLY for action recipes (legacy compatibility)
-                # Oracle and trial recipes must write to staging correctly
-                if recipe_type == "action":
-                    op = Path(site_path(S, o))
-                # For non-action recipes or if live site also missing, fall through to error
         else:
             # Outside staging: check the live site
             op = Path(site_path(S, o))
@@ -202,14 +331,19 @@ def eval_rule(S: Store, node: Node) -> None:
     burn(S, name)
     T.rule_start(name, stale_reason=reason)
     try:
-        with _staged(S, outputs):
+        # Use BuildTransaction for explicit staging, validation, and promotion
+        with BuildTransaction(S, outputs) as txn:
             usage = eval_recipe(S, name, recipe, inputs, outputs)
 
-            # Output guard: all recipe types require declared outputs to exist.
+            # Validate outputs before promotion (atomic check)
+            # All recipe types require declared outputs to exist.
             # Oracle outputs must additionally be nonempty.
-            _check_declared_outputs(S, name, outputs, recipe)
+            txn.validate_outputs(name, recipe)
 
-        # After staging context: outputs promoted to live site
+            # Promote outputs to live site (atomic with rollback on failure)
+            txn.promote()
+
+        # After promotion: seal the outputs
         write_seal(S, name, inputs, recipe, outputs=outputs)
 
         fuel_consumed = 1
@@ -373,12 +507,18 @@ def eval_trial(
             usage = eval_recipe(BS, bname, branch, [], outputs)
             branch_elapsed = time.time() - t0
 
-            # Collect outputs
+            # Collect outputs (Beta B5: text-only for beta)
             out_data: dict[str, str] = {}
             for o in outputs:
                 op = site_path(BS, o)
                 if file_exists(op):
-                    out_data[o] = read_text(op)
+                    try:
+                        out_data[o] = read_text(op)
+                    except UnicodeDecodeError as e:
+                        raise RuntimeError(
+                            f"trial branch '{bname}' output '{o}' contains binary data "
+                            f"(trial outputs must be text-only for beta)"
+                        ) from e
 
             # Extract metrics from usage (for oracle branches) or branch store (for others)
             if usage and usage.get("fuel_steps"):
@@ -432,6 +572,10 @@ def eval_trial(
 
     wname: str = winner["name"]
     T.trial_verdict(rule_name, wname, scores=scores)
+
+    # Beta B5: If winner has an error, trial fails
+    if "error" in winner:
+        raise RuntimeError(f"trial '{rule_name}' failed: winning branch '{wname}' error: {winner['error']}")
 
     # Record convergence history for each branch
     branch_by_name = {b.get("name", ""): b for b in branches}
