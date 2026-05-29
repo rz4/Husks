@@ -79,13 +79,20 @@ def test_three_machine_cli_acceptance_stub():
         # ──────────────────────────────────────────────────────────
         cache_file = Path(tmpdir) / "cache.tar.gz"
 
-        # Note: Cache export command doesn't exist yet in CLI
-        # For now, use the Python API directly
-        from husks.build.cache import cache_export
-        from husks.build.site import fresh_store
+        export_result = run_husks_cli(
+            "cache-export", str(cache_file),
+            "--site", str(m1_site),
+            "--json",
+        )
 
-        S1 = fresh_store(str(m1_site), fuel=20)
-        cache_export(S1, str(cache_file))
+        assert export_result.returncode == 0, (
+            f"Cache export should succeed\\n"
+            f"stdout: {export_result.stdout}\\nstderr: {export_result.stderr}"
+        )
+
+        export_report = json.loads(export_result.stdout)
+        assert export_report["status"] == "exported", "Export should report success"
+        assert export_report["entries"] > 0, "Should export at least one cache entry"
         assert cache_file.exists(), "Cache export should create file"
 
         # ──────────────────────────────────────────────────────────
@@ -100,9 +107,20 @@ def test_three_machine_cli_acceptance_stub():
         shutil.copy(prompt_path, m2_site / "prompt.txt")
 
         # Import cache
-        from husks.build.cache import cache_import
-        S2 = fresh_store(str(m2_site), fuel=20)
-        cache_import(S2, str(cache_file))
+        import_result = run_husks_cli(
+            "cache-import", str(cache_file),
+            "--site", str(m2_site),
+            "--json",
+        )
+
+        assert import_result.returncode == 0, (
+            f"Cache import should succeed\\n"
+            f"stdout: {import_result.stdout}\\nstderr: {import_result.stderr}"
+        )
+
+        import_report = json.loads(import_result.stdout)
+        assert import_report["status"] == "imported", "Import should report success"
+        assert import_report["entries"] > 0, "Should import at least one cache entry"
 
         # Run (should use cache)
         m2_result = run_husks_cli(

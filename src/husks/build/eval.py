@@ -476,21 +476,26 @@ def eval_oracle(
     cost_usd = u.get("cost_usd", 0.0)
     tokens_in = u.get("tokens_in", 0)
     tokens_out = u.get("tokens_out", 0)
+    is_cached = u.get("cached", False)  # Beta Gate D6
 
     S["usage"]["total_cost_usd"] += cost_usd
     S["usage"]["total_input_tokens"] += tokens_in
     S["usage"]["total_output_tokens"] += tokens_out
 
-    # Track per-rule usage
+    # Track per-rule usage (Beta Gate D6: include cached flag)
     if rule_name not in S["usage"]["by_rule"]:
         S["usage"]["by_rule"][rule_name] = {
             "cost_usd": 0.0,
             "input_tokens": 0,
             "output_tokens": 0,
+            "cached": False,
         }
     S["usage"]["by_rule"][rule_name]["cost_usd"] += cost_usd
     S["usage"]["by_rule"][rule_name]["input_tokens"] += tokens_in
     S["usage"]["by_rule"][rule_name]["output_tokens"] += tokens_out
+    # Mark as cached if this run was cached (once cached, stays cached for this build)
+    if is_cached:
+        S["usage"]["by_rule"][rule_name]["cached"] = True
 
     T.oracle_done(
         rule_name,

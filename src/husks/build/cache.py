@@ -237,7 +237,7 @@ def cache_clear(S: Store) -> int:
 
 
 def cache_export(S: Store, export_path: str) -> int:
-    """Export cache to a tarball for cross-machine transfer (Beta Gate D3).
+    """Export cache to a tarball for cross-machine transfer (Beta Gate D3/D7).
 
     Parameters
     ----------
@@ -251,10 +251,36 @@ def cache_export(S: Store, export_path: str) -> int:
     int
         Number of cache entries exported
     """
+    import io
+
     cache_root = Path(site_path(S, ".cache"))
+
+    # Beta Gate D7: Collect entry metadata for manifest
+    entries = []
+    if cache_root.exists():
+        for entry_dir in cache_root.iterdir():
+            if not entry_dir.is_dir():
+                continue
+            entries.append(entry_dir.name)
+
+    # Beta Gate D7: Create provenance manifest
+    manifest = {
+        "cache_format_version": "1.0",
+        "created_ts": time.time(),
+        "entry_count": len(entries),
+        "entry_keys": sorted(entries),
+        "source_site_root": S.get("build-root"),
+    }
 
     count = 0
     with tarfile.open(export_path, "w:gz") as tar:
+        # Add manifest first
+        manifest_json = json.dumps(manifest, indent=2).encode()
+        manifest_info = tarfile.TarInfo(name="MANIFEST.json")
+        manifest_info.size = len(manifest_json)
+        tar.addfile(manifest_info, fileobj=io.BytesIO(manifest_json))
+
+        # Add cache entries
         if cache_root.exists():
             for entry_dir in cache_root.iterdir():
                 if not entry_dir.is_dir():
@@ -267,7 +293,7 @@ def cache_export(S: Store, export_path: str) -> int:
 
 
 def cache_import(S: Store, import_path: str, *, merge: bool = True) -> int:
-    """Import cache from a tarball (Beta Gate D3).
+    """Import cache from a tarball (Beta Gate D3/D4).
 
     Parameters
     ----------
@@ -283,8 +309,14 @@ def cache_import(S: Store, import_path: str, *, merge: bool = True) -> int:
     -------
     int
         Number of cache entries imported
+
+    Raises
+    ------
+    ValueError
+        If tarball contains unsafe members (absolute paths, .., symlinks, etc.)
     """
     import shutil
+    import os
 
     cache_root = Path(site_path(S, ".cache"))
 
@@ -294,15 +326,130 @@ def cache_import(S: Store, import_path: str, *, merge: bool = True) -> int:
 
     ensure_dir(str(cache_root))
 
-    count = 0
+    # Beta Gate D4: Safe tar import - validate all members before extraction
+    # Beta Gate D7: Validate manifest first
+    MAX_MEMBER_SIZE = 100 * 1024 * 1024  # 100 MB per member
+    ALLOWED_EXTENSIONS = {".json"}
+
     with tarfile.open(import_path, "r:gz") as tar:
+        members_to_extract = []
+        manifest = None
+
+        # Beta Gate D7: Extract and validate manifest first
         for member in tar.getmembers():
-            if member.isdir() and "/" not in member.name:
-                # Top-level directory is a cache entry
-                tar.extract(member, path=cache_root)
+            if member.name == "MANIFEST.json":
+                if member.size > 1024 * 1024:  # 1MB max for manifest
+                    raise ValueError("cache import rejected: manifest too large")
+                manifest_file = tar.extractfile(member)
+                if manifest_file:
+                    try:
+                        manifest = json.loads(manifest_file.read().decode())
+                        # Validate manifest structure
+                        if "cache_format_version" not in manifest:
+                            raise ValueError("cache import rejected: manifest missing format version")
+                        if "entry_count" not in manifest:
+                            raise ValueError("cache import rejected: manifest missing entry count")
+                        # Version check (currently only support 1.0)
+                        if manifest["cache_format_version"] != "1.0":
+                            raise ValueError(
+                                f"cache import rejected: unsupported cache format version "
+                                f"{manifest['cache_format_version']} (expected 1.0)"
+                            )
+                    except json.JSONDecodeError as e:
+                        raise ValueError(f"cache import rejected: invalid manifest JSON: {e}")
+                break
+
+        # Manifest is optional for backward compatibility, but if present, must be valid
+        # If no manifest found, continue with validation
+
+        for member in tar.getmembers():
+            # Skip manifest (already validated)
+            if member.name == "MANIFEST.json":
+                continue
+
+            # Reject absolute paths
+            if os.path.isabs(member.name):
+                raise ValueError(
+                    f"cache import rejected: absolute path '{member.name}' (security violation)"
+                )
+
+            # Reject path traversal (..)
+            if ".." in Path(member.name).parts:
+                raise ValueError(
+                    f"cache import rejected: path traversal '..' in '{member.name}' (security violation)"
+                )
+
+            # Reject symlinks
+            if member.issym() or member.islnk():
+                raise ValueError(
+                    f"cache import rejected: symlink '{member.name}' (security violation)"
+                )
+
+            # Reject special files (devices, FIFOs, etc.)
+            if not (member.isfile() or member.isdir()):
+                raise ValueError(
+                    f"cache import rejected: special file '{member.name}' (security violation)"
+                )
+
+            # Reject oversized members
+            if member.size > MAX_MEMBER_SIZE:
+                raise ValueError(
+                    f"cache import rejected: oversized file '{member.name}' "
+                    f"({member.size} bytes > {MAX_MEMBER_SIZE} max)"
+                )
+
+            # Validate file structure: <cache_key>/{outputs.json,seal.json,meta.json}
+            parts = Path(member.name).parts
+            if len(parts) > 2:
+                raise ValueError(
+                    f"cache import rejected: unexpected nesting '{member.name}' "
+                    f"(expected <cache_key>/<file>.json)"
+                )
+
+            if member.isfile():
+                # Must be within a cache entry directory
+                if len(parts) != 2:
+                    raise ValueError(
+                        f"cache import rejected: file not in cache entry '{member.name}'"
+                    )
+
+                cache_key, filename = parts
+
+                # Validate cache key is hex (sha256 = 64 chars)
+                if not (len(cache_key) == 64 and all(c in "0123456789abcdef" for c in cache_key)):
+                    raise ValueError(
+                        f"cache import rejected: invalid cache key '{cache_key}' "
+                        f"(expected 64-char hex)"
+                    )
+
+                # Validate filename
+                if filename not in {"outputs.json", "seal.json", "meta.json"}:
+                    raise ValueError(
+                        f"cache import rejected: unexpected file '{filename}' "
+                        f"(expected outputs.json, seal.json, or meta.json)"
+                    )
+
+            elif member.isdir():
+                # Top-level directories must be cache keys
+                if len(parts) != 1:
+                    raise ValueError(
+                        f"cache import rejected: unexpected directory '{member.name}'"
+                    )
+
+                cache_key = parts[0]
+                if not (len(cache_key) == 64 and all(c in "0123456789abcdef" for c in cache_key)):
+                    raise ValueError(
+                        f"cache import rejected: invalid cache key '{cache_key}' "
+                        f"(expected 64-char hex)"
+                    )
+
+            members_to_extract.append(member)
+
+        # All members validated - safe to extract
+        count = 0
+        for member in members_to_extract:
+            tar.extract(member, path=cache_root, filter='data')  # Use 'data' filter for safety
+            if member.isdir() and len(Path(member.name).parts) == 1:
                 count += 1
-            elif member.isfile():
-                # File within a cache entry
-                tar.extract(member, path=cache_root)
 
     return count

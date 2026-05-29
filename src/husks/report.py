@@ -139,9 +139,12 @@ def assemble(
         elif state == "sealed":
             output_changed = False
 
-        # Per-node cost
+        # Per-node cost (Beta Gate D6: include cached flag)
         rule_usage = by_rule.get(name, {})
         this_run_cost = rule_usage.get("cost_usd", 0.0) if state == "fired" and kind == "oracle" else 0.0
+        cached = rule_usage.get("cached", False)
+        tokens_in = rule_usage.get("input_tokens", 0)
+        tokens_out = rule_usage.get("output_tokens", 0)
         first_paid: float | None = None
         per_rerun: float | None = None
         if history:
@@ -185,6 +188,11 @@ def assemble(
                 "this_run": round(this_run_cost, 6),
                 "first_paid": round(first_paid, 6) if first_paid is not None else None,
                 "per_rerun": round(per_rerun, 6) if per_rerun is not None else None,
+            },
+            "cached": cached,  # Beta Gate D6
+            "tokens": {  # Beta Gate D6: oracle usage details
+                "input": tokens_in,
+                "output": tokens_out,
             },
             "seal": seal_info,
         }

@@ -9,6 +9,7 @@ from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, resolve_desi
 from husks.cli.commands import (
     _cmd_check, _cmd_run, _cmd_run_hy, _cmd_status,
     _cmd_explain, _cmd_history, _cmd_doctor, _cmd_compare,
+    _cmd_cache_export, _cmd_cache_import,
 )
 
 
@@ -52,6 +53,8 @@ def main():
                    default="anthropic/claude-haiku-4-5-20251001")
     r.add_argument("--stub", action="store_true",
                    help="Use stub oracle (no LLM, placeholder outputs)")
+    r.add_argument("--reuse-only", action="store_true",
+                   help="Only use cached results, never call oracle (Beta Gate D5)")
     r.add_argument("--hy", action="store_true",
                    help="Use original Hy kernel backend instead of Python")
     r.add_argument("--json", action="store_true", dest="json_output",
@@ -132,6 +135,22 @@ def main():
     cmp.add_argument("--hashes-only", action="store_true",
                      help="Compare output hashes only (skip root checks)")
 
+    # cache export (Beta Gate G1)
+    cache_exp = sub.add_parser("cache-export", help="Export cache to tarball for cross-machine transfer")
+    cache_exp.add_argument("file", help="Path to write .tar.gz archive")
+    cache_exp.add_argument("--site", required=True, help="Site directory containing cache")
+    cache_exp.add_argument("--json", action="store_true", dest="json_output",
+                           help="Output result as JSON")
+
+    # cache import (Beta Gate G1)
+    cache_imp = sub.add_parser("cache-import", help="Import cache from tarball")
+    cache_imp.add_argument("file", help="Path to .tar.gz archive")
+    cache_imp.add_argument("--site", required=True, help="Site directory to import into")
+    cache_imp.add_argument("--no-merge", action="store_true",
+                           help="Clear existing cache before import (default: merge)")
+    cache_imp.add_argument("--json", action="store_true", dest="json_output",
+                           help="Output result as JSON")
+
     args = p.parse_args()
 
     # --version
@@ -170,6 +189,16 @@ def main():
     # ── compare (Beta Gate C6/C7) ────────────────────────────
     if args.cmd == "compare":
         _cmd_compare(args)
+        return
+
+    # ── cache export (Beta Gate G1) ──────────────────────────
+    if args.cmd == "cache-export":
+        _cmd_cache_export(args)
+        return
+
+    # ── cache import (Beta Gate G1) ──────────────────────────
+    if args.cmd == "cache-import":
+        _cmd_cache_import(args)
         return
 
     # ── Commands that require a design ───────────────────────

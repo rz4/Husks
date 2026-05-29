@@ -101,6 +101,10 @@ def build(
 
     S = fresh_store(site, fuel, oracle_backend=oracle_backend, readonly_dirs=readonly_dirs)
 
+    # Beta Gate D5: Set cache-reuse-only mode if requested
+    if kwargs.get("cache_reuse_only"):
+        S["cache-reuse-only"] = True
+
     S["trace"].append({"event": "build-start", "name": name, "site": site, "fuel": fuel})
     T.build_start(name, fuel, site, oracle_model)
 

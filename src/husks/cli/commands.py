@@ -114,6 +114,10 @@ def _cmd_run(args, design):
     if args.site:
         overrides["site"] = args.site
 
+    # Beta Gate D5: Pass reuse-only flag
+    if args.reuse_only:
+        overrides["cache_reuse_only"] = True
+
     if not args.stub:
         if args.hy:
             from husks.designs.hy import hy_kernel_backend
@@ -816,3 +820,62 @@ def _cmd_compare(args):
         print()
 
     sys.exit(EXIT_OK if all_equivalent else EXIT_BUILD_FAIL)
+
+
+def _cmd_cache_export(args):
+    """Export cache to tarball (Beta Gate G1)."""
+    from husks.build.site import fresh_store
+    from husks.build.cache import cache_export
+
+    site = args.site
+    export_path = args.file
+
+    # Create store to access cache
+    S = fresh_store(site, fuel=1)
+
+    # Export cache
+    count = cache_export(S, export_path)
+
+    if args.json_output:
+        output = {
+            "status": "exported",
+            "site": site,
+            "file": export_path,
+            "entries": count,
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        print(f"Exported {count} cache entries from {site} to {export_path}")
+
+    sys.exit(EXIT_OK)
+
+
+def _cmd_cache_import(args):
+    """Import cache from tarball (Beta Gate G1)."""
+    from husks.build.site import fresh_store
+    from husks.build.cache import cache_import
+
+    site = args.site
+    import_path = args.file
+    merge = not args.no_merge
+
+    # Create store to access cache
+    S = fresh_store(site, fuel=1)
+
+    # Import cache
+    count = cache_import(S, import_path, merge=merge)
+
+    if args.json_output:
+        output = {
+            "status": "imported",
+            "site": site,
+            "file": import_path,
+            "entries": count,
+            "merge": merge,
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        action = "Merged" if merge else "Imported"
+        print(f"{action} {count} cache entries from {import_path} into {site}")
+
+    sys.exit(EXIT_OK)
