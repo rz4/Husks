@@ -1,9 +1,0 @@
-{
-  "v": 1,
-  "seal": "37ed100cc301c0b31fe69b10fc8db74443e3bf9c86740cb7eb0b2a21f7d02abd",
-  "recipe_digest": "7bd98dfd99e85ad39b46374cfb5626cea98ca8b9e1a595c5f783813d2080f1da",
-  "inputs": {},
-  "outputs": {
-    "task.txt": "c739d99678882eed5249d88f679376f982a59e5b32599a3e06de666fbc19abb7"
-  }
-}

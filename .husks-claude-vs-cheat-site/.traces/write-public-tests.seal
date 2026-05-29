@@ -1,9 +1,0 @@
-{
-  "v": 1,
-  "seal": "1a5ca4cbf21dc92a75d0bb903d63280ea1a6826172a5aefaa6ab7c3e8f7e464c",
-  "recipe_digest": "ed8bdfc23ab7423e3d4775cafc093c6d6a2acc8801da44b39566dedd1e74e46e",
-  "inputs": {},
-  "outputs": {
-    "test_public_mini_cse.py": "09d2de8e0b0c7db8c4ce014af014f7bdef7e0b106f8e3f4f919e815e901a5d81"
-  }
-}

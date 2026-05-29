@@ -1,9 +1,0 @@
-{
-  "v": 1,
-  "seal": "c13f69a46a3a709b73ff523dc05475c53b38d383c03669c6b6c91490bae1c82e",
-  "recipe_digest": "84d27ed729ed892474940a483fb7d989f470358e30ad68a7cde1bbf8b68ea347",
-  "inputs": {},
-  "outputs": {
-    "cse-mini-spec.txt": "ad3b12a0df35a103ae62f5bcf2c7c15ae7ee2725b9542ed96c965f9aa30fc78e"
-  }
-}
