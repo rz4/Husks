@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "seal": "fda25b1280151fec6e339472a486588e88ef4619015829736246158ac77ab4e4",
+  "recipe_digest": "94f62e70f321c548c6711680144227bf1ac302041b9a3730422870dafa91d6b6",
+  "inputs": {
+    "cse-mini-spec.txt": "256376de23ae4b6c3e16a47470deaee5564abae2a49db79de1573d63ca33e33e",
+    "test_mini_cse.py": "3f0a36c454c083b43c5967e1bbbdf90a1e0bf89cb0ae83dd82c5d09088ac7615"
+  },
+  "outputs": {
+    "mini_cse.py": "8d5e8e7f0d1123f98af8225ae2d36b42b8db09096f8cb4e0c2f3cf76c7540c7b"
+  }
+}

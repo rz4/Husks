@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "seal": "37919bf4f02ca0b39916e6ea50f0ba28449999ff10c924bc15aba93672f05c99",
+  "recipe_digest": "c1f50f54b4915c36ee90ef158c32173c859627b78fcaedb7435e8dc7e16a16b2",
+  "inputs": {},
+  "outputs": {
+    "cse-mini-spec.txt": "f1015e2ce7ed3f8f57bcaf2b56b758ae227ef7417948a0ebcb8aeee98e661d53"
+  }
+}

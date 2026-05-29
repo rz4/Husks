@@ -1,0 +1,18 @@
+Implement a tiny Canonical S-expression reader in Python.
+
+Encoding rules:
+1. An atom is encoded as decimal length, colon, raw bytes.
+2. A list starts with byte '(' and ends with byte ')'.
+3. Lists contain zero or more CSE values.
+4. Length prefixes must contain only digits.
+5. Empty length prefixes are invalid.
+6. Leading zeroes are invalid except for the atom length 0.
+7. Atom payload length must match the prefix exactly.
+8. The parser must reject trailing bytes after one complete value.
+
+Required API:
+  parse(data: bytes) -> nested Python value
+
+Representation:
+  atoms are returned as bytes
+  lists are returned as Python lists

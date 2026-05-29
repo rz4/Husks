@@ -736,3 +736,83 @@ def _doctor_live(args):
 
     if any(c["ok"] is False for c in checks):
         sys.exit(EXIT_MISSING_DEP)
+
+
+def _cmd_compare(args):
+    """Compare artifact equivalence across sites (Beta Gate C6/C7).
+
+    Compares build roots, output hashes, and seal validity across
+    multiple sites to verify cross-machine equivalence.
+    """
+    from husks.manifest import compare_artifacts
+
+    if len(args.sites) < 2:
+        print("error: compare requires at least 2 sites", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    # Determine comparison modes
+    check_roots = not args.hashes_only
+    check_hashes = not args.roots_only
+
+    # Pairwise comparison of all sites
+    sites = args.sites
+    comparisons = []
+    all_equivalent = True
+
+    for i in range(len(sites)):
+        for j in range(i + 1, len(sites)):
+            site_a = sites[i]
+            site_b = sites[j]
+
+            result = compare_artifacts(
+                site_a, site_b,
+                check_roots=check_roots,
+                check_hashes=check_hashes,
+            )
+
+            comparisons.append({
+                "site_a": site_a,
+                "site_b": site_b,
+                "equivalent": result["equivalent"],
+                "differences": result["differences"],
+                "details": result["details"],
+            })
+
+            if not result["equivalent"]:
+                all_equivalent = False
+
+    # Output results
+    if args.json_output:
+        # Beta Gate C7: Machine-readable JSON only, no console noise
+        output = {
+            "equivalent": all_equivalent,
+            "comparisons": comparisons,
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        # Human-readable output
+        print()
+        print(f"Comparing {len(sites)} sites:")
+        for site in sites:
+            print(f"  • {site}")
+        print()
+
+        for cmp in comparisons:
+            site_a_short = cmp["site_a"].split("/")[-1] or cmp["site_a"]
+            site_b_short = cmp["site_b"].split("/")[-1] or cmp["site_b"]
+
+            if cmp["equivalent"]:
+                print(f"  ✓ {site_a_short} ≡ {site_b_short}")
+            else:
+                print(f"  ✗ {site_a_short} ≠ {site_b_short}")
+                for diff in cmp["differences"]:
+                    print(f"      - {diff}")
+        print()
+
+        if all_equivalent:
+            print("  All sites are equivalent ✓")
+        else:
+            print("  Sites differ ✗")
+        print()
+
+    sys.exit(EXIT_OK if all_equivalent else EXIT_BUILD_FAIL)

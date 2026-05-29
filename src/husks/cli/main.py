@@ -8,7 +8,7 @@ from husks.designs.ir import from_json
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, resolve_design
 from husks.cli.commands import (
     _cmd_check, _cmd_run, _cmd_run_hy, _cmd_status,
-    _cmd_explain, _cmd_history, _cmd_doctor,
+    _cmd_explain, _cmd_history, _cmd_doctor, _cmd_compare,
 )
 
 
@@ -121,6 +121,17 @@ def main():
     doc.add_argument("--verbose", "-v", action="store_true",
                      help="Verbose output")
 
+    # compare (Beta Gate C6/C7)
+    cmp = sub.add_parser("compare", help="Compare artifact equivalence across sites")
+    cmp.add_argument("sites", nargs="+",
+                     help="Site directories to compare (2 or more)")
+    cmp.add_argument("--json", action="store_true", dest="json_output",
+                     help="Output comparison result as JSON")
+    cmp.add_argument("--roots-only", action="store_true",
+                     help="Compare build roots only (skip output hash checks)")
+    cmp.add_argument("--hashes-only", action="store_true",
+                     help="Compare output hashes only (skip root checks)")
+
     args = p.parse_args()
 
     # --version
@@ -154,6 +165,11 @@ def main():
     # ── doctor ───────────────────────────────────────────────
     if args.cmd == "doctor":
         _cmd_doctor(args)
+        return
+
+    # ── compare (Beta Gate C6/C7) ────────────────────────────
+    if args.cmd == "compare":
+        _cmd_compare(args)
         return
 
     # ── Commands that require a design ───────────────────────

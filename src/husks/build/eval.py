@@ -347,13 +347,25 @@ def eval_rule(S: Store, node: Node) -> None:
         write_seal(S, name, inputs, recipe, outputs=outputs)
 
         # Beta Gate D2: Cache oracle outputs after promotion (if cache miss)
+        # Beta Gate B7: Make cache population nonfatal after seal publication.
+        # The build has succeeded (outputs promoted and sealed), so cache write
+        # failure should not corrupt the build state.
         if (recipe is not None and
             recipe.get("type") == "oracle" and
             not S.get("cache-disabled") and
             usage and not usage.get("cached")):
             from husks.build.cache import cache_put
-            output_contents = {o: read_text(site_path(S, o)) for o in outputs}
-            cache_put(S, recipe, inputs, output_contents)
+            try:
+                output_contents = {o: read_text(site_path(S, o)) for o in outputs}
+                cache_put(S, recipe, inputs, output_contents)
+            except Exception as e:
+                # Log cache write failure but don't fail the build
+                S["trace"].append({
+                    "event": "cache-write-failed",
+                    "rule": name,
+                    "error": str(e),
+                })
+                # Continue - the build itself succeeded
 
         fuel_consumed = 1
         if usage and usage.get("fuel_steps", 0):

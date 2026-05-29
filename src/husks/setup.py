@@ -161,55 +161,56 @@ import textwrap
 _DEMO_DESIGN = {
     "name": "demo",
     "fuel": 10,
-    "target": "validate",
-    "site_inputs": ["spec.md"],
+    "target": "write-message",
     "rules": [
         {
-            "name": "write-greeting",
+            "name": "write-message",
             "kind": "oracle",
-            "inputs": ["spec.md"],
-            "outputs": ["greeting.txt"],
-            "prompt": "Read spec.md and write a greeting to greeting.txt following the spec.",
-            "tools": ["read-file", "write-file"],
+            "inputs": [],
+            "outputs": ["message.txt"],
+            "prompt": "Write a friendly greeting to message.txt. Make it warm and welcoming.",
+            "tools": ["write-file"],
             "fuel": 5,
-        },
-        {
-            "name": "validate",
-            "kind": "action",
-            "inputs": ["greeting.txt"],
-            "outputs": ["result.txt"],
-            "run": "python scripts/check_greeting.py",
         },
     ],
 }
 
 _DEMO_CHECK_GREETING = textwrap.dedent("""\
-    \"\"\"Check that greeting.txt matches the spec.\"\"\"
+    #!/usr/bin/env python3
+    \"\"\"Validate that greeting.txt follows the spec.\"\"\"
     import sys
+    from pathlib import Path
 
-    text = open("greeting.txt").read().strip()
+    greeting_file = Path("greeting.txt")
+    if not greeting_file.exists():
+        print("ERROR: greeting.txt not found", file=sys.stderr)
+        Path("result.txt").write_text("fail: file not found\\n")
+        sys.exit(1)
+
+    text = greeting_file.read_text().strip()
     lines = text.splitlines()
 
-    ok = True
+    errors = []
     if not lines:
-        print("FAIL: empty file", file=sys.stderr)
-        ok = False
+        errors.append("empty file")
     elif len(lines) != 1:
-        print(f"FAIL: expected 1 line, got {len(lines)}", file=sys.stderr)
-        ok = False
+        errors.append(f"expected 1 line, got {len(lines)}")
     else:
         line = lines[0]
         if not line.startswith("Hello"):
-            print(f"FAIL: must start with 'Hello'", file=sys.stderr)
-            ok = False
+            errors.append("must start with 'Hello'")
         if not line.endswith("!"):
-            print(f"FAIL: must end with '!'", file=sys.stderr)
-            ok = False
+            errors.append("must end with '!'")
 
-    with open("result.txt", "w") as f:
-        f.write("pass\\n" if ok else "fail\\n")
-
-    sys.exit(0 if ok else 1)
+    if errors:
+        for err in errors:
+            print(f"FAIL: {err}", file=sys.stderr)
+        Path("result.txt").write_text("fail\\n")
+        sys.exit(1)
+    else:
+        print("PASS: greeting validated")
+        Path("result.txt").write_text("pass\\n")
+        sys.exit(0)
 """)
 
 _DEMO_SPEC_MD = textwrap.dedent("""\
@@ -238,10 +239,6 @@ def _scaffold_template(target: Path, template: str, force: bool) -> bool:
     if template == "demo":
         _write_if(target / "design.json",
                   json.dumps(_DEMO_DESIGN, indent=2) + "\n", force)
-        _write_if(target / "scripts" / "check_greeting.py",
-                  _DEMO_CHECK_GREETING, force)
-        _write_if(target / "inputs" / "spec.md",
-                  _DEMO_SPEC_MD, force)
         return True
     else:
         print(f"  error: unknown template '{template}'", file=sys.stderr)

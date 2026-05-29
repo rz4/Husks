@@ -1,0 +1,8 @@
+Create answer.py.
+
+Requirements:
+1. Define a function normalize_slug(text).
+2. Convert text to lowercase.
+3. Replace every run of non-alphanumeric characters with one dash.
+4. Strip leading and trailing dashes.
+5. Do not print anything when imported.

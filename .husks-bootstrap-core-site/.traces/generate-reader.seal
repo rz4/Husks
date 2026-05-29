@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "seal": "a0a51989c13e36eba46d8505010f4ddd1529e7b4eed4c6acaa0d9f4f8d6598cc",
+  "recipe_digest": "1203d356745db5fefc34471b093483f0a7660e4bdf13e275a5703a8011423410",
+  "inputs": {
+    "CSE-v1.md": "ec89b934a53ecc6113aea6a1f6fcf45d0f4f7c20be60448a078889a75b862c15",
+    "CSE-v2.md": "bab307d42dc7885958d5b07bc8b68c13eb111198cf56fb87cf0f51c57ee7089e"
+  },
+  "outputs": {
+    "readers/generated_reader.py": "e7c69b8b36f7971783f753101c2ed76555e875d5b5423c94ef4c3130bdc9a20c"
+  }
+}

@@ -95,6 +95,51 @@ _STRUCTURAL_KINDS = frozenset({"commit", "halt", "let", "cond"})
 # Built-in predicate prefixes that can be used in JSON designs.
 _BUILTIN_PREFIXES = frozenset({"file-exists", "file-nonempty", "exit-zero"})
 
+# Top-level design fields that are allowed.
+_ALLOWED_DESIGN_FIELDS = frozenset({
+    "name",           # Build name
+    "fuel",           # Global fuel budget
+    "rules",          # List of rules
+    "target",         # Single target (converted to targets)
+    "targets",        # List of targets
+    "site_inputs",    # External files to import
+    "site",           # Site directory path (usually from overrides)
+    "oracle_backend", # Oracle backend (usually from overrides)
+    "oracle_model",   # Model identifier
+    "imports",        # Import mappings
+    "predicates",     # Named predicates for cond rules
+    "_source_path",   # Internal: source file path (added by from_json)
+})
+
+# Rule fields allowed for each kind.
+_ALLOWED_RULE_FIELDS = {
+    "action": frozenset({
+        "name", "kind", "inputs", "outputs",
+        "run",        # Shell command
+        "action_fn",  # Python callable (programmatic use only)
+    }),
+    "oracle": frozenset({
+        "name", "kind", "inputs", "outputs",
+        "prompt", "tools", "fuel",
+    }),
+    "trial": frozenset({
+        "name", "kind", "inputs", "outputs",
+        "branches", "verdict",
+    }),
+    "commit": frozenset({
+        "name", "kind", "value",
+    }),
+    "halt": frozenset({
+        "name", "kind", "reason",
+    }),
+    "let": frozenset({
+        "name", "kind", "bind",
+    }),
+    "cond": frozenset({
+        "name", "kind", "predicate", "then", "else",
+    }),
+}
+
 
 # ── Target resolution ─────────────────────────────────────────────
 
@@ -165,6 +210,11 @@ def check(design: Design) -> list[str]:
     """Validate a design IR.  Returns a list of error strings (empty = ok)."""
     errors: list[str] = []
 
+    # Check for unknown top-level fields
+    for field in design:
+        if field not in _ALLOWED_DESIGN_FIELDS:
+            errors.append(f"unknown design field: '{field}'")
+
     if not design.get("name"):
         errors.append("design has no name")
 
@@ -179,8 +229,43 @@ def check(design: Design) -> list[str]:
 
     names: set[str] = set()
     si = design.get("site_inputs", [])
-    produced: set[str] = set(si.keys() if isinstance(si, dict) else si)
+    # For validation: extract local names from site_inputs
+    # - dict form: keys are the local names (what rules reference)
+    # - list form:
+    #     - Absolute paths: basenames become the local names (e.g., /tmp/data.txt → data.txt)
+    #     - Relative paths: full paths are the local names (e.g., ref/data.csv → ref/data.csv)
+    if isinstance(si, dict):
+        produced: set[str] = set(si.keys())
+    else:
+        produced: set[str] = set()
+        for p in si:
+            if Path(p).is_absolute():
+                produced.add(Path(p).name)
+            else:
+                produced.add(p)
     predicates = design.get("predicates", {})
+
+    # Track which rule produces each output (for better error messages)
+    output_producers: dict[str, str] = {}
+    # Track all outputs declared by all rules (for forward reference detection)
+    all_outputs: set[str] = set()
+    # Track inputs for each rule (for circular dependency detection)
+    rule_inputs: dict[str, list[str]] = {}
+    rule_outputs_map: dict[str, list[str]] = {}
+
+    # First pass: collect all outputs and detect duplicates
+    for i, r in enumerate(rules):
+        tag: str = r.get("name", f"rule[{i}]")
+        kind: str = r.get("kind", "")
+
+        if kind in _PRODUCING_KINDS:
+            outputs = r.get("outputs", [])
+            rule_outputs_map[tag] = outputs
+            for o in outputs:
+                if o in all_outputs:
+                    # Will be reported in second pass with both producer names
+                    pass
+                all_outputs.add(o)
 
     for i, r in enumerate(rules):
         tag: str = r.get("name", f"rule[{i}]")
@@ -204,6 +289,13 @@ def check(design: Design) -> list[str]:
             )
             continue
 
+        # Check for unknown rule-level fields
+        allowed_fields = _ALLOWED_RULE_FIELDS.get(kind)
+        if allowed_fields:
+            for field in r:
+                if field not in allowed_fields:
+                    errors.append(f"{tag}: unknown field '{field}' for {kind} rule")
+
         spec = _RULE_SPECS.get(kind)
         if not spec:
             continue
@@ -218,14 +310,30 @@ def check(design: Design) -> list[str]:
                 if path_err:
                     errors.append(f"{tag}: output {path_err}")
                 if o in produced:
-                    errors.append(f"{tag}: output '{o}' already produced by another rule")
-                produced.add(o)
-            for inp in r.get("inputs", []):
+                    # Improved error: name both producers
+                    first_producer = output_producers.get(o, "unknown")
+                    errors.append(
+                        f"{tag}: output '{o}' already produced by rule '{first_producer}'"
+                    )
+                else:
+                    produced.add(o)
+                    output_producers[o] = tag
+
+            inputs = r.get("inputs", [])
+            rule_inputs[tag] = inputs
+            for inp in inputs:
                 path_err = _validate_path(inp)
                 if path_err:
                     errors.append(f"{tag}: input {path_err}")
                 if inp not in produced:
-                    errors.append(f"{tag}: input '{inp}' not produced by any prior rule")
+                    # Check if this is a forward reference
+                    if inp in all_outputs:
+                        errors.append(
+                            f"{tag}: input '{inp}' is a forward reference "
+                            f"(produced by a later rule)"
+                        )
+                    else:
+                        errors.append(f"{tag}: input '{inp}' not produced by any rule")
 
         # present fields (key must exist in dict)
         for field, msg in spec.get("present", {}).items():
@@ -251,6 +359,46 @@ def check(design: Design) -> list[str]:
         # custom validator
         if "validator" in spec:
             spec["validator"](tag, r, errors, predicates)
+
+    # Circular dependency detection
+    def _detect_cycle(
+        node: str,
+        visited: set[str],
+        rec_stack: set[str],
+        path: list[str]
+    ) -> list[str] | None:
+        """DFS to detect cycles. Returns cycle path if found, else None."""
+        visited.add(node)
+        rec_stack.add(node)
+        path.append(node)
+
+        # Get dependencies: rules that produce this node's inputs
+        node_inputs = rule_inputs.get(node, [])
+        for inp in node_inputs:
+            # Find which rule produces this input
+            producer = output_producers.get(inp)
+            if producer and producer in rule_outputs_map:  # producing rule
+                if producer not in visited:
+                    cycle = _detect_cycle(producer, visited, rec_stack, path)
+                    if cycle:
+                        return cycle
+                elif producer in rec_stack:
+                    # Found a cycle - return the path from producer to current
+                    cycle_start = path.index(producer)
+                    return path[cycle_start:] + [producer]
+
+        path.pop()
+        rec_stack.remove(node)
+        return None
+
+    visited: set[str] = set()
+    for rule_name in rule_inputs:
+        if rule_name not in visited:
+            cycle = _detect_cycle(rule_name, visited, set(), [])
+            if cycle:
+                cycle_str = " -> ".join(cycle)
+                errors.append(f"circular dependency detected: {cycle_str}")
+                break  # Report first cycle found
 
     # imports
     imports = design.get("imports")
@@ -370,7 +518,11 @@ def show(design: Design) -> None:
     print(f"  {'─' * 50}")
 
     if site_inputs:
-        si_names = list(site_inputs.keys()) if isinstance(site_inputs, dict) else site_inputs
+        if isinstance(site_inputs, dict):
+            si_names = list(site_inputs.keys())
+        else:
+            # For list form, show basenames (the local names in the site)
+            si_names = [Path(p).name for p in site_inputs]
         print(f"  site inputs: {', '.join(si_names)}")
         print()
 
@@ -590,6 +742,8 @@ def compile(design: Design) -> tuple[str, int, list[dict], dict[str, Any]]:
         kwargs["oracle_backend"] = design["oracle_backend"]
     if design.get("oracle_model"):
         kwargs["oracle_model"] = design["oracle_model"]
+    if design.get("site_inputs"):
+        kwargs["site_inputs"] = design["site_inputs"]
 
     return design["name"], design["fuel"], terminals, kwargs
 

@@ -84,12 +84,17 @@ def build(
         site = f"/tmp/mccarthy-{name}-{str(uuid.uuid4())[:8]}"
 
     # Stage site_inputs: create read-only symlinks into the site directory.
+    # List form can contain:
+    #   - Absolute paths: create symlinks with basenames (e.g., /tmp/data.txt → site/data.txt)
+    #   - Relative paths: assume already available via imports, skip symlinking
     if site_inputs:
         from husks.build.site import setup_links
         if isinstance(site_inputs, list):
-            site_inputs = {Path(si).name: si for si in site_inputs}
-        si_readonly = setup_links(site, site_inputs)
-        readonly_dirs = list(set((readonly_dirs or []) + si_readonly))
+            # Filter to only absolute paths that need symlink creation
+            site_inputs = {Path(si).name: si for si in site_inputs if Path(si).is_absolute()}
+        if site_inputs:  # Only call setup_links if there are paths to link
+            si_readonly = setup_links(site, site_inputs)
+            readonly_dirs = list(set((readonly_dirs or []) + si_readonly))
 
     # Clear trace state so sequential in-process builds don't accumulate.
     T.clear()

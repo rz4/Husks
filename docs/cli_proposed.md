@@ -398,20 +398,6 @@ husks doctor --selftest
 husks doctor --conformance --reader "python readers/generated_reader.py" --stamp-dir readers
 ```
 
-## Compatibility aliases
-
-The implementation may keep older top-level commands as aliases. They should be documented as compatibility surfaces, not as the primary grammar.
-
-| Compatibility command | Preferred form |
-| :--- | :--- |
-| `husks selftest` | `husks doctor --selftest` |
-| `husks gate ...` | `husks doctor --conformance ...` |
-| `husks diff ...` | `husks explain --diff ...` |
-| `husks graph ...` | `husks explain --graph ...` |
-| `husks seal ...` | `husks explain --seal ...` |
-
-Aliases are useful for scripts. The user-facing grammar should remain small.
-
 ## Design defaults
 
 Commands that accept a design should default to `design.json` if it exists in the current directory. Commands that accept a site should use this order:

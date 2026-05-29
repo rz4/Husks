@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "seal": "46e03ad90516bf39cc9dda5b5ca0edce230f045758fe028e0e069d5f93ad2b6f",
+  "recipe_digest": "6561c50e3aee40b4a1beb9745ee810c32a7570a84f3d5a2e080d0e240aa9f0d2",
+  "inputs": {},
+  "outputs": {
+    "test_answer.py": "0f2c615bd24fcb9699144bbbeb4b950b91af9162056d138d2ae9e62a0bbeeb3d"
+  }
+}
