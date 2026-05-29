@@ -1,0 +1,24 @@
+{
+  "name": "beta-seed",
+  "fuel": 20,
+  "target": "validate",
+  "site_inputs": ["prompt.txt"],
+  "rules": [
+    {
+      "name": "generate",
+      "kind": "oracle",
+      "inputs": ["prompt.txt"],
+      "outputs": ["response.txt"],
+      "prompt": "Read the prompt from input and generate a brief, factual response.",
+      "tools": [],
+      "fuel": 8
+    },
+    {
+      "name": "validate",
+      "kind": "action",
+      "inputs": ["response.txt"],
+      "outputs": ["validation.txt"],
+      "run": "python3 -c \"text = open('response.txt').read(); valid = len(text.strip()) > 0; open('validation.txt', 'w').write('PASS\\\\n' if valid else 'FAIL\\\\n')\""
+    }
+  ]
+}
