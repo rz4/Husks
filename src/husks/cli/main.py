@@ -6,7 +6,7 @@ import sys
 from husks.designs.ir import from_json
 
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, resolve_design
-from husks.cli.commands import (
+from husks.cli.cmd import (
     _cmd_check, _cmd_run, _cmd_run_hy, _cmd_status,
     _cmd_explain, _cmd_history, _cmd_doctor, _cmd_compare, _cmd_compare_runs,
     _cmd_cache_export, _cmd_cache_import,

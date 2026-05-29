@@ -229,6 +229,7 @@ def assemble(
 
     # -- Build-level diagnosis --
     report: dict[str, Any] = {
+        "schema_version": "beta-1",  # Task 9: Stabilized beta report contract
         "status": store["status"],
         "root": store.get("build-root"),
         "run_id": store.get("run-id", ""),
@@ -266,8 +267,9 @@ def render_text(report: dict) -> str:
     """Render the Report as structured text (labels, tables)."""
     lines: list[str] = []
 
-    # Header
+    # Header (Task 9: Include schema version)
     root_str = report["root"] if report["root"] else "none"
+    lines.append(f"schema:   {report.get('schema_version', 'unknown')}")
     lines.append(f"status:   {report['status']}")
     lines.append(f"root:     {root_str}")
     lines.append(f"run_id:   {report['run_id']}")
@@ -401,14 +403,20 @@ def render_json(report: dict) -> str:
 
 
 def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
-    """Validate a Report dict against the beta contract (Beta Gate G3).
+    """Validate a Report dict against the beta contract (Beta Gate G3, Task 9).
 
     The beta report contract defines the expected structure for `husks run --json`
     output. This function checks that all required fields are present and have
     the expected types.
 
+    Schema Version: beta-1 (Task 9: Stabilized)
+    --------------------------------------------
+    This is the first stabilized beta report contract. All reports must include
+    schema_version="beta-1" for compatibility validation.
+
     Beta Report Schema
     ------------------
+    - schema_version: str - "beta-1" (contract version identifier)
     - status: str - "committed" or "halted"
     - root: str | None - build root hash (or None if not committed)
     - run_id: str - unique run identifier
@@ -474,8 +482,9 @@ def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
     """
     errors = []
 
-    # Top-level required fields
+    # Top-level required fields (Task 9: Added schema_version)
     required_top = {
+        "schema_version": str,
         "status": str,
         "root": (str, type(None)),
         "run_id": str,
@@ -495,6 +504,14 @@ def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
             errors.append(
                 f"field '{field}' has wrong type: "
                 f"expected {expected_type}, got {type(report.get(field))}"
+            )
+
+    # Task 9: Validate schema version is "beta-1"
+    if "schema_version" in report:
+        if report["schema_version"] != "beta-1":
+            errors.append(
+                f"unsupported schema_version: {report['schema_version']} "
+                f"(expected 'beta-1')"
             )
 
     # Validate fuel dict

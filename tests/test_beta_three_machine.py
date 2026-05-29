@@ -1,6 +1,11 @@
 """
 test_beta_three_machine.py -- Beta Gate E2: Three-machine smoke test.
 
+Task 12: This test uses programmatic API for unit testing.
+The CANONICAL beta seed is: examples/beta_seed/
+CLI-based tests (test_compare_runs.py, test_three_machine_cli_acceptance.py)
+use the canonical seed via `husks run` commands.
+
 This is the development spine for Husks beta. The test simulates the
 three-machine proof:
 

@@ -13,6 +13,19 @@ Cache layout (within site/.cache/):
 Cache key derivation:
   cache_key = sha256(recipe_digest + sorted(input_name:input_hash))
 
+Task 11: Single Cache Validation Path
+--------------------------------------
+**cache_get() is the ONLY function that validates cache entries.**
+
+All cache reads MUST go through cache_get(), which enforces:
+  - Recipe digest verification (prevents recipe tampering)
+  - Output name matching (prevents output set mismatch)
+  - Content hash validation (prevents content tampering)
+  - Seal schema validation (ensures structural integrity)
+
+DO NOT access .cache/ directly or duplicate validation logic elsewhere.
+Use cache_get() for all cache lookups to maintain security guarantees.
+
 Beta constraints:
   - Oracle/trial recipes only (action recipes not cached)
   - Text outputs only (binary outputs rejected)
@@ -68,6 +81,10 @@ def cache_get(
     declared_outputs: list[str] | None = None,
 ) -> dict[str, str] | None:
     """Retrieve cached outputs for a recipe if available.
+
+    **Task 11**: This is the SINGLE CANONICAL CACHE VALIDATION PATH.
+    All cache reads must go through this function. Do not bypass validation
+    by reading .cache/ files directly.
 
     **Beta Gate D1**: Validates cache entry before returning to prevent
     poisoned cache attacks. Checks recipe digest, seal schema, output names,

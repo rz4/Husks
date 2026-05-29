@@ -124,7 +124,9 @@ def test_compare_runs_detects_m2_cache_miss():
     try:
         # Create schema-compliant reports where M2 didn't reuse cache
         # (Task 2: Reports must pass schema validation)
+        # (Task 9: Include schema_version)
         m1_report = {
+            "schema_version": "beta-1",
             "status": "committed",
             "root": "abc123",
             "run_id": "m1_run",
@@ -155,6 +157,7 @@ def test_compare_runs_detects_m2_cache_miss():
         # M2 report shows it didn't actually reuse cache (paid cost, fired state, cached=False)
         # Task 1/3: This should fail because M2 has no cache_hits and no cached node evidence
         m2_report = {
+            "schema_version": "beta-1",
             "status": "committed",
             "root": "abc123",
             "run_id": "m2_run",
@@ -183,6 +186,7 @@ def test_compare_runs_detects_m2_cache_miss():
         }
 
         m3_report = {
+            "schema_version": "beta-1",
             "status": "committed",
             "root": "abc123",
             "run_id": "m3_run",
