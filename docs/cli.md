@@ -65,8 +65,8 @@ Exit 1 if any category has errors.
 Check, compile, and execute a design.
 
 ```text
-husks run design.json [--site DIR] [--model MODEL] [--stub] [--hy]
-                      [--verbose] [--json] [--soft-fail]
+husks run design.json [--site DIR] [--model MODEL] [--stub] [--reuse-only]
+                      [--hy] [--verbose] [--json] [--soft-fail]
 ```
 
 | Flag | Description |
@@ -74,6 +74,7 @@ husks run design.json [--site DIR] [--model MODEL] [--stub] [--hy]
 | `--site DIR` | Override site directory |
 | `--model MODEL` | LLM model for oracle rules (default: `anthropic/claude-haiku-4-5-20251001`) |
 | `--stub` | Use stub oracle (no LLM, placeholder outputs) |
+| `--reuse-only` | Only use cached results, never call oracle (Beta Gate D5) |
 | `--hy` | Use original Hy kernel backend |
 | `--verbose`, `-v` | Full trace + detailed report table |
 | `--json` | Output full Report as JSON |
@@ -114,58 +115,52 @@ current files.  Reports states: `fresh`, `stale`, `dirty`, `missing`.
 
 ---
 
-### husks diff
-
-Show differences between sealed and current artifacts.
-
-```text
-husks diff [design.json] --site DIR [artifact...] [--json]
-```
-
-| Flag | Description |
-| :--- | :--- |
-| `--site DIR` | Site directory (required) |
-| `artifact...` | Filter to specific artifacts (default: all) |
-| `--json` | Output as JSON |
-
-Compares sealed hash (from `.traces/<rule>.seal`) against current
-file content hash.  Categorizes artifacts as `modified`, `missing`,
-or `undeclared`.
-
----
-
 ### husks explain
 
-Explain a rule, artifact, or the build root.
+Explain a rule, artifact, graph, diff, or seal.
 
 ```text
-husks explain subject --site DIR [--json]
+husks explain [subject] [--site DIR] [--json]
+              [--graph] [--diff] [--seal SUBJECT]
+              [--format text|mermaid|dot|json]
+              [--artifact ARTIFACT]
 ```
 
 | Flag | Description |
 | :--- | :--- |
-| `--site DIR` | Site directory (required) |
+| `subject` | Rule name, artifact path, or design file for --graph mode |
+| `--site DIR` | Site directory |
 | `--json` | Output as JSON |
+| `--graph` | Render dependency graph |
+| `--diff` | Show differences between sealed and current artifacts |
+| `--seal SUBJECT` | Show seal material for rule, artifact, or root |
+| `--format FMT` | Output format for --graph: `text`, `mermaid`, `dot`, `json` |
+| `--artifact ARTIFACT` | Specific artifact for --diff (can be repeated) |
 
-Subject can be:
-- A **rule name**: shows kind, inputs, outputs, state, seal, history summary
-- An **artifact path**: shows producing rule, state, sealed hash, current hash
-- `"root"`: shows build root hash, creation time, all rules
+**Modes:**
 
----
-
-### husks graph
-
-Render the dependency graph of a design.
-
-```text
-husks graph design.json [--format text|mermaid|dot|json] [--site DIR]
+**Explain a rule or artifact:**
+```bash
+husks explain generate --site ./site
+husks explain response.txt --site ./site
 ```
 
-| Flag | Description |
-| :--- | :--- |
-| `--format FMT` | Output format: `text` (default), `mermaid`, `dot`, `json` |
-| `--site DIR` | Overlay freshness state symbols from a built site |
+**Show dependency graph:**
+```bash
+husks explain design.json --graph --format mermaid
+```
+
+**Show diff between sealed and current:**
+```bash
+husks explain --diff --site ./site
+husks explain --diff --site ./site --artifact response.txt
+```
+
+**Show seal material:**
+```bash
+husks explain --seal generate --site ./site
+husks explain --seal root --site ./site
+```
 
 ---
 
@@ -187,38 +182,79 @@ Classifications: `converging`, `prompt-loading`, `stable`, `volatile`.
 
 ---
 
-### husks gate
+### husks compare
 
-Run the conformance gate against an external CSE reader.
+Compare artifact equivalence across sites.
 
 ```text
-husks gate "reader_cmd" [--stamp-dir DIR] [--no-cross-check]
-                        [--json] [--verbose]
+husks compare site1 site2 [site3 ...] [--json] [--roots-only] [--hashes-only]
 ```
 
 | Flag | Description |
 | :--- | :--- |
-| `--stamp-dir DIR` | Write `VERIFIED` stamp here on pass |
-| `--no-cross-check` | Disable JS cross-check |
-| `--json` | Output as JSON |
-| `--verbose`, `-v` | Verbose output |
+| `sites` | Site directories to compare (2 or more) |
+| `--json` | Output comparison result as JSON |
+| `--roots-only` | Compare build roots only (skip output hash checks) |
+| `--hashes-only` | Compare output hashes only (skip root checks) |
 
-The reader command must accept `<husk-file> <site-dir>` as arguments
-and print the lowercase-hex build root to stdout.
+Compares artifact equivalence across multiple built sites. Checks:
+- Build root equality (cryptographic seal of entire build)
+- Output artifact hash equality (file-by-file comparison)
 
-Also available as the standalone `husks-gate` entry point.
+Used for validating cross-machine reproducibility.
+
+---
+
+### husks compare-runs
+
+Compare JSON reports from multiple runs (three-machine proof).
+
+```text
+husks compare-runs report1.json report2.json [report3.json ...] [--json]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `reports` | JSON report files from `husks run --json` (2 or more) |
+| `--json` | Output comparison result as JSON |
+
+Validates the three-machine proof pattern:
+- **M1**: Pays oracle cost, produces valid build
+- **M2**: Reuses cache, zero oracle cost, equivalent artifacts
+- **M3**: Rebuilds independently, pays cost, equivalent artifacts
+
+Checks:
+- Root equivalence across all runs
+- M1 paid non-zero oracle cost
+- M2 has zero oracle calls and zero cost (cache hit)
+- M2 has explicit cache evidence (`cached=true` nodes)
+- M3 paid non-zero oracle cost
+- All reports conform to beta schema
 
 ---
 
 ### husks doctor
 
-Check environment and dependencies.
+Check environment and dependencies, run conformance tests.
 
 ```text
-husks doctor [--json]
+husks doctor [--json] [--selftest] [--conformance] [--live]
+             [--reader CMD] [--stamp-dir DIR] [--no-cross-check]
+             [--verbose]
 ```
 
-Checks 8 items:
+| Flag | Description |
+| :--- | :--- |
+| `--json` | Output as JSON |
+| `--selftest` | Run frozen conformance vectors (replaces old `husks selftest`) |
+| `--conformance` | Run external reader conformance gate (replaces old `husks gate`) |
+| `--live` | Check live oracle readiness (API key, litellm, oracle ping, dev tools) |
+| `--reader CMD` | Reader command for --conformance (e.g., `"python my_reader.py"`) |
+| `--stamp-dir DIR` | Write VERIFIED stamp here on conformance pass |
+| `--no-cross-check` | Disable JS cross-check (with --conformance) |
+| `--verbose`, `-v` | Verbose output |
+
+**Default mode** (no flags): Checks 8 items:
 
 | Check | What it tests |
 | :--- | :--- |
@@ -233,22 +269,15 @@ Checks 8 items:
 
 Symbols: `✓` pass, `✗` fail, `○` optional and absent.
 
----
+**Selftest mode** (`--selftest`): Verifies engine against frozen conformance vectors.
+Recomputes frozen roots with bundled Python reader. Confirms malformed vectors are
+correctly rejected. No network, no model.
 
-### husks selftest
+**Conformance mode** (`--conformance`): Runs conformance gate against external CSE reader.
+Reader command must accept `<husk-file> <site-dir>` and print lowercase-hex build root
+to stdout.
 
-Verify the engine against frozen conformance vectors.
-
-```text
-husks selftest [--conformance DIR]
-```
-
-| Flag | Description |
-| :--- | :--- |
-| `--conformance DIR` | Override conformance vector directory |
-
-Recomputes frozen roots with the bundled Python reader.  Confirms
-malformed vectors are correctly rejected.  No network, no model.
+**Live mode** (`--live`): Checks live oracle readiness (API key, litellm, oracle ping).
 
 ---
 
@@ -273,3 +302,56 @@ Steps performed:
 4. CLAUDE.md emission (stance file versioned with engine)
 
 Idempotent: re-running reports "exists" rather than clobbering.
+
+---
+
+### husks cache
+
+Manage oracle cache for cross-machine transfer.
+
+#### cache export
+
+Export cache to tarball for cross-machine transfer.
+
+```text
+husks cache export <file> --site DIR [--json]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `file` | Path to write .tar.gz archive |
+| `--site DIR` | Site directory containing cache (required) |
+| `--json` | Output result as JSON |
+
+Exports the `.cache` directory from a built site to a portable tarball.
+Used in the three-machine proof to transfer oracle results from M1 to M2.
+
+**Example:**
+```bash
+husks cache export cache.tar.gz --site ./m1-site
+```
+
+#### cache import
+
+Import cache from tarball.
+
+```text
+husks cache import <file> --site DIR [--no-merge] [--json]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `file` | Path to .tar.gz archive |
+| `--site DIR` | Site directory to import into (required) |
+| `--no-merge` | Clear existing cache before import (default: merge) |
+| `--json` | Output result as JSON |
+
+Imports a cache tarball into a site directory. By default, merges with
+existing cache entries. Use `--no-merge` to replace the entire cache.
+
+**Example:**
+```bash
+husks cache import cache.tar.gz --site ./m2-site
+husks run design.json --site ./m2-site --reuse-only
+```
+

@@ -419,9 +419,15 @@ def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
         - start: int - initial fuel
         - end: int - remaining fuel
     - cost: dict - oracle cost tracking (Beta Gate D6)
-        - paid: float - cost paid in this run
-        - reused: float - cost saved from cache reuse
-        - projected: float - total cost if no cache
+        - paid: float - cost paid in this run (authoritative)
+        - reused: float - estimated cost saved from cache reuse (non-authoritative)
+        - projected: float - estimated total cost if no cache (non-authoritative)
+
+        NOTE (Task 4): cost.reused and cost.projected are LOCAL ESTIMATES based on
+        same-site history. For imported cache without cost provenance metadata, these
+        will be 0. They are NOT part of seal identity and should not be used as
+        authoritative proof of cache savings. Use cache_hits and cached_nodes fields
+        for authoritative cache reuse evidence.
     - delta: dict - change summary
         - changed: list[str] - rules with changed outputs
         - new: list[str] - newly fired rules

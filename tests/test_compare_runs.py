@@ -119,46 +119,94 @@ def test_compare_runs_three_machine_proof():
 
 
 def test_compare_runs_detects_m2_cache_miss():
-    """compare-runs detects when M2 didn't actually reuse cache."""
+    """compare-runs detects when M2 didn't actually reuse cache (Tasks 1/2/3)."""
     tmpdir = tempfile.mkdtemp(prefix="compare-runs-fail-")
     try:
-        # Create fake reports where M2 didn't reuse cache
+        # Create schema-compliant reports where M2 didn't reuse cache
+        # (Task 2: Reports must pass schema validation)
         m1_report = {
             "status": "committed",
-            "cost": {"paid": 0.0008, "reused": 0.0, "projected": 0.0008},
             "root": "abc123",
+            "run_id": "m1_run",
+            "build": "test",
+            "site": "/tmp/m1",
+            "elapsed_s": 1.0,
+            "fuel": {"start": 10, "end": 8},
+            "cost": {"paid": 0.0008, "reused": 0.0, "projected": 0.0008},
+            "delta": {"changed": [], "new": ["generate"], "unchanged": []},
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
                 "state": "fired",
-                "cost": {"this_run": 0.0008},
+                "classification": "converging",
+                "prompt_len": 100,
+                "prompt_trend": "flat",
+                "fuel_consumed": 2,
+                "fuel_trend": "falling",
+                "output_hashes": ["hash1"],
+                "output_changed": True,
+                "cost": {"this_run": 0.0008, "first_paid": 0.0008, "per_rerun": 0.0},
                 "cached": False,
+                "tokens": {"input": 100, "output": 50},
+                "seal": {"hash": "seal_hash", "recipe_changed": False},
             }]
         }
 
+        # M2 report shows it didn't actually reuse cache (paid cost, fired state, cached=False)
+        # Task 1/3: This should fail because M2 has no cache_hits and no cached node evidence
         m2_report = {
             "status": "committed",
-            "cost": {"paid": 0.0008, "reused": 0.0, "projected": 0.0008},  # Should be 0!
             "root": "abc123",
+            "run_id": "m2_run",
+            "build": "test",
+            "site": "/tmp/m2",
+            "elapsed_s": 1.0,
+            "fuel": {"start": 10, "end": 8},
+            "cost": {"paid": 0.0008, "reused": 0.0, "projected": 0.0008},  # Should be 0!
+            "delta": {"changed": [], "new": ["generate"], "unchanged": []},
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
                 "state": "fired",  # Should be sealed!
-                "cost": {"this_run": 0.0008},  # Should be 0!
+                "classification": "converging",
+                "prompt_len": 100,
+                "prompt_trend": "flat",
+                "fuel_consumed": 2,
+                "fuel_trend": "falling",
+                "output_hashes": ["hash1"],
+                "output_changed": True,
+                "cost": {"this_run": 0.0008, "first_paid": 0.0008, "per_rerun": 0.0008},  # Should be 0!
                 "cached": False,  # Should be True!
+                "tokens": {"input": 100, "output": 50},
+                "seal": {"hash": "seal_hash", "recipe_changed": False},
             }]
         }
 
         m3_report = {
             "status": "committed",
-            "cost": {"paid": 0.0008, "reused": 0.0, "projected": 0.0008},
             "root": "abc123",
+            "run_id": "m3_run",
+            "build": "test",
+            "site": "/tmp/m3",
+            "elapsed_s": 1.0,
+            "fuel": {"start": 10, "end": 8},
+            "cost": {"paid": 0.0008, "reused": 0.0, "projected": 0.0008},
+            "delta": {"changed": [], "new": ["generate"], "unchanged": []},
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
                 "state": "fired",
-                "cost": {"this_run": 0.0008},
+                "classification": "converging",
+                "prompt_len": 100,
+                "prompt_trend": "flat",
+                "fuel_consumed": 2,
+                "fuel_trend": "falling",
+                "output_hashes": ["hash1"],
+                "output_changed": True,
+                "cost": {"this_run": 0.0008, "first_paid": 0.0008, "per_rerun": 0.0},
                 "cached": False,
+                "tokens": {"input": 100, "output": 50},
+                "seal": {"hash": "seal_hash", "recipe_changed": False},
             }]
         }
 

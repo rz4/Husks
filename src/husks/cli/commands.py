@@ -867,11 +867,20 @@ def _cmd_compare_runs(args):
     """Compare JSON reports from multiple runs (Beta Gate C/F/G).
 
     Validates the three-machine proof:
-    - M1 paid oracle cost (cost > 0)
-    - M2 reused cache (cost = 0, oracle_calls = 0)
-    - M3 cost comparable to M1
-    - Artifacts equivalent (via output hashes)
+    - M1: paid_cost > 0, oracle_calls > 0
+    - M2: paid_cost = 0, oracle_calls = 0, cache_hits > 0, cached_nodes nonempty
+    - M3: paid_cost comparable to M1, oracle_calls comparable to M1
+    - All: same build root (artifact equivalence)
+
+    Task 1/2/3: Hardened to require explicit cache reuse evidence in M2
+    (cached=true flag), not just zero cost. Reports must pass schema validation.
+
+    Task 4: Does NOT rely on cost.reused/projected fields (non-authoritative
+    estimates). Uses authoritative fields: paid_cost, oracle_calls, cache_hits,
+    cached_nodes.
     """
+    from husks.report import validate_report_schema
+
     if len(args.reports) < 2:
         print("error: compare-runs requires at least 2 report files", file=sys.stderr)
         sys.exit(EXIT_USAGE)
@@ -882,12 +891,49 @@ def _cmd_compare_runs(args):
         try:
             with open(path, 'r') as f:
                 report = json.load(f)
+
+                # Task 2: Validate report schema before processing
+                valid, errors = validate_report_schema(report)
+                if not valid:
+                    if args.json_output:
+                        # Output JSON error for failed schema validation
+                        error_output = {
+                            "reports": 0,
+                            "equivalent": False,
+                            "violations": [f"Report {path} failed schema validation"] + errors,
+                            "error": "schema_validation_failed"
+                        }
+                        print(json.dumps(error_output, indent=2))
+                    else:
+                        print(f"error: report {path} failed schema validation:", file=sys.stderr)
+                        for e in errors:
+                            print(f"  - {e}", file=sys.stderr)
+                    sys.exit(EXIT_USAGE)
+
                 reports.append({"path": path, "data": report})
         except FileNotFoundError:
-            print(f"error: report file not found: {path}", file=sys.stderr)
+            if args.json_output:
+                error_output = {
+                    "reports": 0,
+                    "equivalent": False,
+                    "violations": [f"Report file not found: {path}"],
+                    "error": "file_not_found"
+                }
+                print(json.dumps(error_output, indent=2))
+            else:
+                print(f"error: report file not found: {path}", file=sys.stderr)
             sys.exit(EXIT_USAGE)
         except json.JSONDecodeError as e:
-            print(f"error: invalid JSON in {path}: {e}", file=sys.stderr)
+            if args.json_output:
+                error_output = {
+                    "reports": 0,
+                    "equivalent": False,
+                    "violations": [f"Invalid JSON in {path}: {e}"],
+                    "error": "json_decode_error"
+                }
+                print(json.dumps(error_output, indent=2))
+            else:
+                print(f"error: invalid JSON in {path}: {e}", file=sys.stderr)
             sys.exit(EXIT_USAGE)
 
     # Analyze reports
@@ -911,22 +957,28 @@ def _cmd_compare_runs(args):
             "root": data.get("root"),
         }
 
-        # Count oracle calls and cache hits
+        # Count oracle calls, cache hits, and collect reuse evidence
         oracle_calls = 0
         cache_hits = 0
         oracle_nodes = []
+        cached_node_names = []  # Task 3: Explicit cache reuse evidence
 
         for node in data.get("nodes", []):
             if node.get("kind") == "oracle":
                 oracle_nodes.append(node["name"])
+                # Oracle fired in this run (paid cost)
                 if node.get("state") == "fired" and node.get("cost", {}).get("this_run", 0) > 0:
                     oracle_calls += 1
-                elif node.get("cached") is True or node.get("state") == "sealed":
+                # Task 4: Oracle reused from cache - require EXPLICIT cached=true
+                # (state="sealed" alone doesn't prove cache reuse, could be local seal)
+                elif node.get("cached") is True:
                     cache_hits += 1
+                    cached_node_names.append(node["name"])
 
         run_info["oracle_calls"] = oracle_calls
         run_info["cache_hits"] = cache_hits
         run_info["oracle_nodes"] = oracle_nodes
+        run_info["cached_nodes"] = cached_node_names  # Task 3: Explicit evidence
 
         comparison["runs"].append(run_info)
 
@@ -941,18 +993,38 @@ def _cmd_compare_runs(args):
         else:
             comparison["checks"]["m1_paid_cost"] = True
 
-        # Check: M2 reused cache (zero oracle calls, zero cost)
+        # Task 1: M2 must have EVIDENCE of cache reuse, not just zero cost
+        # Check: M2 had zero oracle calls
         if m2["oracle_calls"] > 0:
             comparison["violations"].append(f"M2 should have 0 oracle calls, got {m2['oracle_calls']}")
             comparison["equivalent"] = False
         else:
             comparison["checks"]["m2_zero_oracle_calls"] = True
 
+        # Check: M2 paid zero cost
         if m2["cost_paid"] != 0.0:
             comparison["violations"].append(f"M2 should have cost = 0, got {m2['cost_paid']}")
             comparison["equivalent"] = False
         else:
             comparison["checks"]["m2_zero_cost"] = True
+
+        # Task 1/3: Check M2 has explicit cache reuse evidence
+        if m2["cache_hits"] == 0:
+            comparison["violations"].append(
+                "M2 should have cache_hits > 0 (evidence of reuse), got 0"
+            )
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m2_has_cache_hits"] = True
+
+        # Task 1/3: Verify M2 actually has cached nodes with evidence
+        if len(m2["cached_nodes"]) == 0:
+            comparison["violations"].append(
+                "M2 should have cached oracle nodes (sealed or cached=True), found none"
+            )
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m2_cached_node_evidence"] = True
 
         # Check: M3 paid comparable cost to M1
         if m3["cost_paid"] <= 0:
@@ -994,6 +1066,9 @@ def _cmd_compare_runs(args):
             print(f"      status: {run['status']}")
             print(f"      cost: ${run['cost_paid']:.6f}")
             print(f"      oracle calls: {run['oracle_calls']}, cache hits: {run['cache_hits']}")
+            # Task 3: Show explicit cache reuse evidence
+            if run['cached_nodes']:
+                print(f"      cached nodes: {', '.join(run['cached_nodes'])}")
             print()
 
         if comparison["checks"]:

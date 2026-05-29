@@ -424,13 +424,28 @@ def default_oracle_backend(
     recipe: dict[str, Any],
     outputs: list[str],
 ) -> dict[str, Any]:
-    """Stub oracle backend that writes placeholder outputs."""
-    for o in outputs:
-        write_text(
-            site_path(S, o, write=True),
+    """Stub oracle backend that writes placeholder outputs.
+
+    Task 5: Stub outputs follow same structured format as live oracle
+    to pass deterministic validation contracts.
+    """
+    prompt = recipe.get('prompt', '')
+
+    # Task 5: Check if prompt requires "ANSWER:" format
+    # This allows structured validators to work with stub mode
+    if 'ANSWER:' in prompt or ('answer' in prompt.lower() and 'format' in prompt.lower()):
+        # Produce structured stub output matching expected format
+        content = "ANSWER: Stub oracle output"
+    else:
+        # Fallback: generic stub placeholder
+        content = (
             f"# oracle output: {rule_name}\n"
-            f"# prompt: {recipe.get('prompt', '')}\n",
+            f"# prompt: {prompt}\n"
         )
+
+    for o in outputs:
+        write_text(site_path(S, o, write=True), content)
+
     return {"tokens_in": 840, "tokens_out": 320, "cost_usd": 0.0008, "fuel_steps": 1}
 
 

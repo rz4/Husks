@@ -2,23 +2,23 @@
   "name": "beta-seed",
   "fuel": 20,
   "target": "validate",
-  "site_inputs": ["prompt.txt"],
+  "site_inputs": ["prompt.txt", "validate.py"],
   "rules": [
     {
       "name": "generate",
       "kind": "oracle",
       "inputs": ["prompt.txt"],
       "outputs": ["response.txt"],
-      "prompt": "Read the file 'prompt.txt' using read-file tool. Answer the question you find there with a brief, factual response. Write your answer to 'response.txt' using write-file tool.",
+      "prompt": "Read the file 'prompt.txt' using read-file tool. Answer the question you find there using EXACTLY this format: 'ANSWER: <your answer>'. For example, if the answer is Paris, write exactly 'ANSWER: Paris'. Write your response to 'response.txt' using write-file tool. The output MUST start with 'ANSWER: ' followed by your answer.",
       "tools": ["read-file", "write-file"],
       "fuel": 10
     },
     {
       "name": "validate",
       "kind": "action",
-      "inputs": ["response.txt"],
+      "inputs": ["response.txt", "validate.py"],
       "outputs": ["validation.txt"],
-      "run": "python3 -c \"text = open('response.txt').read(); valid = 'Paris' in text or (('Stub output' in text or 'oracle output' in text) and len(text.strip()) > 0); open('validation.txt', 'w').write('PASS\\\\n' if valid else 'FAIL\\\\n')\""
+      "run": "python3 validate.py"
     }
   ]
 }
