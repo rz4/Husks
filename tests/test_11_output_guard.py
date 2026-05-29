@@ -52,17 +52,17 @@ def test_action_zero_byte_marker_commits():
     tmpdir = tempfile.mkdtemp(prefix="guard-action-marker-")
     try:
         site = make_site(tmpdir)
+        # This test is about zero-byte output guards, not inputs - simplify design
         design = {
             "name": "guard-marker",
             "fuel": 10,
             "target": "marker",
             "site": site,
-            "site_inputs": ["input.txt"],
             "rules": [
                 {
                     "name": "marker",
                     "kind": "action",
-                    "inputs": ["input.txt"],
+                    "inputs": [],  # No inputs needed for this test
                     "outputs": [".complete"],
                     "run": "touch .complete",
                 },
@@ -92,12 +92,14 @@ def test_oracle_empty_output_halts():
                 p.write_bytes(b"")
             return {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "fuel_steps": 1}
 
+        # Use absolute path for site_inputs (input.txt is created in site by make_site)
+        input_path = os.path.join(site, "input.txt")
         design = {
             "name": "guard-oracle-empty",
             "fuel": 10,
             "target": "gen",
             "site": site,
-            "site_inputs": ["input.txt"],
+            "site_inputs": [input_path],  # Absolute path
             "oracle_backend": _empty_oracle,
             "rules": [
                 {

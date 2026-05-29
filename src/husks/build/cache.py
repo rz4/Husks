@@ -64,8 +64,14 @@ def cache_get(
     S: Store,
     recipe: Recipe,
     inputs: list[str],
+    *,
+    declared_outputs: list[str] | None = None,
 ) -> dict[str, str] | None:
     """Retrieve cached outputs for a recipe if available.
+
+    **Beta Gate D1**: Validates cache entry before returning to prevent
+    poisoned cache attacks. Checks recipe digest, seal schema, output names,
+    output hashes, and content availability.
 
     Parameters
     ----------
@@ -75,11 +81,14 @@ def cache_get(
         Recipe dict (must be oracle or trial)
     inputs : list[str]
         Input file paths relative to site
+    declared_outputs : list[str] | None
+        Expected output names from the rule. If provided, cache entry
+        must match exactly (prevents output set mismatch attacks).
 
     Returns
     -------
     dict[str, str] | None
-        Output name -> content mapping if cache hit, None otherwise
+        Output name -> content mapping if cache hit and validated, None otherwise
     """
     # Only cache oracle/trial recipes
     if recipe is None or recipe.get("type") not in ("oracle", "trial"):
@@ -96,6 +105,7 @@ def cache_get(
     # Check if cache entry exists
     cdir = cache_dir(S, key)
     outputs_file = Path(cdir) / "outputs.json"
+    seal_file = Path(cdir) / "seal.json"
     meta_file = Path(cdir) / "meta.json"
 
     if not outputs_file.exists():
@@ -105,7 +115,42 @@ def cache_get(
         # Load cached outputs
         outputs = json.loads(outputs_file.read_text())
 
-        # Update reuse metadata
+        # Beta Gate D1: Validate cache entry before trusting it
+        # 1. Verify seal exists and has valid schema
+        if not seal_file.exists():
+            return None  # No seal = can't verify integrity
+
+        seal_data = json.loads(seal_file.read_text())
+
+        # 2. Verify recipe digest matches (prevents recipe tampering)
+        if seal_data.get("recipe_digest") != recipe_rd:
+            return None
+
+        # 3. Verify output names match declared outputs (prevents output set mismatch)
+        cached_output_names = set(outputs.keys())
+        seal_output_names = set(seal_data.get("outputs", {}).keys())
+
+        if cached_output_names != seal_output_names:
+            return None  # outputs.json doesn't match seal
+
+        if declared_outputs is not None:
+            declared_set = set(declared_outputs)
+            if cached_output_names != declared_set:
+                return None  # Cache has different outputs than current rule
+
+        # 4. Verify output content hashes match seal (prevents content tampering)
+        seal_outputs = seal_data.get("outputs", {})
+        for name, content in outputs.items():
+            expected_hash = seal_outputs.get(name)
+            if expected_hash is None:
+                return None  # Output not in seal
+
+            # Compute hash of cached content
+            actual_hash = hashlib.sha256(content.encode()).hexdigest()[:10]
+            if actual_hash != expected_hash:
+                return None  # Content hash mismatch
+
+        # 5. All validation passed - update reuse metadata
         if meta_file.exists():
             meta = json.loads(meta_file.read_text())
             meta["reuse_count"] = meta.get("reuse_count", 0) + 1
@@ -115,7 +160,7 @@ def cache_get(
 
         return outputs
     except Exception:
-        return None
+        return None  # Any validation error = cache miss
 
 
 def cache_put(
@@ -128,6 +173,9 @@ def cache_put(
 ) -> None:
     """Store outputs in cache for future reuse.
 
+    **Beta Gate D2**: Stores seal.json with output hashes by default for
+    cache validation.
+
     Parameters
     ----------
     S : Store
@@ -139,7 +187,8 @@ def cache_put(
     outputs : dict[str, str]
         Output name -> content mapping
     seal_data : dict | None
-        Optional seal data to store alongside outputs
+        Optional seal data to store alongside outputs. If None, seal data
+        is automatically generated with recipe digest and output hashes.
     """
     # Only cache oracle/trial recipes
     if recipe is None or recipe.get("type") not in ("oracle", "trial"):
@@ -161,10 +210,23 @@ def cache_put(
     outputs_file = Path(cdir) / "outputs.json"
     outputs_file.write_text(json.dumps(outputs, indent=2))
 
-    # Write seal if provided
-    if seal_data:
-        seal_file = Path(cdir) / "seal.json"
-        seal_file.write_text(json.dumps(seal_data, indent=2))
+    # Beta Gate D2: Generate seal data if not provided
+    if seal_data is None:
+        # Compute output hashes for validation
+        output_hashes = {}
+        for name, content in outputs.items():
+            content_hash = hashlib.sha256(content.encode()).hexdigest()[:10]
+            output_hashes[name] = content_hash
+
+        seal_data = {
+            "recipe_digest": recipe_rd,
+            "outputs": output_hashes,
+            "inputs": input_sigs,
+        }
+
+    # Always write seal (Beta Gate D2)
+    seal_file = Path(cdir) / "seal.json"
+    seal_file.write_text(json.dumps(seal_data, indent=2))
 
     # Write metadata
     meta = {

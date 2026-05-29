@@ -19,11 +19,14 @@ def _run_cli(*extra_args, design=None):
     try:
         site = os.path.join(tmpdir, "site")
         os.makedirs(site)
-        with open(os.path.join(site, "input.txt"), "w") as f:
+
+        # Create input file next to design.json for site_inputs resolution
+        with open(os.path.join(tmpdir, "input.txt"), "w") as f:
             f.write("hello\n")
 
         if design is not None:
             design.setdefault("site", site)
+            # Declare input.txt as a site_input (resolved relative to design file)
             design.setdefault("site_inputs", ["input.txt"])
 
         design_path = os.path.join(tmpdir, "design.json")

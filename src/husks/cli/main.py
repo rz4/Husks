@@ -114,7 +114,7 @@ def main():
     doc.add_argument("--conformance", action="store_true",
                      help="Run external reader conformance gate")
     doc.add_argument("--live", action="store_true",
-                     help="Check live oracle readiness (API key + test call)")
+                     help="Check live oracle readiness (API key, litellm, oracle ping, dev tools)")
     doc.add_argument("--reader", dest="reader_cmd", default=None,
                      help='Reader command for --conformance, e.g. "python my_reader.py"')
     doc.add_argument("--stamp-dir", default=None,
@@ -135,15 +135,19 @@ def main():
     cmp.add_argument("--hashes-only", action="store_true",
                      help="Compare output hashes only (skip root checks)")
 
-    # cache export (Beta Gate G1)
-    cache_exp = sub.add_parser("cache-export", help="Export cache to tarball for cross-machine transfer")
+    # cache (Beta Gate G1/D5) - nested subcommands
+    cache_parser = sub.add_parser("cache", help="Cache management commands")
+    cache_sub = cache_parser.add_subparsers(dest="cache_cmd", required=True)
+
+    # cache export
+    cache_exp = cache_sub.add_parser("export", help="Export cache to tarball for cross-machine transfer")
     cache_exp.add_argument("file", help="Path to write .tar.gz archive")
     cache_exp.add_argument("--site", required=True, help="Site directory containing cache")
     cache_exp.add_argument("--json", action="store_true", dest="json_output",
                            help="Output result as JSON")
 
-    # cache import (Beta Gate G1)
-    cache_imp = sub.add_parser("cache-import", help="Import cache from tarball")
+    # cache import
+    cache_imp = cache_sub.add_parser("import", help="Import cache from tarball")
     cache_imp.add_argument("file", help="Path to .tar.gz archive")
     cache_imp.add_argument("--site", required=True, help="Site directory to import into")
     cache_imp.add_argument("--no-merge", action="store_true",
@@ -191,14 +195,12 @@ def main():
         _cmd_compare(args)
         return
 
-    # ── cache export (Beta Gate G1) ──────────────────────────
-    if args.cmd == "cache-export":
-        _cmd_cache_export(args)
-        return
-
-    # ── cache import (Beta Gate G1) ──────────────────────────
-    if args.cmd == "cache-import":
-        _cmd_cache_import(args)
+    # ── cache commands (Beta Gate G1/D5) ──────────────────────────
+    if args.cmd == "cache":
+        if args.cache_cmd == "export":
+            _cmd_cache_export(args)
+        elif args.cache_cmd == "import":
+            _cmd_cache_import(args)
         return
 
     # ── Commands that require a design ───────────────────────

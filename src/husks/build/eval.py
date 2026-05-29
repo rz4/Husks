@@ -448,8 +448,12 @@ def eval_oracle(
     T.oracle_start(rule_name, oname, recipe.get("prompt"))
     t0 = time.time()
 
-    # Beta Gate D2: Check cache before executing oracle
-    cached = cache_get(S, recipe, inputs) if not S.get("cache-disabled") else None
+    # Beta Gate D1/D2: Check cache before executing oracle (with validation)
+    cached = (
+        cache_get(S, recipe, inputs, declared_outputs=outputs)
+        if not S.get("cache-disabled")
+        else None
+    )
 
     if cached is not None:
         # Cache hit - write cached outputs to staging

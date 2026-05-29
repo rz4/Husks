@@ -8,12 +8,11 @@ and `husks run --stub`.
 """
 
 import json
-import subprocess
-import sys
 import tempfile
 import shutil
 from pathlib import Path
 
+from conftest import run_husks_cli
 from husks.designs.ir import from_json, check, run
 from husks.setup import _DEMO_DESIGN
 
@@ -61,12 +60,7 @@ def test_husks_init_creates_valid_project():
     tmpdir = tempfile.mkdtemp(prefix="init-test-")
     try:
         # Run husks init in temp directory
-        result = subprocess.run(
-            [sys.executable, "-m", "husks.cli", "init", str(tmpdir)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        result = run_husks_cli("init", str(tmpdir))
 
         # Should succeed
         assert result.returncode == 0, (
@@ -101,21 +95,11 @@ def test_husks_init_check_command():
     tmpdir = tempfile.mkdtemp(prefix="init-check-")
     try:
         # Run husks init
-        subprocess.run(
-            [sys.executable, "-m", "husks.cli", "init", str(tmpdir)],
-            capture_output=True,
-            timeout=30,
-        )
+        run_husks_cli("init", str(tmpdir))
 
         # Run husks check
         design_path = Path(tmpdir) / "design.json"
-        result = subprocess.run(
-            [sys.executable, "-m", "husks.cli", "check", str(design_path)],
-            capture_output=True,
-            text=True,
-            cwd=str(tmpdir),
-            timeout=30,
-        )
+        result = run_husks_cli("check", str(design_path), cwd=str(tmpdir))
 
         assert result.returncode == 0, (
             f"husks check should pass on generated project\n"
@@ -134,11 +118,7 @@ def test_husks_init_run_stub_command():
     tmpdir = tempfile.mkdtemp(prefix="init-run-")
     try:
         # Run husks init
-        subprocess.run(
-            [sys.executable, "-m", "husks.cli", "init", str(tmpdir)],
-            capture_output=True,
-            timeout=30,
-        )
+        run_husks_cli("init", str(tmpdir))
 
         # Create site directory
         site = Path(tmpdir) / "site"
@@ -146,21 +126,8 @@ def test_husks_init_run_stub_command():
 
         # Run husks run --stub
         design_path = Path(tmpdir) / "design.json"
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "husks.cli",
-                "run",
-                str(design_path),
-                "--stub",
-                "--site",
-                str(site),
-            ],
-            capture_output=True,
-            text=True,
-            cwd=str(tmpdir),
-            timeout=30,
+        result = run_husks_cli(
+            "run", str(design_path), "--stub", "--site", str(site), cwd=str(tmpdir)
         )
 
         # Should succeed (exit 0 = committed)
@@ -180,11 +147,7 @@ def test_husks_init_creates_claude_md():
     """husks init creates CLAUDE.md with project conventions."""
     tmpdir = tempfile.mkdtemp(prefix="init-claude-")
     try:
-        subprocess.run(
-            [sys.executable, "-m", "husks.cli", "init", str(tmpdir)],
-            capture_output=True,
-            timeout=30,
-        )
+        run_husks_cli("init", str(tmpdir))
 
         claude_md = Path(tmpdir) / "CLAUDE.md"
         assert claude_md.exists(), "CLAUDE.md should be created"

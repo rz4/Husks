@@ -12,6 +12,8 @@ import tempfile
 import shutil
 from pathlib import Path
 
+from conftest import run_husks_cli
+
 
 def test_compare_equivalent_sites():
     """husks compare detects equivalent sites."""
@@ -36,12 +38,7 @@ def test_compare_equivalent_sites():
         build("demo", 10, node, site=str(site_b))
 
         # Run compare command
-        result = subprocess.run(
-            [sys.executable, "-m", "husks.cli", "compare", str(site_a), str(site_b), "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        result = run_husks_cli("compare", str(site_a), str(site_b), "--json")
 
         assert result.returncode == 0, (
             f"compare should exit 0 for equivalent sites\n"
@@ -85,12 +82,7 @@ def test_compare_different_sites():
         build("demo", 10, node_b, site=str(site_b))
 
         # Run compare command
-        result = subprocess.run(
-            [sys.executable, "-m", "husks.cli", "compare", str(site_a), str(site_b), "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        result = run_husks_cli("compare", str(site_a), str(site_b), "--json")
 
         # Should exit non-zero for non-equivalent sites
         assert result.returncode != 0, (
@@ -127,12 +119,7 @@ def test_compare_three_sites():
             build("demo", 10, node, site=str(site))
 
         # Run compare command on all three
-        result = subprocess.run(
-            [sys.executable, "-m", "husks.cli", "compare"] + [str(s) for s in sites] + ["--json"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        result = run_husks_cli("compare", *[str(s) for s in sites], "--json")
 
         assert result.returncode == 0, "All three sites should be equivalent"
 
@@ -194,12 +181,7 @@ def test_compare_json_output_is_quiet():
 
 def test_compare_requires_at_least_two_sites():
     """husks compare requires at least 2 sites."""
-    result = subprocess.run(
-        [sys.executable, "-m", "husks.cli", "compare", "/tmp/site1", "--json"],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    result = run_husks_cli("compare", "/tmp/site1", "--json")
 
     # Should fail with usage error
     assert result.returncode != 0
@@ -227,12 +209,8 @@ def test_compare_roots_only_flag():
         build("demo", 10, node, site=str(site_a))
         build("demo", 10, node, site=str(site_b))
 
-        result = subprocess.run(
-            [sys.executable, "-m", "husks.cli", "compare", str(site_a), str(site_b),
-             "--roots-only", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        result = run_husks_cli(
+            "compare", str(site_a), str(site_b), "--roots-only", "--json"
         )
 
         assert result.returncode == 0
@@ -264,12 +242,8 @@ def test_compare_hashes_only_flag():
         build("demo", 10, node, site=str(site_a))
         build("demo", 10, node, site=str(site_b))
 
-        result = subprocess.run(
-            [sys.executable, "-m", "husks.cli", "compare", str(site_a), str(site_b),
-             "--hashes-only", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        result = run_husks_cli(
+            "compare", str(site_a), str(site_b), "--hashes-only", "--json"
         )
 
         assert result.returncode == 0

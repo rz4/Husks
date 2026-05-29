@@ -5,10 +5,10 @@ Deterministic seed design for three-machine beta testing.
 ## Purpose
 
 This example demonstrates Husks beta capabilities:
-- Portable seed design
-- Oracle-backed generation
-- Deterministic validation
-- Cross-machine reproducibility
+- Portable seed design with relative site_inputs
+- Oracle-backed generation with read-file and write-file tools
+- Deterministic validation (checks for "Paris" in live mode)
+- Cross-machine reproducibility via cache export/import
 
 ## Design Structure
 
@@ -16,8 +16,9 @@ This example demonstrates Husks beta capabilities:
 prompt.txt → [generate] → response.txt → [validate] → validation.txt
 ```
 
-**generate**: Oracle reads prompt, produces factual response
-**validate**: Python action verifies response is non-empty text
+**generate**: Oracle uses read-file and write-file tools to answer the question in prompt.txt
+
+**validate**: Python action checks response contains "Paris" (live mode) or is valid stub output (stub mode)
 
 ## Usage
 

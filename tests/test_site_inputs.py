@@ -9,12 +9,11 @@ Beta Gate A1: Make site_inputs work from JSON designs.
 
 import json
 import os
-import subprocess
-import sys
 import tempfile
 import shutil
 from pathlib import Path
 
+from conftest import run_husks_cli
 from husks.designs.ir import from_json, run, check
 
 
@@ -244,11 +243,7 @@ def test_site_inputs_cli_list_form():
         design_path.write_text(json.dumps(design, indent=2))
 
         # Run via CLI
-        cmd = [
-            sys.executable, "-m", "husks.cli", "run",
-            str(design_path), "--site", str(site), "--stub",
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = run_husks_cli("run", str(design_path), "--site", str(site), "--stub")
 
         # Verify CLI succeeded
         assert result.returncode == 0, (
@@ -303,11 +298,7 @@ def test_site_inputs_cli_dict_form():
         design_path.write_text(json.dumps(design, indent=2))
 
         # Run via CLI
-        cmd = [
-            sys.executable, "-m", "husks.cli", "run",
-            str(design_path), "--site", str(site), "--stub",
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = run_husks_cli("run", str(design_path), "--site", str(site), "--stub")
 
         # Verify CLI succeeded
         assert result.returncode == 0, (
@@ -350,3 +341,104 @@ def test_site_inputs_not_children():
     node = terminals[0]
     assert node.get("inputs") == ["external.txt"]
     assert node.get("children") == [], "site_inputs should not create child dependencies"
+
+
+def test_site_inputs_relative_path_resolution():
+    """Beta Gate A1/A2: Relative site_inputs resolve against design file directory."""
+    tmpdir = tempfile.mkdtemp(prefix="relative-site-inputs-")
+    try:
+        # Create design directory with design.json and input file together
+        design_dir = Path(tmpdir) / "project"
+        design_dir.mkdir()
+
+        # Create the input file next to design.json
+        (design_dir / "input.txt").write_text("design-local content\n")
+
+        # Create design with relative site_inputs
+        design_path = design_dir / "design.json"
+        design = {
+            "name": "relative-test",
+            "fuel": 10,
+            "target": "process",
+            "site_inputs": ["input.txt"],  # Relative path
+            "rules": [
+                {
+                    "name": "process",
+                    "kind": "action",
+                    "inputs": ["input.txt"],
+                    "outputs": ["output.txt"],
+                    "run": "cp input.txt output.txt",
+                },
+            ],
+        }
+        design_path.write_text(json.dumps(design, indent=2))
+
+        # Create clean site directory in a different location
+        site = Path(tmpdir) / "clean-site"
+        site.mkdir()
+
+        # Run via CLI - the relative input should be resolved against design_dir
+        result = run_husks_cli("run", str(design_path), "--site", str(site), "--stub")
+
+        # Verify CLI succeeded
+        assert result.returncode == 0, (
+            f"CLI should exit 0, got {result.returncode}\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+        # Verify the input was symlinked from the design directory
+        assert (site / "input.txt").is_symlink(), "input.txt should be symlinked"
+        assert (site / "input.txt").resolve() == (design_dir / "input.txt").resolve(), (
+            "input.txt should point to design_dir/input.txt"
+        )
+
+        # Verify the rule could read the input
+        output = (site / "output.txt").read_text()
+        assert "design-local content" in output
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_site_inputs_missing_file_fails():
+    """Beta Gate A2: Missing declared site_inputs fail before execution."""
+    tmpdir = tempfile.mkdtemp(prefix="missing-site-inputs-")
+    try:
+        # Create design that references a non-existent file
+        design_dir = Path(tmpdir) / "project"
+        design_dir.mkdir()
+
+        design_path = design_dir / "design.json"
+        design = {
+            "name": "missing-test",
+            "fuel": 10,
+            "target": "process",
+            "site_inputs": ["missing.txt"],  # File does not exist
+            "rules": [
+                {
+                    "name": "process",
+                    "kind": "action",
+                    "inputs": ["missing.txt"],
+                    "outputs": ["output.txt"],
+                },
+            ],
+        }
+        design_path.write_text(json.dumps(design, indent=2))
+
+        site = Path(tmpdir) / "site"
+        site.mkdir()
+
+        # Run via CLI - should fail with clear error
+        result = run_husks_cli("run", str(design_path), "--site", str(site), "--stub")
+
+        # Should exit non-zero
+        assert result.returncode != 0, (
+            f"CLI should fail for missing site_input, got exit {result.returncode}"
+        )
+
+        # Error message should mention the missing file
+        error_output = result.stdout + result.stderr
+        assert "missing.txt" in error_output.lower() or "does not exist" in error_output.lower()
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)

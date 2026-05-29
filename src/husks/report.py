@@ -398,3 +398,176 @@ def render_concise(report: dict) -> str:
 def render_json(report: dict) -> str:
     """Render the Report as pretty-printed JSON."""
     return json.dumps(report, indent=2)
+
+
+def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
+    """Validate a Report dict against the beta contract (Beta Gate G3).
+
+    The beta report contract defines the expected structure for `husks run --json`
+    output. This function checks that all required fields are present and have
+    the expected types.
+
+    Beta Report Schema
+    ------------------
+    - status: str - "committed" or "halted"
+    - root: str | None - build root hash (or None if not committed)
+    - run_id: str - unique run identifier
+    - build: str - design name
+    - site: str - site directory path
+    - elapsed_s: float - build elapsed time in seconds
+    - fuel: dict - fuel budget tracking
+        - start: int - initial fuel
+        - end: int - remaining fuel
+    - cost: dict - oracle cost tracking (Beta Gate D6)
+        - paid: float - cost paid in this run
+        - reused: float - cost saved from cache reuse
+        - projected: float - total cost if no cache
+    - delta: dict - change summary
+        - changed: list[str] - rules with changed outputs
+        - new: list[str] - newly fired rules
+        - unchanged: list[str] - rules with unchanged outputs
+    - nodes: list[dict] - per-rule details
+        - name: str - rule name
+        - kind: str - "oracle", "trial", or "action"
+        - state: str - "fired", "sealed", or "failed"
+        - classification: str - convergence classification
+        - prompt_len: int | None - prompt length for oracle rules
+        - prompt_trend: str | None - prompt evolution trend
+        - fuel_consumed: int | None - fuel used by this rule
+        - fuel_trend: str | None - fuel evolution trend
+        - output_hashes: list[str] - content hashes of outputs
+        - output_changed: bool - whether outputs changed vs prior run
+        - cost: dict - oracle cost for this node
+            - this_run: float - cost paid in this run
+            - first_paid: float | None - cost in first run
+            - per_rerun: float | None - cost in most recent run
+        - cached: bool - whether oracle output came from cache (Beta Gate D6)
+        - tokens: dict - token usage (Beta Gate D6)
+            - input: int - input tokens
+            - output: int - output tokens
+        - seal: dict | None - seal information
+            - hash: str - seal hash
+            - recipe_changed: bool - whether recipe changed vs prior run
+        - diagnosis: dict | None - present only if state == "failed"
+            - error: str - error message
+            - stale_reason: str - why rule was stale
+    - diagnosis: dict | None - present only if status == "halted"
+        - error: str - build-level error message
+        - failed_nodes: list[str] - names of failed rules
+
+    Parameters
+    ----------
+    report : dict
+        The Report dict to validate
+
+    Returns
+    -------
+    tuple[bool, list[str]]
+        (valid, errors) where valid is True if schema is valid,
+        and errors is a list of validation error messages
+    """
+    errors = []
+
+    # Top-level required fields
+    required_top = {
+        "status": str,
+        "root": (str, type(None)),
+        "run_id": str,
+        "build": str,
+        "site": str,
+        "elapsed_s": (int, float),
+        "fuel": dict,
+        "cost": dict,
+        "delta": dict,
+        "nodes": list,
+    }
+
+    for field, expected_type in required_top.items():
+        if field not in report:
+            errors.append(f"missing required field: {field}")
+        elif not isinstance(report.get(field), expected_type):
+            errors.append(
+                f"field '{field}' has wrong type: "
+                f"expected {expected_type}, got {type(report.get(field))}"
+            )
+
+    # Validate fuel dict
+    if "fuel" in report and isinstance(report["fuel"], dict):
+        for field in ["start", "end"]:
+            if field not in report["fuel"]:
+                errors.append(f"fuel.{field} missing")
+            elif not isinstance(report["fuel"][field], int):
+                errors.append(f"fuel.{field} must be int")
+
+    # Validate cost dict (Beta Gate D6)
+    if "cost" in report and isinstance(report["cost"], dict):
+        for field in ["paid", "reused", "projected"]:
+            if field not in report["cost"]:
+                errors.append(f"cost.{field} missing")
+            elif not isinstance(report["cost"][field], (int, float)):
+                errors.append(f"cost.{field} must be numeric")
+
+    # Validate delta dict
+    if "delta" in report and isinstance(report["delta"], dict):
+        for field in ["changed", "new", "unchanged"]:
+            if field not in report["delta"]:
+                errors.append(f"delta.{field} missing")
+            elif not isinstance(report["delta"][field], list):
+                errors.append(f"delta.{field} must be list")
+
+    # Validate nodes list
+    if "nodes" in report and isinstance(report["nodes"], list):
+        for i, node in enumerate(report["nodes"]):
+            if not isinstance(node, dict):
+                errors.append(f"nodes[{i}] must be dict")
+                continue
+
+            # Node required fields
+            node_required = {
+                "name": str,
+                "kind": str,
+                "state": str,
+                "classification": str,
+                "prompt_len": (int, type(None)),
+                "prompt_trend": (str, type(None)),
+                "fuel_consumed": (int, type(None)),
+                "fuel_trend": (str, type(None)),
+                "output_hashes": list,
+                "output_changed": bool,
+                "cost": dict,
+                "cached": bool,
+                "tokens": dict,
+                "seal": (dict, type(None)),
+            }
+
+            for field, expected_type in node_required.items():
+                if field not in node:
+                    errors.append(f"nodes[{i}].{field} missing")
+                elif not isinstance(node.get(field), expected_type):
+                    errors.append(
+                        f"nodes[{i}].{field} has wrong type: "
+                        f"expected {expected_type}, got {type(node.get(field))}"
+                    )
+
+            # Validate node.cost dict
+            if "cost" in node and isinstance(node["cost"], dict):
+                for field in ["this_run", "first_paid", "per_rerun"]:
+                    if field not in node["cost"]:
+                        errors.append(f"nodes[{i}].cost.{field} missing")
+
+            # Validate node.tokens dict (Beta Gate D6)
+            if "tokens" in node and isinstance(node["tokens"], dict):
+                for field in ["input", "output"]:
+                    if field not in node["tokens"]:
+                        errors.append(f"nodes[{i}].tokens.{field} missing")
+
+    # Validate diagnosis if halted
+    if report.get("status") == "halted":
+        if "diagnosis" not in report:
+            errors.append("status is 'halted' but diagnosis is missing")
+        elif isinstance(report["diagnosis"], dict):
+            for field in ["error", "failed_nodes"]:
+                if field not in report["diagnosis"]:
+                    errors.append(f"diagnosis.{field} missing")
+
+    return (len(errors) == 0, errors)

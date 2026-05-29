@@ -9,16 +9,16 @@
       "kind": "oracle",
       "inputs": ["prompt.txt"],
       "outputs": ["response.txt"],
-      "prompt": "Read the prompt from input and generate a brief, factual response.",
-      "tools": [],
-      "fuel": 8
+      "prompt": "Read the file 'prompt.txt' using read-file tool. Answer the question you find there with a brief, factual response. Write your answer to 'response.txt' using write-file tool.",
+      "tools": ["read-file", "write-file"],
+      "fuel": 10
     },
     {
       "name": "validate",
       "kind": "action",
       "inputs": ["response.txt"],
       "outputs": ["validation.txt"],
-      "run": "python3 -c \"text = open('response.txt').read(); valid = len(text.strip()) > 0; open('validation.txt', 'w').write('PASS\\\\n' if valid else 'FAIL\\\\n')\""
+      "run": "python3 -c \"text = open('response.txt').read(); valid = 'Paris' in text or (('Stub output' in text or 'oracle output' in text) and len(text.strip()) > 0); open('validation.txt', 'w').write('PASS\\\\n' if valid else 'FAIL\\\\n')\""
     }
   ]
 }

@@ -18,19 +18,28 @@ from conftest import run_husks_cli
 
 
 def test_three_machine_cli_acceptance_stub():
-    """CLI three-machine acceptance using stub oracle (G1).
+    """CLI three-machine acceptance using stub oracle (G1/G3).
 
     This is the primary beta acceptance test. All three machines use
-    CLI commands only (no direct Python API calls).
+    CLI commands only (no direct Python API calls). Also validates
+    that all reports conform to the beta report schema (Beta Gate G3).
     """
+    from husks.report import validate_report_schema
+
     tmpdir = tempfile.mkdtemp(prefix="cli-three-machine-")
     try:
         # Use beta seed example
         beta_seed_dir = Path(__file__).parent.parent / "examples" / "beta_seed"
         assert beta_seed_dir.exists(), f"Beta seed not found: {beta_seed_dir}"
 
+        # Beta Gate E7: File inventory guard - verify expected seed files exist
         design_path = beta_seed_dir / "design.json"
         prompt_path = beta_seed_dir / "prompt.txt"
+        readme_path = beta_seed_dir / "README.md"
+
+        assert design_path.exists(), f"design.json not found: {design_path}"
+        assert prompt_path.exists(), f"prompt.txt not found: {prompt_path}"
+        assert readme_path.exists(), f"README.md not found: {readme_path}"
 
         # ──────────────────────────────────────────────────────────
         # Machine 1: Original realization with empty cache
@@ -40,9 +49,7 @@ def test_three_machine_cli_acceptance_stub():
         m1_site = m1_dir / "site"
         m1_site.mkdir()
 
-        # Copy site input
-        shutil.copy(prompt_path, m1_site / "prompt.txt")
-
+        # Beta Gate A1/E3: No manual input copying - site_inputs resolve automatically
         # Run with stub oracle
         m1_result = run_husks_cli(
             "run", str(design_path),
@@ -58,6 +65,11 @@ def test_three_machine_cli_acceptance_stub():
         )
 
         m1_report = json.loads(m1_result.stdout)
+
+        # Beta Gate G3: Validate report schema
+        valid, errors = validate_report_schema(m1_report)
+        assert valid, f"M1 report schema validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+
         assert m1_report["status"] == "committed", "M1 should commit"
 
         # M1 should have paid oracle cost (stub reports non-zero)
@@ -80,7 +92,7 @@ def test_three_machine_cli_acceptance_stub():
         cache_file = Path(tmpdir) / "cache.tar.gz"
 
         export_result = run_husks_cli(
-            "cache-export", str(cache_file),
+            "cache", "export", str(cache_file),
             "--site", str(m1_site),
             "--json",
         )
@@ -103,12 +115,10 @@ def test_three_machine_cli_acceptance_stub():
         m2_site = m2_dir / "site"
         m2_site.mkdir()
 
-        # Copy site input
-        shutil.copy(prompt_path, m2_site / "prompt.txt")
-
+        # Beta Gate A1/E3: No manual input copying - site_inputs resolve automatically
         # Import cache
         import_result = run_husks_cli(
-            "cache-import", str(cache_file),
+            "cache", "import", str(cache_file),
             "--site", str(m2_site),
             "--json",
         )
@@ -122,11 +132,11 @@ def test_three_machine_cli_acceptance_stub():
         assert import_report["status"] == "imported", "Import should report success"
         assert import_report["entries"] > 0, "Should import at least one cache entry"
 
-        # Run (should use cache)
+        # Run with reuse-only (Beta Gate G2/D6)
         m2_result = run_husks_cli(
             "run", str(design_path),
             "--site", str(m2_site),
-            "--stub",
+            "--reuse-only",
             "--json",
             cwd=str(m2_dir),
         )
@@ -137,6 +147,11 @@ def test_three_machine_cli_acceptance_stub():
         )
 
         m2_report = json.loads(m2_result.stdout)
+
+        # Beta Gate G3: Validate report schema
+        valid, errors = validate_report_schema(m2_report)
+        assert valid, f"M2 report schema validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+
         assert m2_report["status"] == "committed", "M2 should commit"
 
         # M2 should have ZERO oracle cost (cache hit)
@@ -154,9 +169,7 @@ def test_three_machine_cli_acceptance_stub():
         m3_site = m3_dir / "site"
         m3_site.mkdir()
 
-        # Copy site input
-        shutil.copy(prompt_path, m3_site / "prompt.txt")
-
+        # Beta Gate A1/E3: No manual input copying - site_inputs resolve automatically
         # Run with stub oracle (empty cache, independent)
         m3_result = run_husks_cli(
             "run", str(design_path),
@@ -172,6 +185,11 @@ def test_three_machine_cli_acceptance_stub():
         )
 
         m3_report = json.loads(m3_result.stdout)
+
+        # Beta Gate G3: Validate report schema
+        valid, errors = validate_report_schema(m3_report)
+        assert valid, f"M3 report schema validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+
         assert m3_report["status"] == "committed", "M3 should commit"
 
         # M3 should have paid oracle cost (comparable to M1)
@@ -216,11 +234,13 @@ def test_three_machine_cli_acceptance_stub():
 
 
 def test_cli_json_contracts():
-    """Verify JSON contracts for acceptance commands (G2).
+    """Verify JSON contracts for acceptance commands (G2/G3).
 
     Tests that run --json, compare --json produce valid, parseable JSON
-    with no console noise.
+    with no console noise and conform to the beta report schema.
     """
+    from husks.report import validate_report_schema
+
     tmpdir = tempfile.mkdtemp(prefix="json-contracts-")
     try:
         # Create minimal design
@@ -240,17 +260,23 @@ def test_cli_json_contracts():
         site = Path(tmpdir) / "site"
         site.mkdir()
 
-        # Test run --json
+        # Test run --json contract (Beta Gate G3)
         result = run_husks_cli("run", str(design_file), "--site", str(site), "--json")
         assert result.returncode == 0
 
-        # Should be valid JSON
+        # Should be valid JSON conforming to beta report schema
         report = json.loads(result.stdout)
-        assert "status" in report
-        assert "cost" in report
-        assert "nodes" in report
+        valid, errors = validate_report_schema(report)
+        assert valid, f"Report schema validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
 
-        # Test compare --json
+        # Verify core fields
+        assert report["status"] == "committed"
+        assert report["cost"]["paid"] == 0.0  # action rule, no oracle cost
+        assert len(report["nodes"]) == 1
+        assert report["nodes"][0]["name"] == "out"
+        assert report["nodes"][0]["kind"] == "action"
+
+        # Test compare --json contract
         site2 = Path(tmpdir) / "site2"
         site2.mkdir()
         run_husks_cli("run", str(design_file), "--site", str(site2), "--json")
@@ -258,9 +284,15 @@ def test_cli_json_contracts():
         cmp_result = run_husks_cli("compare", str(site), str(site2), "--json")
         assert cmp_result.returncode == 0
 
+        # Compare contract: equivalent + comparisons
         comparison = json.loads(cmp_result.stdout)
         assert "equivalent" in comparison
         assert "comparisons" in comparison
+        assert isinstance(comparison["equivalent"], bool)
+        assert isinstance(comparison["comparisons"], list)
+
+        # For this case, sites should be equivalent
+        assert comparison["equivalent"] is True
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

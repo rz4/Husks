@@ -57,15 +57,47 @@ def run_husks_cli(*args, cwd=None, timeout=30, check=False):
     --------
     >>> result = run_husks_cli("init", tmpdir)
     >>> result = run_husks_cli("run", "design.json", "--json", cwd=tmpdir)
-    >>> result = run_husks_cli("compare", "site1", "site2", "--json")
+    >>> result = run_husks_cli("cache", "export", "--output", "cache.tgz", "--json")
     """
+    # Set absolute PYTHONPATH to include src/ directory
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    src_path = os.path.join(repo_root, "src")
+
+    env = os.environ.copy()
+    if "PYTHONPATH" in env:
+        env["PYTHONPATH"] = f"{src_path}{os.pathsep}{env['PYTHONPATH']}"
+    else:
+        env["PYTHONPATH"] = src_path
+
     cmd = [sys.executable, "-m", "husks.cli"] + list(args)
-    result = subprocess.run(
-        cmd,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=check,
-    )
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=check,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as e:
+        # Add useful context to timeout failures
+        raise AssertionError(
+            f"Command timed out after {timeout}s\n"
+            f"Command: {' '.join(cmd)}\n"
+            f"cwd: {cwd}\n"
+            f"stdout: {e.stdout}\n"
+            f"stderr: {e.stderr}"
+        ) from e
+    except subprocess.CalledProcessError as e:
+        # Add useful context to check=True failures
+        raise AssertionError(
+            f"Command failed with exit code {e.returncode}\n"
+            f"Command: {' '.join(cmd)}\n"
+            f"cwd: {cwd}\n"
+            f"stdout: {e.stdout}\n"
+            f"stderr: {e.stderr}"
+        ) from e
+
     return result

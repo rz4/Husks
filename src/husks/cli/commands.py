@@ -596,7 +596,9 @@ def _cmd_doctor(args):
         _doctor_live(args)
         return
 
-    # Default: environment checks
+    # Default: core environment checks (Beta Gate G5)
+    # Only checks things that work without external dependencies.
+    # Use --live for oracle readiness checks.
     checks: list[dict] = []
 
     # 1. husks import
@@ -616,7 +618,7 @@ def _cmd_doctor(args):
     except Exception as ex:
         checks.append({"name": "conformance", "ok": False, "detail": str(ex)})
 
-    # 3. selftest
+    # 3. selftest (core deterministic verification)
     try:
         from husks.setup import selftest
         ok = selftest(verbose=False)
@@ -625,42 +627,14 @@ def _cmd_doctor(args):
     except Exception as ex:
         checks.append({"name": "selftest", "ok": False, "detail": str(ex)})
 
-    # 4. hy
+    # 4. hy (optional dependency)
     try:
         import hy  # noqa: F401
         checks.append({"name": "hy", "ok": True, "detail": "importable"})
     except ImportError:
         checks.append({"name": "hy", "ok": None, "detail": "not installed (optional)"})
 
-    # 5. litellm
-    try:
-        import litellm  # noqa: F401
-        checks.append({"name": "litellm", "ok": True, "detail": "importable"})
-    except ImportError:
-        checks.append({"name": "litellm", "ok": False,
-                        "detail": "not installed (required for live oracle)"})
-
-    # 6. ANTHROPIC_API_KEY
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if key:
-        checks.append({"name": "ANTHROPIC_API_KEY", "ok": True,
-                        "detail": f"set ({key[:4]}...)"})
-    else:
-        checks.append({"name": "ANTHROPIC_API_KEY", "ok": None,
-                        "detail": "not set (needed for live runs)"})
-
-    # 7. git
-    if shutil.which("git"):
-        checks.append({"name": "git", "ok": True, "detail": "found"})
-    else:
-        checks.append({"name": "git", "ok": None, "detail": "not found (optional)"})
-
-    # 8. node
-    if shutil.which("node"):
-        checks.append({"name": "node", "ok": True, "detail": "found"})
-    else:
-        checks.append({"name": "node", "ok": None,
-                        "detail": "not found (needed for JS cross-check)"})
+    # Note: litellm, API key, git, node moved to --live mode (Beta Gate G5)
 
     if args.json_output:
         print(json.dumps({"checks": checks}, indent=2))
@@ -700,10 +674,18 @@ def _doctor_conformance(args):
 
 
 def _doctor_live(args):
-    """Check live oracle readiness (API key + test call)."""
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    """Check live oracle readiness (Beta Gate G5).
+
+    Tests all dependencies and services needed for live oracle runs:
+    - API key configuration
+    - litellm library
+    - Live oracle ping test
+    - Optional dev tools (git, node)
+    """
     checks = []
 
+    # 1. ANTHROPIC_API_KEY
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
     if key:
         checks.append({"name": "ANTHROPIC_API_KEY", "ok": True,
                         "detail": f"set ({key[:4]}...)"})
@@ -711,12 +693,14 @@ def _doctor_live(args):
         checks.append({"name": "ANTHROPIC_API_KEY", "ok": False,
                         "detail": "not set"})
 
+    # 2. litellm library
     try:
         import litellm  # noqa: F401
         checks.append({"name": "litellm", "ok": True, "detail": "importable"})
     except ImportError:
         checks.append({"name": "litellm", "ok": False, "detail": "not installed"})
 
+    # 3. Live oracle ping (only if key is set)
     if key:
         try:
             from litellm import completion
@@ -728,6 +712,19 @@ def _doctor_live(args):
             checks.append({"name": "oracle ping", "ok": True, "detail": "responded"})
         except Exception as ex:
             checks.append({"name": "oracle ping", "ok": False, "detail": str(ex)})
+
+    # 4. git (optional dev tool)
+    if shutil.which("git"):
+        checks.append({"name": "git", "ok": True, "detail": "found"})
+    else:
+        checks.append({"name": "git", "ok": None, "detail": "not found (optional)"})
+
+    # 5. node (optional for JS cross-check)
+    if shutil.which("node"):
+        checks.append({"name": "node", "ok": True, "detail": "found"})
+    else:
+        checks.append({"name": "node", "ok": None,
+                        "detail": "not found (needed for JS cross-check)"})
 
     if args.json_output:
         print(json.dumps({"checks": checks}, indent=2))
