@@ -208,8 +208,12 @@ def append_history(
     satisfaction: bool | None = None,
     cost_usd: float | None = None,
     recipe_digest_hex: str | None = None,
+    cached: bool = False,
 ) -> None:
-    """Append one convergence record to the rule's history log."""
+    """Append one convergence record to the rule's history log.
+
+    Beta Gate D5: Records cache reuse via the 'cached' field.
+    """
     prompt_length: int | None = None
     if recipe and recipe.get("type") == "oracle":
         prompt_length = len(recipe.get("prompt", ""))
@@ -231,6 +235,7 @@ def append_history(
         "output_hashes": output_hashes(S, outputs),
         "cost_usd": cost_usd,
         "recipe_digest": recipe_digest_hex,
+        "cached": cached,
     }
     hp = history_file(S, rule_name)
     ensure_dir(str(Path(hp).parent))

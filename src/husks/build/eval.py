@@ -346,20 +346,33 @@ def eval_rule(S: Store, node: Node) -> None:
         # After promotion: seal the outputs
         write_seal(S, name, inputs, recipe, outputs=outputs)
 
+        # Beta Gate D2: Cache oracle outputs after promotion (if cache miss)
+        if (recipe is not None and
+            recipe.get("type") == "oracle" and
+            not S.get("cache-disabled") and
+            usage and not usage.get("cached")):
+            from husks.build.cache import cache_put
+            output_contents = {o: read_text(site_path(S, o)) for o in outputs}
+            cache_put(S, recipe, inputs, output_contents)
+
         fuel_consumed = 1
         if usage and usage.get("fuel_steps", 0):
             fuel_consumed = usage["fuel_steps"]
 
-        # Compute recipe digest and extract cost for history record
+        # Compute recipe digest and extract cost/cache status for history record
         rd_hex: str | None = None
         if recipe is not None:
             rd_hex = recipe_digest(recipe_to_cse(recipe))
         cost: float | None = None
-        if usage and "cost_usd" in usage:
-            cost = usage["cost_usd"]
+        cached: bool = False
+        if usage:
+            if "cost_usd" in usage:
+                cost = usage["cost_usd"]
+            if "cached" in usage:
+                cached = usage["cached"]
 
         append_history(S, name, recipe, outputs, fuel_consumed=fuel_consumed,
-                       cost_usd=cost, recipe_digest_hex=rd_hex)
+                       cost_usd=cost, recipe_digest_hex=rd_hex, cached=cached)
         S["trace"].append({"event": "fired", "rule": name, "outputs": outputs})
         T.rule_done(name, outputs=outputs, output_hashes=output_hashes(S, outputs))
     except Stop:
@@ -384,7 +397,7 @@ def eval_recipe(
         recipe["fn"](S, *recipe.get("args", ()))
         return None
     if kind == "oracle":
-        return eval_oracle(S, rule_name, recipe, outputs)
+        return eval_oracle(S, rule_name, recipe, inputs, outputs)
     if kind == "trial":
         eval_trial(S, rule_name, recipe, outputs)
         return None
@@ -413,16 +426,39 @@ def eval_oracle(
     S: Store,
     rule_name: str,
     recipe: dict[str, Any],
+    inputs: list[str],
     outputs: list[str],
 ) -> dict[str, Any]:
     """Evaluate an oracle recipe.  Returns usage dict."""
+    from husks.build.cache import cache_get
+
     oname: str = recipe.get("name") or "oracle"
     T.oracle_start(rule_name, oname, recipe.get("prompt"))
     t0 = time.time()
-    backend: OracleBackend = S.get("oracle-backend") or default_oracle_backend
-    usage = backend(S, rule_name, recipe, outputs)
-    elapsed = time.time() - t0
-    u = usage or {}
+
+    # Beta Gate D2: Check cache before executing oracle
+    cached = cache_get(S, recipe, inputs) if not S.get("cache-disabled") else None
+
+    if cached is not None:
+        # Cache hit - write cached outputs to staging
+        for o, content in cached.items():
+            write_text(site_path(S, o, write=True), content)
+        elapsed = time.time() - t0
+        # Return usage dict indicating cache reuse (no cost, no tokens)
+        u = {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "fuel_steps": 1, "cached": True}
+    else:
+        # Cache miss
+        # Beta Gate D4: Reuse-only mode rejects oracle execution
+        if S.get("cache-reuse-only"):
+            raise RuntimeError(
+                f"oracle '{rule_name}' requires execution but cache-reuse-only mode is enabled "
+                f"(no cached result available for current recipe + inputs)"
+            )
+        # Execute oracle backend
+        backend: OracleBackend = S.get("oracle-backend") or default_oracle_backend
+        usage = backend(S, rule_name, recipe, outputs)
+        elapsed = time.time() - t0
+        u = usage or {}
 
     # Accumulate usage in Store
     cost_usd = u.get("cost_usd", 0.0)

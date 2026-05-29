@@ -201,7 +201,7 @@ def test_trial_action_branch_uses_store_usage():
             from husks.build import write_text, site_path
             # Call oracle directly - usage accumulates in S["usage"]
             oracle_recipe = oracle(prompt="Test oracle", fuel=5)
-            eval_oracle(S, "nested-oracle", oracle_recipe, ["result.txt"])
+            eval_oracle(S, "nested-oracle", oracle_recipe, [], ["result.txt"])
 
         # Trial with one action branch
         branch = action(action_with_oracle)
