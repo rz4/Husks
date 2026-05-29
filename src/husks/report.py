@@ -227,6 +227,22 @@ def assemble(
         else:
             unchanged.append(name)
 
+    # Task 3 (New): Calculate oracle evidence for three-machine proof validation
+    # Count oracle calls (nodes that fired in this run) and cache hits (cached nodes)
+    oracle_calls = 0
+    cache_hits = 0
+    cached_node_names: list[str] = []
+
+    for nd in nodes:
+        if nd.get("kind") == "oracle":
+            # Oracle fired in this run (paid cost)
+            if nd.get("state") == "fired" and nd.get("cost", {}).get("this_run", 0) > 0:
+                oracle_calls += 1
+            # Oracle reused from cache (explicit cached=True flag)
+            elif nd.get("cached") is True:
+                cache_hits += 1
+                cached_node_names.append(nd["name"])
+
     # -- Build-level diagnosis --
     report: dict[str, Any] = {
         "schema_version": "beta-1",  # Task 9: Stabilized beta report contract
@@ -242,8 +258,9 @@ def assemble(
         },
         "cost": {
             "paid": round(cost_paid, 6),
-            "reused": round(cost_reused, 6),
-            "projected": round(cost_projected, 6),
+            # Task 7 (New): Renamed to clarify these are non-authoritative estimates
+            "reused_estimate": round(cost_reused, 6),
+            "projected_estimate": round(cost_projected, 6),
         },
         "delta": {
             "changed": changed,
@@ -251,6 +268,10 @@ def assemble(
             "unchanged": unchanged,
         },
         "nodes": nodes,
+        # Task 3 (New): Include oracle evidence for three-machine proof validation
+        "oracle_calls": oracle_calls,
+        "cache_hits": cache_hits,
+        "cached_nodes": cached_node_names,
     }
 
     if store["status"] == "halted":
@@ -277,10 +298,13 @@ def render_text(report: dict) -> str:
     lines.append(f"fuel:     {report['fuel']['end']} / {report['fuel']['start']}")
 
     cost = report["cost"]
+    # Task 7 (New): Use renamed estimate fields
+    reused = cost.get('reused_estimate', cost.get('reused', 0.0))  # Backward compat
+    projected = cost.get('projected_estimate', cost.get('projected', 0.0))
     lines.append(
         f"cost:     ${cost['paid']:.4f} paid  "
-        f"${cost['reused']:.4f} reused  "
-        f"${cost['projected']:.4f} projected"
+        f"${reused:.4f} reused  "
+        f"${projected:.4f} projected"
     )
 
     # Delta
@@ -428,13 +452,13 @@ def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
         - end: int - remaining fuel
     - cost: dict - oracle cost tracking (Beta Gate D6)
         - paid: float - cost paid in this run (authoritative)
-        - reused: float - estimated cost saved from cache reuse (non-authoritative)
-        - projected: float - estimated total cost if no cache (non-authoritative)
+        - reused_estimate: float - estimated cost saved from cache reuse (non-authoritative)
+        - projected_estimate: float - estimated total cost if no cache (non-authoritative)
 
-        NOTE (Task 4): cost.reused and cost.projected are LOCAL ESTIMATES based on
-        same-site history. For imported cache without cost provenance metadata, these
-        will be 0. They are NOT part of seal identity and should not be used as
-        authoritative proof of cache savings. Use cache_hits and cached_nodes fields
+        NOTE (Task 7 - New): cost.reused_estimate and cost.projected_estimate are LOCAL
+        ESTIMATES based on same-site history. For imported cache without cost provenance
+        metadata, these will be 0. They are NOT part of seal identity and should not be
+        used as authoritative proof of cache savings. Use cache_hits and cached_nodes fields
         for authoritative cache reuse evidence.
     - delta: dict - change summary
         - changed: list[str] - rules with changed outputs
@@ -522,13 +546,32 @@ def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
             elif not isinstance(report["fuel"][field], int):
                 errors.append(f"fuel.{field} must be int")
 
-    # Validate cost dict (Beta Gate D6)
+    # Validate cost dict (Beta Gate D6, Task 7 - New)
     if "cost" in report and isinstance(report["cost"], dict):
-        for field in ["paid", "reused", "projected"]:
-            if field not in report["cost"]:
-                errors.append(f"cost.{field} missing")
-            elif not isinstance(report["cost"][field], (int, float)):
-                errors.append(f"cost.{field} must be numeric")
+        # Task 7 (New): Support both old and new field names for backward compatibility
+        cost = report["cost"]
+
+        # paid is always required
+        if "paid" not in cost:
+            errors.append("cost.paid missing")
+        elif not isinstance(cost["paid"], (int, float)):
+            errors.append("cost.paid must be numeric")
+
+        # reused_estimate (or old 'reused') is required
+        if "reused_estimate" not in cost and "reused" not in cost:
+            errors.append("cost.reused_estimate (or cost.reused) missing")
+        else:
+            val = cost.get("reused_estimate", cost.get("reused"))
+            if not isinstance(val, (int, float)):
+                errors.append("cost.reused_estimate must be numeric")
+
+        # projected_estimate (or old 'projected') is required
+        if "projected_estimate" not in cost and "projected" not in cost:
+            errors.append("cost.projected_estimate (or cost.projected) missing")
+        else:
+            val = cost.get("projected_estimate", cost.get("projected"))
+            if not isinstance(val, (int, float)):
+                errors.append("cost.projected_estimate must be numeric")
 
     # Validate delta dict
     if "delta" in report and isinstance(report["delta"], dict):

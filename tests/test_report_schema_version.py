@@ -71,7 +71,8 @@ def test_schema_validation_requires_version():
         "site": "/tmp/test",
         "elapsed_s": 1.0,
         "fuel": {"start": 10, "end": 8},
-        "cost": {"paid": 0.0, "reused": 0.0, "projected": 0.0},
+        # Task 7 (New): Use renamed estimate fields
+        "cost": {"paid": 0.0, "reused_estimate": 0.0, "projected_estimate": 0.0},
         "delta": {"changed": [], "new": [], "unchanged": []},
         "nodes": [],
     }
@@ -95,7 +96,8 @@ def test_schema_validation_rejects_wrong_version():
         "site": "/tmp/test",
         "elapsed_s": 1.0,
         "fuel": {"start": 10, "end": 8},
-        "cost": {"paid": 0.0, "reused": 0.0, "projected": 0.0},
+        # Task 7 (New): Use renamed estimate fields
+        "cost": {"paid": 0.0, "reused_estimate": 0.0, "projected_estimate": 0.0},
         "delta": {"changed": [], "new": [], "unchanged": []},
         "nodes": [],
     }
@@ -120,7 +122,8 @@ def test_schema_version_appears_in_text_output():
         "site": "/tmp/test",
         "elapsed_s": 1.234,
         "fuel": {"start": 10, "end": 8},
-        "cost": {"paid": 0.0012, "reused": 0.0, "projected": 0.0012},
+        # Task 7 (New): Use renamed estimate fields
+        "cost": {"paid": 0.0012, "reused_estimate": 0.0, "projected_estimate": 0.0012},
         "delta": {"changed": [], "new": ["out"], "unchanged": []},
         "nodes": [{
             "name": "out",

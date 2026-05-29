@@ -34,7 +34,7 @@ husks run design.json --site m1-site --json > m1-report.json
 ### Machine 2: Cache reuse
 ```bash
 # Export cache from Machine 1
-husks cache export m1-site/.cache cache.tar.gz
+husks cache export cache.tar.gz --site m1-site
 
 # Import and reuse
 husks cache import cache.tar.gz --site m2-site

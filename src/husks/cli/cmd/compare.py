@@ -100,9 +100,9 @@ def _cmd_compare_runs(args):
     Task 1/2/3: Hardened to require explicit cache reuse evidence in M2
     (cached=true flag), not just zero cost. Reports must pass schema validation.
 
-    Task 4: Does NOT rely on cost.reused/projected fields (non-authoritative
-    estimates). Uses authoritative fields: paid_cost, oracle_calls, cache_hits,
-    cached_nodes.
+    Task 4/7 (New): Does NOT rely on cost.reused_estimate/projected_estimate fields
+    (non-authoritative estimates). Uses authoritative fields: paid_cost, oracle_calls,
+    cache_hits, cached_nodes.
     """
     from husks.report import validate_report_schema
 
@@ -161,6 +161,28 @@ def _cmd_compare_runs(args):
                 print(f"error: invalid JSON in {path}: {e}", file=sys.stderr)
             sys.exit(EXIT_USAGE)
 
+    # Task 1 (New Task): Validate all reports have status == "committed"
+    # CRITICAL: compare-runs should reject halted/error runs
+    for i, r in enumerate(reports):
+        status = r["data"].get("status")
+        if status != "committed":
+            if args.json_output:
+                error_output = {
+                    "reports": len(reports),
+                    "equivalent": False,
+                    "violations": [
+                        f"Report {i+1} ({r['path']}) has status '{status}', expected 'committed'"
+                    ],
+                    "error": "non_committed_status"
+                }
+                print(json.dumps(error_output, indent=2))
+            else:
+                print(
+                    f"error: report {i+1} ({r['path']}) has status '{status}', expected 'committed'",
+                    file=sys.stderr
+                )
+            sys.exit(EXIT_BUILD_FAIL)
+
     # Analyze reports
     comparison = {
         "reports": len(reports),
@@ -176,29 +198,43 @@ def _cmd_compare_runs(args):
         run_info = {
             "index": i,
             "path": r["path"],
-            "status": data.get("status"),
+            "status": data.get("status"),  # Now guaranteed to be "committed"
             "cost_paid": data.get("cost", {}).get("paid", 0.0),
-            "cost_reused": data.get("cost", {}).get("reused", 0.0),
+            # Task 7 (New): Support both old and new field names for backward compat
+            "cost_reused": data.get("cost", {}).get("reused_estimate",
+                                                      data.get("cost", {}).get("reused", 0.0)),
             "root": data.get("root"),
         }
 
-        # Count oracle calls, cache hits, and collect reuse evidence
-        oracle_calls = 0
-        cache_hits = 0
-        oracle_nodes = []
-        cached_node_names = []  # Task 3: Explicit cache reuse evidence
+        # Task 3 (New): Use oracle evidence from report if available (schema v2+)
+        # Otherwise reconstruct from node-level data (backward compatibility)
+        if "oracle_calls" in data and "cache_hits" in data and "cached_nodes" in data:
+            # Report provides oracle evidence directly (Task 3)
+            oracle_calls = data["oracle_calls"]
+            cache_hits = data["cache_hits"]
+            cached_node_names = data["cached_nodes"]
+        else:
+            # Fall back to reconstruction from node data (for old reports)
+            oracle_calls = 0
+            cache_hits = 0
+            cached_node_names = []
 
+            for node in data.get("nodes", []):
+                if node.get("kind") == "oracle":
+                    # Oracle fired in this run (paid cost)
+                    if node.get("state") == "fired" and node.get("cost", {}).get("this_run", 0) > 0:
+                        oracle_calls += 1
+                    # Task 4: Oracle reused from cache - require EXPLICIT cached=true
+                    # (state="sealed" alone doesn't prove cache reuse, could be local seal)
+                    elif node.get("cached") is True:
+                        cache_hits += 1
+                        cached_node_names.append(node["name"])
+
+        # Collect oracle node names for reporting
+        oracle_nodes = []
         for node in data.get("nodes", []):
             if node.get("kind") == "oracle":
                 oracle_nodes.append(node["name"])
-                # Oracle fired in this run (paid cost)
-                if node.get("state") == "fired" and node.get("cost", {}).get("this_run", 0) > 0:
-                    oracle_calls += 1
-                # Task 4: Oracle reused from cache - require EXPLICIT cached=true
-                # (state="sealed" alone doesn't prove cache reuse, could be local seal)
-                elif node.get("cached") is True:
-                    cache_hits += 1
-                    cached_node_names.append(node["name"])
 
         run_info["oracle_calls"] = oracle_calls
         run_info["cache_hits"] = cache_hits
@@ -210,6 +246,14 @@ def _cmd_compare_runs(args):
     # Three-machine proof checks (if exactly 3 reports)
     if len(reports) == 3:
         m1, m2, m3 = comparison["runs"]
+
+        # Task 2 (New): M1 must have oracle evidence (oracle_calls > 0)
+        # Not just cost > 0, which could be mocked
+        if m1["oracle_calls"] == 0:
+            comparison["violations"].append("M1 should have oracle_calls > 0 (must fire oracles)")
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m1_oracle_evidence"] = True
 
         # Check: M1 paid oracle cost
         if m1["cost_paid"] <= 0:
@@ -250,6 +294,14 @@ def _cmd_compare_runs(args):
             comparison["equivalent"] = False
         else:
             comparison["checks"]["m2_cached_node_evidence"] = True
+
+        # Task 2 (New): M3 must have oracle evidence (oracle_calls > 0)
+        # Not just cost > 0, which could be mocked
+        if m3["oracle_calls"] == 0:
+            comparison["violations"].append("M3 should have oracle_calls > 0 (must fire oracles)")
+            comparison["equivalent"] = False
+        else:
+            comparison["checks"]["m3_oracle_evidence"] = True
 
         # Check: M3 paid comparable cost to M1
         if m3["cost_paid"] <= 0:
