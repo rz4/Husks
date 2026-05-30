@@ -10,84 +10,80 @@ from husks.designs.ir import from_json
 from husks.designs.convergence import read_history, convergence_summary
 from husks.utils.console import _shorthash
 from husks.cli.helpers import _load_manifest, _STATE_SYM, resolve_design, EXIT_OK, EXIT_USAGE, EXIT_DIRTY_STALE, EXIT_BUILD_FAIL
+from husks.cli.residue import CliResidue, CliNode, map_manifest_state
 
 
-# ── status ────────────────────────────────────────────────────────
+# ── Residue collectors (Beta Gate 95) ────────────────────────────────
+
+def collect_site_residue(manifest: dict, site: str) -> CliResidue:
+    """Collect site residue for status command.
+
+    Maps manifest freshness states to unified CLI state vocabulary.
+    """
+    from husks.manifest import compute_rule_states
+
+    nodes = []
+    rule_states = compute_rule_states(site, manifest)
+
+    for rs in rule_states:
+        # Map manifest state to CLI state
+        state = map_manifest_state(rs["state"])
+
+        node = CliNode(
+            name=rs["name"],
+            kind=rs.get("kind", "action"),
+            state=state,
+            stale_reason=rs.get("reason"),
+        )
+        nodes.append(node)
+
+    # Compute summary
+    passes = sum(1 for n in nodes if n.state == "sealed")
+    fails = sum(1 for n in nodes if n.state in ("stale", "failed"))
+
+    # Extract design name from manifest
+    design_name = manifest.get("name", "unknown")
+
+    return CliResidue(
+        command="status",
+        design_name=design_name,
+        site=site,
+        status="committed" if manifest.get("root") else "dry",
+        root=manifest.get("root"),
+        nodes=nodes,
+        passes=passes,
+        fails=fails,
+    )
+
+
+# ── status ────────────────────────────────────────────────────────────
 
 def _cmd_status(args):
-    from husks.manifest import compute_rule_states, compute_artifact_states
-    from husks.core import recompute_root
-    from pathlib import Path
+    """Status command - show site conformance state.
 
+    Beta Gate 95: Uses residue→surface→view architecture.
+    """
+    from husks.manifest import compute_artifact_states
+    from husks.cli.surface import emit_residue
+
+    # Step 1: Load manifest and site (keep existing logic)
     manifest, site = _load_manifest(args)
-    rule_states = compute_rule_states(site, manifest)
-    artifact_states = compute_artifact_states(site, manifest)
 
-    # Beta Gate C3: Verify .husk root against live site
-    manifest_root = manifest.get("root")
-    root_valid = None
-    recomputed_root = None
+    # Step 2: Collect site residue
+    residue = collect_site_residue(manifest, site)
 
-    if manifest_root:
-        # Try to read and verify the .husk file
-        build_name = manifest.get("name")
-        if build_name:
-            husk_path = Path(site) / f"{build_name}.husk"
-            if husk_path.exists():
-                try:
-                    husk_bytes = husk_path.read_bytes()
-                    recomputed_root = recompute_root(husk_bytes, site)
-                    root_valid = (recomputed_root == manifest_root)
-                except Exception:
-                    # Recomputation failed (corrupt husk, missing files, etc.)
-                    root_valid = False
+    # Step 3: Emit via surface layer
+    output = emit_residue(residue, json_mode=args.json_output, verbose=False)
+    print(output)
 
-    if args.json_output:
-        output = {
-            "site": site,
-            "root": manifest_root,
-            "rules": rule_states,
-            "artifacts": artifact_states,
-        }
-        # Beta C3: Add root verification fields
-        if root_valid is not None:
-            output["root_valid"] = root_valid
-        if recomputed_root is not None:
-            output["recomputed_root"] = recomputed_root
-        print(json.dumps(output, indent=2))
-    else:
-        print(f"\n  site: {site}")
-        root = manifest_root or "none"
-        root_display = root if root == "none" else f"{root[:16]}..."
-
-        # Beta C3: Show root validity
-        if root_valid is True:
-            print(f"  root: {root_display} (verified)")
-        elif root_valid is False:
-            print(f"  root: {root_display} (INVALID)")
-        else:
-            print(f"  root: {root_display}")
-
-        print(f"  {'─' * 50}")
-
-        print("\n  rules:")
-        for rs in rule_states:
-            sym = _STATE_SYM.get(rs["state"], "?")
-            reason = f"  ({rs['reason']})" if rs["reason"] else ""
-            print(f"    {sym} {rs['name']:<20s} {rs['state']}{reason}")
-
-        print("\n  artifacts:")
-        for a in artifact_states:
-            sym = _STATE_SYM.get(a["state"], "?")
-            print(f"    {sym} {a['path']:<24s} {a['state']}")
-
-        print(f"  {'─' * 50}\n")
-
+    # Step 4: Preserve exit code logic
     if args.fail_if_dirty:
+        artifact_states = compute_artifact_states(site, manifest)
         if any(a["state"] == "modified" for a in artifact_states):
             sys.exit(EXIT_DIRTY_STALE)
+
     if args.fail_if_stale:
-        if any(rs["state"] in ("stale", "missing") for rs in rule_states):
+        if residue.fails > 0:  # Any stale or failed nodes
             sys.exit(EXIT_DIRTY_STALE)
 
 

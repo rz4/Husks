@@ -197,6 +197,69 @@ def burn(S: Store, label: str) -> None:
         raise Stop("halt", S["value"])
 
 
+# ── Site inputs ───────────────────────────────────────────────────
+
+def resolve_site_inputs(site_inputs: list | dict | None) -> dict[str, str]:
+    """Normalize site_inputs to canonical dict form.
+
+    **Beta Gate 95**: Unifies site_inputs handling across the codebase.
+    Both list and dict forms remain valid in design.json, but this
+    function provides a canonical dict representation.
+
+    Parameters
+    ----------
+    site_inputs : list, dict, or None
+        - List form: paths (absolute or basenames)
+        - Dict form: {local_name: path}
+        - None: treated as empty dict
+
+    Returns
+    -------
+    dict
+        Canonical mapping of local_name → path.
+        - For list entries that are absolute paths: local_name is basename
+        - For list entries that are relative/basenames: local_name is the entry itself
+        - For dict entries: passed through as-is
+
+    Notes
+    -----
+    This function does NOT validate paths or resolve them against design
+    source directories. It only normalizes the data structure. Path
+    validation and resolution happen in designs.ir.normalize_site_inputs()
+    or build/run.py.
+
+    Examples
+    --------
+    >>> resolve_site_inputs(None)
+    {}
+    >>> resolve_site_inputs(["/tmp/data.txt"])
+    {"data.txt": "/tmp/data.txt"}
+    >>> resolve_site_inputs(["prompt.txt"])
+    {"prompt.txt": "prompt.txt"}
+    >>> resolve_site_inputs({"input.txt": "/data/input.txt"})
+    {"input.txt": "/data/input.txt"}
+    """
+    if site_inputs is None:
+        return {}
+
+    if isinstance(site_inputs, dict):
+        return site_inputs.copy()
+
+    # List form: extract local names
+    result = {}
+    for entry in site_inputs:
+        p = Path(entry)
+        if p.is_absolute():
+            # Absolute path: local name is basename
+            local_name = p.name
+        else:
+            # Relative path or basename: use as-is
+            local_name = entry
+        result[local_name] = entry
+
+    return result
+
+
 # ── File signatures ───────────────────────────────────────────────
 
 def setup_links(site: str, mapping: dict[str, str]) -> list[str]:

@@ -39,6 +39,7 @@ def main():
     c = sub.add_parser("check", help="Validate a design (exit 1 if errors)")
     c.add_argument("design", nargs="?", default=None,
                    help="Path to design file (.json or .hy). Defaults to design.json.")
+    c.add_argument("--site", help="Overlay site conformance states (Beta Gate 95)")
     c.add_argument("--verbose", "-v", action="store_true",
                    help="Show full design details after validation (replaces old 'show')")
     c.add_argument("--json", action="store_true", dest="json_output",

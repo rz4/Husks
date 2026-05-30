@@ -160,17 +160,25 @@ import textwrap
 
 _DEMO_DESIGN = {
     "name": "demo",
-    "fuel": 10,
-    "target": "write-message",
+    "fuel": 12,
+    "target": "gate",
+    "site_inputs": {},
     "rules": [
         {
-            "name": "write-message",
+            "name": "generate-greeting",
             "kind": "oracle",
             "inputs": [],
-            "outputs": ["message.txt"],
-            "prompt": "Write a friendly greeting to message.txt. Make it warm and welcoming.",
+            "outputs": ["greeting.txt"],
+            "prompt": "Write a single-line friendly greeting to greeting.txt. It must start with 'Hello' and end with '!'. Be warm and welcoming.",
             "tools": ["write-file"],
-            "fuel": 5,
+            "fuel": 8,
+        },
+        {
+            "name": "gate",
+            "kind": "action",
+            "inputs": ["greeting.txt"],
+            "outputs": ["validation-report.txt", "VERIFIED"],
+            "run": "python3 check-greeting.py && touch VERIFIED && echo 'pass' > validation-report.txt",
         },
     ],
 }
@@ -239,6 +247,16 @@ def _scaffold_template(target: Path, template: str, force: bool) -> bool:
     if template == "demo":
         _write_if(target / "design.json",
                   json.dumps(_DEMO_DESIGN, indent=2) + "\n", force)
+        _write_if(target / "check-greeting.py", _DEMO_CHECK_GREETING, force)
+        # Also write a gitignore for build artifacts
+        gitignore_content = textwrap.dedent("""\
+            # Husks build artifacts
+            .husk/
+            greeting.txt
+            validation-report.txt
+            VERIFIED
+            """)
+        _write_if(target / ".gitignore", gitignore_content, force)
         return True
     else:
         print(f"  error: unknown template '{template}'", file=sys.stderr)
