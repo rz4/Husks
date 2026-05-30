@@ -184,12 +184,14 @@ def _cmd_compare_runs(args):
             sys.exit(EXIT_BUILD_FAIL)
 
     # Analyze reports
+    # Beta Readiness Task 1: Separate violations from warnings
     comparison = {
         "reports": len(reports),
         "runs": [],
         "checks": {},
         "equivalent": True,
         "violations": [],
+        "warnings": [],  # Non-fatal issues
     }
 
     # Extract key metrics from each report
@@ -310,17 +312,19 @@ def _cmd_compare_runs(args):
         else:
             comparison["checks"]["m3_paid_cost"] = True
 
+        # Beta Readiness Task 2: Cost comparability is a hard failure
         # For stub oracle, costs should be exactly equal
-        # For live oracle, allow some variance
+        # For live oracle, small variance allowed but still enforced
         cost_diff = abs(m1["cost_paid"] - m3["cost_paid"])
         cost_tolerance = max(m1["cost_paid"] * 0.1, 0.0001)  # 10% or small epsilon
 
         if cost_diff > cost_tolerance:
             comparison["violations"].append(
-                f"M1 and M3 costs differ significantly: {m1['cost_paid']} vs {m3['cost_paid']}"
+                f"M1 and M3 costs not comparable: ${m1['cost_paid']:.6f} vs ${m3['cost_paid']:.6f} "
+                f"(diff: ${cost_diff:.6f}, tolerance: ${cost_tolerance:.6f})"
             )
-            # Don't mark as non-equivalent - costs can vary with live oracle
-            comparison["checks"]["m1_m3_comparable_cost"] = "warning"
+            comparison["equivalent"] = False
+            comparison["checks"]["m1_m3_comparable_cost"] = False
         else:
             comparison["checks"]["m1_m3_comparable_cost"] = True
 
@@ -399,6 +403,10 @@ def _cmd_compare_runs(args):
         elif len(roots) == 3:
             comparison["checks"]["same_root"] = True
 
+    # Beta Readiness Task 1: Enforce invariant - violations implies not equivalent
+    if len(comparison["violations"]) > 0:
+        comparison["equivalent"] = False
+
     # Output
     if args.json_output:
         print(json.dumps(comparison, indent=2))
@@ -426,6 +434,13 @@ def _cmd_compare_runs(args):
             print("Violations:")
             for v in comparison["violations"]:
                 print(f"  ✗ {v}")
+            print()
+
+        # Beta Readiness Task 1: Show warnings separately
+        if comparison.get("warnings"):
+            print("Warnings:")
+            for w in comparison["warnings"]:
+                print(f"  ⚠ {w}")
             print()
 
         if comparison["equivalent"]:

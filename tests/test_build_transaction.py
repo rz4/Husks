@@ -11,6 +11,14 @@ import tempfile
 import shutil
 from pathlib import Path
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
 
 def test_transaction_setup_creates_staging():
     """BuildTransaction creates staging directory and sets S['stage']."""
@@ -42,6 +50,12 @@ def test_transaction_setup_creates_staging():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_transaction_validates_missing_output():
     """Transaction validation fails if declared output is missing."""
     from husks.build.eval import BuildTransaction
@@ -69,6 +83,12 @@ def test_transaction_validates_missing_output():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_transaction_validates_empty_oracle_output():
@@ -102,6 +122,12 @@ def test_transaction_validates_empty_oracle_output():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_transaction_promotes_outputs_atomically():
     """Transaction promotes all outputs atomically with backups."""
     from husks.build.eval import BuildTransaction
@@ -133,6 +159,12 @@ def test_transaction_promotes_outputs_atomically():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_transaction_rollback_on_promotion_failure():
@@ -193,6 +225,12 @@ def test_transaction_rollback_on_promotion_failure():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_transaction_cleanup_on_exception():
     """Transaction cleans up staging even if exception occurs."""
     from husks.build.eval import BuildTransaction
@@ -223,6 +261,12 @@ def test_transaction_cleanup_on_exception():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_transaction_only_promotes_real_files():
@@ -268,6 +312,12 @@ def test_transaction_only_promotes_real_files():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_transaction_action_must_use_staging():
     """Action recipes must write to staging - no fallback to live site (Beta B2)."""
     from husks.build.eval import BuildTransaction
@@ -299,6 +349,12 @@ def test_transaction_action_must_use_staging():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_transaction_oracle_no_fallback():
@@ -333,6 +389,12 @@ def test_transaction_oracle_no_fallback():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_transaction_integrates_with_eval_rule():
     """BuildTransaction works correctly when called from eval_rule."""
     from husks.build import build, rule, action
@@ -345,6 +407,10 @@ def test_transaction_integrates_with_eval_rule():
 
         # Create input to trigger staging
         (site / "input.txt").write_text("input\n")
+
+        @pytest.mark.beta
+
+        @pytest.mark.gate_b
 
         def test_action(S):
             """Action that writes to staging correctly."""
@@ -370,6 +436,12 @@ def test_transaction_integrates_with_eval_rule():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_successful_action_bypassing_staging_cannot_seal():

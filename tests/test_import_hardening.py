@@ -12,6 +12,14 @@ import shutil
 import os
 from pathlib import Path
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
 
 def test_import_internal_path_rejected():
     """Import local names starting with '.' are rejected."""
@@ -35,6 +43,12 @@ def test_import_internal_path_rejected():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_import_path_traversal_rejected():
@@ -62,6 +76,12 @@ def test_import_path_traversal_rejected():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_import_absolute_path_rejected():
     """Import local names that are absolute paths are rejected."""
     from husks.build.site import setup_links
@@ -84,6 +104,12 @@ def test_import_absolute_path_rejected():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_import_collision_with_existing_file():
@@ -111,6 +137,12 @@ def test_import_collision_with_existing_file():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_import_symlink_wrong_target():
@@ -146,6 +178,12 @@ def test_import_symlink_wrong_target():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_import_symlink_correct_target_ok():
     """Existing symlink pointing to correct target is allowed (idempotent)."""
     from husks.build.site import setup_links
@@ -175,6 +213,12 @@ def test_import_symlink_correct_target_ok():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_import_nonexistent_external_path():
     """Import with nonexistent external path is rejected."""
     from husks.build.site import setup_links
@@ -193,6 +237,12 @@ def test_import_nonexistent_external_path():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_import_valid_nested_path():
@@ -217,6 +267,12 @@ def test_import_valid_nested_path():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_import_directory():
@@ -248,6 +304,12 @@ def test_import_directory():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_import_integration_with_build():

@@ -10,6 +10,11 @@ import os
 from conftest import SPEC_DIR, DEMO_HUSK, DEMO_ROOT, DEMO_SITE, load_demo
 from husks.core import recompute_root, verify
 
+import pytest
+
+
+@pytest.mark.alpha
+
 
 def test_build_root():
     """The core reader reproduces the committed build-root."""
@@ -22,10 +27,16 @@ def test_build_root():
     )
 
 
+@pytest.mark.alpha
+
+
 def test_verify():
     """verify() returns True for the committed golden vector."""
     husk_bytes, expected = load_demo()
     assert verify(husk_bytes, DEMO_SITE, expected)
+
+
+@pytest.mark.alpha
 
 
 def test_verify_rejects_wrong_root():
@@ -33,6 +44,9 @@ def test_verify_rejects_wrong_root():
     husk_bytes, _ = load_demo()
     wrong = "0" * 64
     assert not verify(husk_bytes, DEMO_SITE, wrong)
+
+
+@pytest.mark.alpha
 
 
 def test_site_files_exact():

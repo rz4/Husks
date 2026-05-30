@@ -12,10 +12,15 @@ import tempfile
 
 from conftest import make_site
 
+import pytest
+
 
 def _noop_oracle(S, rule_name, recipe, outputs):
     """Oracle backend that does nothing -- outputs stay missing."""
     return {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "fuel_steps": 1}
+
+
+@pytest.mark.alpha
 
 
 def test_action_missing_output_halts():
@@ -46,6 +51,9 @@ def test_action_missing_output_halts():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.alpha
+
+
 def test_action_zero_byte_marker_commits():
     """An action producing a zero-byte marker file must commit (existence-only)."""
     from husks.designs.ir import run
@@ -74,6 +82,9 @@ def test_action_zero_byte_marker_commits():
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_oracle_empty_output_halts():
@@ -119,6 +130,9 @@ def test_oracle_empty_output_halts():
         assert not os.path.exists(seal_path), "empty oracle output was sealed"
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_oracle_missing_output_halts():

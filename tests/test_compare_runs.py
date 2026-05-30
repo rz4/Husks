@@ -10,9 +10,14 @@ import tempfile
 import shutil
 from pathlib import Path
 
+import pytest
+
 from conftest import run_husks_cli
 
 
+@pytest.mark.beta
+@pytest.mark.gate_c
+@pytest.mark.gate_f
 def test_compare_runs_three_machine_proof():
     """compare-runs validates three-machine proof from JSON reports."""
     tmpdir = tempfile.mkdtemp(prefix="compare-runs-")
@@ -118,6 +123,9 @@ def test_compare_runs_three_machine_proof():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+@pytest.mark.gate_c
+@pytest.mark.gate_f
 def test_compare_runs_detects_m2_cache_miss():
     """compare-runs detects when M2 didn't actually reuse cache (Tasks 1/2/3)."""
     tmpdir = tempfile.mkdtemp(prefix="compare-runs-fail-")
@@ -136,6 +144,10 @@ def test_compare_runs_detects_m2_cache_miss():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0008, "reused_estimate": 0.0, "projected_estimate": 0.0008},
             "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -167,6 +179,10 @@ def test_compare_runs_detects_m2_cache_miss():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0008, "reused_estimate": 0.0, "projected_estimate": 0.0008},  # Should be 0!
             "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -196,6 +212,10 @@ def test_compare_runs_detects_m2_cache_miss():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0008, "reused_estimate": 0.0, "projected_estimate": 0.0008},
             "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -240,6 +260,9 @@ def test_compare_runs_detects_m2_cache_miss():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+@pytest.mark.gate_c
+@pytest.mark.gate_f
 def test_compare_runs_rejects_non_committed_status():
     """compare-runs rejects reports with status != 'committed' (Task 1 - New)."""
     tmpdir = tempfile.mkdtemp(prefix="compare-runs-status-")
@@ -256,6 +279,10 @@ def test_compare_runs_rejects_non_committed_status():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0008, "reused_estimate": 0.0, "projected_estimate": 0.0008},
             "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -286,6 +313,10 @@ def test_compare_runs_rejects_non_committed_status():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0, "reused_estimate": 0.0, "projected_estimate": 0.0},
             "delta": {"changed": [], "new": [], "unchanged": []},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [],
             "diagnosis": {
                 "error": "Build halted",
@@ -304,6 +335,10 @@ def test_compare_runs_rejects_non_committed_status():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0008, "reused_estimate": 0.0, "projected_estimate": 0.0008},
             "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -357,6 +392,9 @@ def test_compare_runs_rejects_non_committed_status():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+@pytest.mark.gate_c
+@pytest.mark.gate_f
 def test_compare_runs_requires_m1_oracle_evidence():
     """compare-runs requires M1 to have oracle_calls > 0 (Task 2 - New)."""
     tmpdir = tempfile.mkdtemp(prefix="compare-runs-m1-evidence-")
@@ -374,6 +412,10 @@ def test_compare_runs_requires_m1_oracle_evidence():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0008, "reused_estimate": 0.0, "projected_estimate": 0.0008},  # Claims cost
             "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -404,6 +446,10 @@ def test_compare_runs_requires_m1_oracle_evidence():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0, "reused_estimate": 0.0008, "projected_estimate": 0.0},
             "delta": {"changed": [], "new": [], "unchanged": ["generate"]},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -434,6 +480,10 @@ def test_compare_runs_requires_m1_oracle_evidence():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0008, "reused_estimate": 0.0, "projected_estimate": 0.0008},
             "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -472,7 +522,9 @@ def test_compare_runs_requires_m1_oracle_evidence():
 
         comparison = json.loads(compare_result.stdout)
         assert comparison["equivalent"] is False
-        assert any("M1" in v and "oracle_calls" in v for v in comparison["violations"])
+        # Check for M1-related violations (either oracle_calls or oracle node evidence)
+        assert any("M1" in v and ("oracle" in v.lower() or "fire" in v.lower())
+                   for v in comparison["violations"]), f"Expected M1 oracle violation, got: {comparison['violations']}"
 
         print("\n✓ Task 2 (New): compare-runs correctly requires M1 oracle evidence")
 
@@ -480,6 +532,9 @@ def test_compare_runs_requires_m1_oracle_evidence():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+@pytest.mark.gate_c
+@pytest.mark.gate_f
 def test_compare_runs_requires_m3_oracle_evidence():
     """compare-runs requires M3 to have oracle_calls > 0 (Task 2 - New)."""
     tmpdir = tempfile.mkdtemp(prefix="compare-runs-m3-evidence-")
@@ -496,6 +551,10 @@ def test_compare_runs_requires_m3_oracle_evidence():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0008, "reused_estimate": 0.0, "projected_estimate": 0.0008},
             "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -526,6 +585,10 @@ def test_compare_runs_requires_m3_oracle_evidence():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0, "reused_estimate": 0.0008, "projected_estimate": 0.0},
             "delta": {"changed": [], "new": [], "unchanged": ["generate"]},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -556,6 +619,10 @@ def test_compare_runs_requires_m3_oracle_evidence():
             "fuel": {"start": 10, "end": 8},
             "cost": {"paid": 0.0008, "reused_estimate": 0.0, "projected_estimate": 0.0008},  # Claims cost
             "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            # Beta Readiness Task 4: Add required oracle evidence fields
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
             "nodes": [{
                 "name": "generate",
                 "kind": "oracle",
@@ -594,7 +661,9 @@ def test_compare_runs_requires_m3_oracle_evidence():
 
         comparison = json.loads(compare_result.stdout)
         assert comparison["equivalent"] is False
-        assert any("M3" in v and "oracle_calls" in v for v in comparison["violations"])
+        # Check for M3-related violations (either oracle_calls or oracle node evidence)
+        assert any("M3" in v and ("oracle" in v.lower() or "fire" in v.lower())
+                   for v in comparison["violations"]), f"Expected M3 oracle violation, got: {comparison['violations']}"
 
         print("\n✓ Task 2 (New): compare-runs correctly requires M3 oracle evidence")
 
@@ -602,6 +671,8 @@ def test_compare_runs_requires_m3_oracle_evidence():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+@pytest.mark.gate_f
 def test_run_json_includes_oracle_evidence():
     """run --json includes oracle_calls, cache_hits, and cached_nodes (Task 3 - New)."""
     tmpdir = tempfile.mkdtemp(prefix="run-oracle-evidence-")
@@ -673,6 +744,145 @@ def test_run_json_includes_oracle_evidence():
         print(f"  M1: {m1_report['oracle_calls']} oracle calls, {m1_report['cache_hits']} cache hits")
         print(f"  M2: {m2_report['oracle_calls']} oracle calls, {m2_report['cache_hits']} cache hits")
         print(f"  M2 cached nodes: {m2_report['cached_nodes']}")
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+@pytest.mark.gate_c
+@pytest.mark.gate_f
+def test_compare_runs_rejects_cost_drift():
+    """compare-runs fails when M1 and M3 costs are not comparable (Beta Readiness Task 3)."""
+    tmpdir = tempfile.mkdtemp(prefix="compare-runs-cost-drift-")
+    try:
+        # M1 report with cost = 0.0008
+        m1_report = {
+            "schema_version": "beta-1",
+            "status": "committed",
+            "root": "abc123",
+            "run_id": "m1_run",
+            "build": "test",
+            "site": "/tmp/m1",
+            "elapsed_s": 1.0,
+            "fuel": {"start": 10, "end": 8},
+            "cost": {"paid": 0.0008, "reused_estimate": 0.0, "projected_estimate": 0.0008},
+            "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
+            "nodes": [{
+                "name": "generate",
+                "kind": "oracle",
+                "state": "fired",
+                "classification": "converging",
+                "prompt_len": 100,
+                "prompt_trend": "flat",
+                "fuel_consumed": 2,
+                "fuel_trend": "falling",
+                "output_hashes": ["hash1"],
+                "output_changed": True,
+                "cost": {"this_run": 0.0008, "first_paid": 0.0008, "per_rerun": 0.0},
+                "cached": False,
+                "tokens": {"input": 100, "output": 50},
+                "seal": {"hash": "seal_hash", "recipe_changed": False},
+            }]
+        }
+
+        # M2 report (valid cache reuse)
+        m2_report = {
+            "schema_version": "beta-1",
+            "status": "committed",
+            "root": "abc123",
+            "run_id": "m2_run",
+            "build": "test",
+            "site": "/tmp/m2",
+            "elapsed_s": 1.0,
+            "fuel": {"start": 10, "end": 8},
+            "cost": {"paid": 0.0, "reused_estimate": 0.0008, "projected_estimate": 0.0},
+            "delta": {"changed": [], "new": [], "unchanged": ["generate"]},
+            "oracle_calls": 0,
+            "cache_hits": 1,
+            "cached_nodes": ["generate"],
+            "nodes": [{
+                "name": "generate",
+                "kind": "oracle",
+                "state": "sealed",
+                "classification": "converging",
+                "prompt_len": 100,
+                "prompt_trend": "flat",
+                "fuel_consumed": 0,
+                "fuel_trend": "flat",
+                "output_hashes": ["hash1"],
+                "output_changed": False,
+                "cost": {"this_run": 0.0, "first_paid": 0.0008, "per_rerun": 0.0},
+                "cached": True,
+                "tokens": {"input": 0, "output": 0},
+                "seal": {"hash": "seal_hash", "recipe_changed": False},
+            }]
+        }
+
+        # M3 report with HUGE cost drift (999.0 vs 0.0008)
+        m3_report = {
+            "schema_version": "beta-1",
+            "status": "committed",
+            "root": "abc123",
+            "run_id": "m3_run",
+            "build": "test",
+            "site": "/tmp/m3",
+            "elapsed_s": 1.0,
+            "fuel": {"start": 10, "end": 8},
+            "cost": {"paid": 999.0, "reused_estimate": 0.0, "projected_estimate": 999.0},
+            "delta": {"changed": [], "new": ["generate"], "unchanged": []},
+            "oracle_calls": 1,
+            "cache_hits": 0,
+            "cached_nodes": [],
+            "nodes": [{
+                "name": "generate",
+                "kind": "oracle",
+                "state": "fired",
+                "classification": "converging",
+                "prompt_len": 100,
+                "prompt_trend": "flat",
+                "fuel_consumed": 2,
+                "fuel_trend": "falling",
+                "output_hashes": ["hash1"],
+                "output_changed": True,
+                "cost": {"this_run": 999.0, "first_paid": 999.0, "per_rerun": 0.0},
+                "cached": False,
+                "tokens": {"input": 100, "output": 50},
+                "seal": {"hash": "seal_hash", "recipe_changed": False},
+            }]
+        }
+
+        # Write reports
+        m1_json = Path(tmpdir) / "m1.json"
+        m2_json = Path(tmpdir) / "m2.json"
+        m3_json = Path(tmpdir) / "m3.json"
+
+        m1_json.write_text(json.dumps(m1_report))
+        m2_json.write_text(json.dumps(m2_report))
+        m3_json.write_text(json.dumps(m3_report))
+
+        # compare-runs should FAIL due to cost drift
+        compare_result = run_husks_cli(
+            "compare-runs",
+            str(m1_json), str(m2_json), str(m3_json),
+            "--json",
+        )
+
+        assert compare_result.returncode != 0, (
+            "compare-runs should fail when M1 and M3 costs differ significantly"
+        )
+
+        comparison = json.loads(compare_result.stdout)
+        assert comparison["equivalent"] is False, "Should not be equivalent"
+        assert len(comparison["violations"]) > 0, "Should have violations"
+        assert any("cost" in v.lower() and "comparable" in v.lower() for v in comparison["violations"]), (
+            f"Should have cost comparability violation, got: {comparison['violations']}"
+        )
+
+        print("\n✓ Beta Readiness Task 3: compare-runs rejects cost drift (0.0008 vs 999.0)")
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

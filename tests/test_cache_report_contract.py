@@ -14,6 +14,14 @@ from pathlib import Path
 
 from conftest import run_husks_cli
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_f
+
 
 def test_cache_hit_in_json_report():
     """run --json shows cached=true and zero cost for cache hits."""
@@ -72,6 +80,12 @@ def test_cache_hit_in_json_report():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_f
+
+
 def test_cache_miss_shows_uncached():
     """run --json shows cached=false for cache miss."""
     tmpdir = tempfile.mkdtemp(prefix="report-uncached-")
@@ -107,6 +121,12 @@ def test_cache_miss_shows_uncached():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_f
 
 
 def test_action_nodes_not_cached():

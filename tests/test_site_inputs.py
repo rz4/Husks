@@ -13,6 +13,8 @@ import tempfile
 import shutil
 from pathlib import Path
 
+import pytest
+
 from conftest import run_husks_cli
 from husks.designs.ir import from_json, run, check
 
@@ -27,6 +29,8 @@ def stub_oracle(S, rule_name, recipe, outputs):
     return {"tokens_in": 10, "tokens_out": 10, "cost_usd": 0.001, "fuel_steps": 1}
 
 
+@pytest.mark.beta
+@pytest.mark.gate_a
 def test_site_inputs_list_form_in_memory():
     """site_inputs as a list imports external files into the site."""
     tmpdir = tempfile.mkdtemp(prefix="site-inputs-list-")
@@ -86,6 +90,8 @@ def test_site_inputs_list_form_in_memory():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+@pytest.mark.gate_a
 def test_site_inputs_dict_form_in_memory():
     """site_inputs as a dict maps local names to external paths."""
     tmpdir = tempfile.mkdtemp(prefix="site-inputs-dict-")
@@ -139,6 +145,12 @@ def test_site_inputs_dict_form_in_memory():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
 def test_site_inputs_validation():
     """site_inputs are validated as part of the dependency graph."""
     # Design where site_inputs provide initial inputs to the graph
@@ -159,6 +171,12 @@ def test_site_inputs_validation():
 
     errors = check(design)
     assert len(errors) == 0, f"Design should be valid, got errors: {errors}"
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
 
 
 def test_site_inputs_from_json_file():
@@ -204,6 +222,12 @@ def test_site_inputs_from_json_file():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
 
 
 def test_site_inputs_cli_list_form():
@@ -263,6 +287,12 @@ def test_site_inputs_cli_list_form():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
 def test_site_inputs_cli_dict_form():
     """CLI test: site_inputs as a dict works from a clean site."""
     tmpdir = tempfile.mkdtemp(prefix="site-inputs-cli-dict-")
@@ -315,6 +345,12 @@ def test_site_inputs_cli_dict_form():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
 def test_site_inputs_not_children():
     """Inputs from site_inputs don't create child dependencies in the graph."""
     design = {
@@ -341,6 +377,12 @@ def test_site_inputs_not_children():
     node = terminals[0]
     assert node.get("inputs") == ["external.txt"]
     assert node.get("children") == [], "site_inputs should not create child dependencies"
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
 
 
 def test_site_inputs_relative_path_resolution():
@@ -398,6 +440,12 @@ def test_site_inputs_relative_path_resolution():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
 
 
 def test_site_inputs_missing_file_fails():

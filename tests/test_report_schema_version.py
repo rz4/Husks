@@ -13,6 +13,14 @@ from pathlib import Path
 from conftest import run_husks_cli
 from husks.report import validate_report_schema
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_f
+
 
 def test_report_includes_schema_version():
     """All reports include schema_version='beta-1' (Task 9)."""
@@ -60,6 +68,12 @@ def test_report_includes_schema_version():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_f
+
+
 def test_schema_validation_requires_version():
     """Schema validation requires schema_version field (Task 9)."""
     # Report missing schema_version
@@ -82,6 +96,12 @@ def test_schema_validation_requires_version():
     assert any("schema_version" in e for e in errors), (
         f"Validation should complain about missing schema_version, got: {errors}"
     )
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_f
 
 
 def test_schema_validation_rejects_wrong_version():
@@ -107,6 +127,12 @@ def test_schema_validation_rejects_wrong_version():
     assert any("unsupported schema_version" in e for e in errors), (
         f"Validation should complain about unsupported version, got: {errors}"
     )
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_f
 
 
 def test_schema_version_appears_in_text_output():

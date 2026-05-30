@@ -14,9 +14,13 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from conftest import run_husks_cli
 
 
+@pytest.mark.beta
+@pytest.mark.gate_g
 def test_three_machine_cli_acceptance_stub():
     """CLI three-machine acceptance using stub oracle (G1/G3).
 

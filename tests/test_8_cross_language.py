@@ -45,12 +45,16 @@ def _require_node():
 class TestCrossLanguageVerification:
     """The thesis: a husk verifies under a reader the engine never knew."""
 
+    @pytest.mark.alpha
+
     def test_js_reader_reproduces_demo_root(self):
         """The primary gate: JS reader computes the same root hash."""
         _, expected_root = load_demo()
         stdout, rc = _run_js_verifier(DEMO_HUSK, DEMO_SITE, expected_root)
         assert rc == 0, f"JS verifier failed: {stdout}"
         assert "PASS" in stdout
+
+    @pytest.mark.alpha
 
     def test_js_root_matches_python_root(self):
         """JS and Python readers agree on the same root hash."""
@@ -61,11 +65,15 @@ class TestCrossLanguageVerification:
         py_root = recompute_root(husk_bytes, DEMO_SITE)
         assert js_root == py_root == expected_root
 
+    @pytest.mark.alpha
+
     def test_js_rejects_wrong_root(self):
         """JS verifier returns nonzero for a wrong expected root."""
         wrong_root = "0" * 64
         _, rc = _run_js_verifier(DEMO_HUSK, DEMO_SITE, wrong_root)
         assert rc != 0
+
+    @pytest.mark.alpha
 
     def test_js_computes_root_without_expected(self):
         """JS verifier outputs the root hash even without an expected value."""
@@ -80,6 +88,8 @@ class TestCrossLanguageVerification:
 
 class TestElaboratedPlanCrossLanguage:
     """A design elaborated by Python verifies under the JS reader."""
+
+    @pytest.mark.alpha
 
     def test_elaborate_encode_verify_js(self, tmp_path):
         """elaborate -> encode -> write .husk -> JS verifier PASS."""
@@ -123,6 +133,8 @@ class TestElaboratedPlanCrossLanguage:
 
 class TestMultiTargetCrossLanguage:
     """Multi-target husks verify under the JS reader."""
+
+    @pytest.mark.alpha
 
     def test_multi_target_js_verifier(self, tmp_path):
         """Build a multi-target design, verify with JS reader."""
@@ -169,8 +181,12 @@ class TestMultiTargetCrossLanguage:
 class TestReaderIndependence:
     """The JS reader uses no Python code -- it is fully independent."""
 
+    @pytest.mark.alpha
+
     def test_verify_mjs_exists(self):
         assert os.path.isfile(VERIFY_JS)
+
+    @pytest.mark.alpha
 
     def test_verify_mjs_has_no_python_dependency(self):
         with open(VERIFY_JS, "r") as f:
@@ -193,6 +209,8 @@ class TestReaderIndependence:
                 f"verify.mjs imports '{mod}' -- only {allowed} allowed"
             )
 
+    @pytest.mark.alpha
+
     def test_js_rejects_all_malformed_vectors(self):
         """JS reader must reject every rootless (malformed) vector."""
         for husk_path in sorted(
@@ -205,6 +223,8 @@ class TestReaderIndependence:
             assert rc != 0, (
                 f"JS reader accepted malformed vector {husk_path}: {stdout}"
             )
+
+    @pytest.mark.alpha
 
     def test_verify_mjs_is_compact(self):
         """The reader should be small enough to audit by hand."""

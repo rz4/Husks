@@ -12,6 +12,14 @@ from pathlib import Path
 
 from conftest import run_husks_cli
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
 
 def test_cache_poisoning_outputs_json():
     """Beta Gate D1: Poisoned outputs.json is rejected during reuse-only."""
@@ -88,6 +96,12 @@ def test_cache_poisoning_outputs_json():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_cache_poisoning_seal_tampered():
     """Beta Gate D1: Tampered seal.json is rejected."""
     tmpdir = tempfile.mkdtemp(prefix="cache-seal-poison-")
@@ -152,6 +166,12 @@ def test_cache_poisoning_seal_tampered():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
 
 
 def test_cache_validation_allows_valid_reuse():

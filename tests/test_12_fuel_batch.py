@@ -8,6 +8,11 @@ K calls should dispatch and the result should be a halt.
 from husks.oracle.kernel import step
 from husks.oracle import tools
 
+import pytest
+
+
+@pytest.mark.alpha
+
 
 def test_mid_batch_fuel_exhaustion():
     """Batch of 4 calls with fuel=2 must dispatch exactly 2, then halt."""
@@ -47,6 +52,9 @@ def test_mid_batch_fuel_exhaustion():
             tools._REGISTRY["t"] = orig
 
 
+@pytest.mark.alpha
+
+
 def test_batch_exact_fuel():
     """Batch of 2 calls with fuel=2 dispatches all, then halts on next iteration."""
     dispatch_count = [0]
@@ -83,6 +91,9 @@ def test_batch_exact_fuel():
             tools._REGISTRY.pop("t", None)
         else:
             tools._REGISTRY["t"] = orig
+
+
+@pytest.mark.alpha
 
 
 def test_fuel_never_negative():

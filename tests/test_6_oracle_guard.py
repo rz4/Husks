@@ -14,6 +14,8 @@ import tempfile
 
 from conftest import make_site
 
+import pytest
+
 
 def _empty_oracle_backend(S, rule_name, recipe, outputs):
     """Oracle backend that writes zero-byte files for all outputs."""
@@ -29,6 +31,9 @@ def _empty_oracle_backend(S, rule_name, recipe, outputs):
 def _missing_oracle_backend(S, rule_name, recipe, outputs):
     """Oracle backend that writes nothing -- outputs stay missing."""
     return {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "fuel_steps": 1}
+
+
+@pytest.mark.alpha
 
 
 def test_oracle_empty_output_halts():
@@ -67,6 +72,9 @@ def test_oracle_empty_output_halts():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.alpha
+
+
 def test_oracle_missing_output_halts():
     """An oracle whose declared output is never written must halt."""
     from husks.designs.ir import run
@@ -98,6 +106,9 @@ def test_oracle_missing_output_halts():
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_action_zero_byte_marker_commits():
@@ -136,6 +147,9 @@ def test_action_zero_byte_marker_commits():
 # ── Kernel hardening tests ───────────────────────────────────────
 
 
+@pytest.mark.alpha
+
+
 def test_step_fuel_off_by_one():
     """step() must not call M() when fuel is already 0 (off-by-one fix)."""
     from husks.oracle.kernel import step
@@ -150,6 +164,9 @@ def test_step_fuel_off_by_one():
     result = step(counting_M, {"tools": []}, fuel=0)
     assert result["type"] == "halt", f"expected halt at fuel=0, got {result['type']}"
     assert call_count == 0, f"M() called {call_count} times at fuel=0"
+
+
+@pytest.mark.alpha
 
 
 def test_step_fuel_exactly_one():
@@ -178,6 +195,9 @@ def test_step_fuel_exactly_one():
             tools._REGISTRY.pop("t", None)
         else:
             tools._REGISTRY["t"] = orig
+
+
+@pytest.mark.alpha
 
 
 def test_parse_response_parallel_tool_calls():
@@ -222,6 +242,9 @@ def test_parse_response_parallel_tool_calls():
     assert form["calls"][0]["tool_call_id"] == "c1"
 
 
+@pytest.mark.alpha
+
+
 def test_parse_response_single_tool_call():
     """parse_response returns 'act' form for a single tool call."""
     from husks.oracle.kernel import parse_response
@@ -258,6 +281,9 @@ def test_parse_response_single_tool_call():
     assert form["tool"] == "read-file"
 
 
+@pytest.mark.alpha
+
+
 def test_truncation_marker():
     """_truncate adds a marker when content exceeds MAX_TOOL_OUTPUT."""
     from husks.oracle.kernel import _truncate, MAX_TOOL_OUTPUT
@@ -270,6 +296,9 @@ def test_truncation_marker():
     assert len(result) > MAX_TOOL_OUTPUT
     assert result.endswith("[... truncated ...]")
     assert result[:MAX_TOOL_OUTPUT] == "x" * MAX_TOOL_OUTPUT
+
+
+@pytest.mark.alpha
 
 
 def test_step_parallel_acts_dispatches_all():

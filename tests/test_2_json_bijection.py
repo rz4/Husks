@@ -17,10 +17,14 @@ from husks.designs.transport import ast_to_json, json_to_ast, to_json_str, from_
 class TestGoldenVectorRoundTrip:
     """The primary gate: byte-exact CSE round-trip through JSON."""
 
+    @pytest.mark.alpha
+
     def test_round_trip_bytes_match(self):
         husk_bytes, _ = load_demo()
         result = round_trip(husk_bytes)
         assert result == husk_bytes, "Round-tripped bytes differ from original"
+
+    @pytest.mark.alpha
 
     def test_root_preservation(self):
         husk_bytes, expected_root = load_demo()
@@ -41,15 +45,21 @@ class TestJSONStructure:
         self.tree = parse(husk_bytes)
         self.j = ast_to_json(self.tree)
 
+    @pytest.mark.alpha
+
     def test_top_level_form(self):
         assert self.j["form"] == "husk"
         assert self.j["version"] == "1"
+
+    @pytest.mark.alpha
 
     def test_build_form(self):
         build = self.j["build"]
         assert build["form"] == "build"
         assert build["name"] == "demo"
         assert build["fuel"] == "10"
+
+    @pytest.mark.alpha
 
     def test_rule_form(self):
         rule = self.j["build"]["targets"][0]
@@ -60,6 +70,8 @@ class TestJSONStructure:
         assert isinstance(rule["children"], list)
         assert len(rule["children"]) == 1
 
+    @pytest.mark.alpha
+
     def test_oracle_recipe(self):
         recipe = self.j["build"]["targets"][0]["recipe"]
         assert recipe["form"] == "oracle"
@@ -68,6 +80,8 @@ class TestJSONStructure:
         assert recipe["tools"] == ["read-file", "write-file"]
         assert recipe["fuel"] == "3"
 
+    @pytest.mark.alpha
+
     def test_child_rule(self):
         child = self.j["build"]["targets"][0]["children"][0]
         assert child["form"] == "rule"
@@ -75,6 +89,8 @@ class TestJSONStructure:
         assert child["inputs"] == ["config.txt", "greeting.txt"]
         assert child["outputs"] == ["hello.txt"]
         assert child["children"] == []
+
+    @pytest.mark.alpha
 
     def test_action_recipe(self):
         child = self.j["build"]["targets"][0]["children"][0]
@@ -86,45 +102,65 @@ class TestJSONStructure:
 class TestSymmetry:
     """json_to_ast(ast_to_json(x)) == x for each form type."""
 
+    @pytest.mark.alpha
+
     def test_action(self):
         original = [b"action"]
         assert json_to_ast(ast_to_json(original)) == original
+
+    @pytest.mark.alpha
 
     def test_oracle(self):
         original = [b"oracle", NIL, b"Do stuff.", [b"tool-a"], b"5"]
         assert json_to_ast(ast_to_json(original)) == original
 
+    @pytest.mark.alpha
+
     def test_oracle_with_name(self):
         original = [b"oracle", b"my-oracle", b"prompt", [b"t1", b"t2"], b"1"]
         assert json_to_ast(ast_to_json(original)) == original
+
+    @pytest.mark.alpha
 
     def test_trial(self):
         original = [b"trial", [b"action"], [b"action"]]
         assert json_to_ast(ast_to_json(original)) == original
 
+    @pytest.mark.alpha
+
     def test_trial_empty(self):
         original = [b"trial"]
         assert json_to_ast(ast_to_json(original)) == original
 
+    @pytest.mark.alpha
+
     def test_rule_no_children(self):
         original = [b"rule", b"r1", [b"action"], [b"in.txt"], [b"out.txt"]]
         assert json_to_ast(ast_to_json(original)) == original
+
+    @pytest.mark.alpha
 
     def test_rule_with_children(self):
         child = [b"rule", b"c1", [b"action"], [], []]
         original = [b"rule", b"parent", [b"action"], [b"a"], [b"b"], child]
         assert json_to_ast(ast_to_json(original)) == original
 
+    @pytest.mark.alpha
+
     def test_build(self):
         rule = [b"rule", b"r", [b"action"], [], []]
         original = [b"build", b"mybuild", b"7", rule]
         assert json_to_ast(ast_to_json(original)) == original
+
+    @pytest.mark.alpha
 
     def test_husk(self):
         rule = [b"rule", b"r", [b"action"], [], []]
         build = [b"build", b"b", b"1", rule]
         original = [b"husk", b"1", build]
         assert json_to_ast(ast_to_json(original)) == original
+
+    @pytest.mark.alpha
 
     def test_full_demo(self):
         husk_bytes, _ = load_demo()
@@ -137,6 +173,8 @@ class TestSymmetry:
 class TestAtomEdgeCases:
     """NIL, UTF-8, and numeric-looking atoms."""
 
+    @pytest.mark.alpha
+
     def test_nil_round_trips(self):
         oracle = [b"oracle", NIL, b"prompt", [], b"1"]
         j = ast_to_json(oracle)
@@ -144,17 +182,23 @@ class TestAtomEdgeCases:
         rt = json_to_ast(j)
         assert rt[1] == NIL
 
+    @pytest.mark.alpha
+
     def test_utf8_prompt(self):
         prompt = "Héllo wörld! \U0001f389".encode("utf-8")
         oracle = [b"oracle", b"n", prompt, [], b"1"]
         rt = json_to_ast(ast_to_json(oracle))
         assert rt[2] == prompt
 
+    @pytest.mark.alpha
+
     def test_numeric_atoms_stay_strings(self):
         build = [b"build", b"b", b"42", [b"rule", b"r", [b"action"], [], []]]
         j = ast_to_json(build)
         assert j["fuel"] == "42"
         assert isinstance(j["fuel"], str)
+
+    @pytest.mark.alpha
 
     def test_json_string_round_trip(self):
         """to_json_str / from_json_str produce identical CSE trees."""

@@ -17,6 +17,8 @@ from husks.core import recompute_root
 from husks.designs import ir
 from husks.utils import reset as reset_trace
 
+import pytest
+
 
 def _run_and_compare(input_order):
     """Build a design with the given input order, run it with the stub,
@@ -73,15 +75,24 @@ def _run_and_compare(input_order):
         )
 
 
+@pytest.mark.alpha
+
+
 def test_all_input_orderings_agree():
     """Engine root must equal reader root for every permutation of inputs."""
     for order in itertools.permutations(["a_in.txt", "b_in.txt", "c_in.txt"]):
         _run_and_compare(order)
 
 
+@pytest.mark.alpha
+
+
 def test_sorted_order_still_works():
     """Sanity check: the already-sorted case (which was always working) still works."""
     _run_and_compare(["a_in.txt", "b_in.txt", "c_in.txt"])
+
+
+@pytest.mark.alpha
 
 
 def test_reverse_sorted_order():

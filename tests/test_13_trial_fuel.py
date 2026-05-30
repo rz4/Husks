@@ -10,6 +10,8 @@ import tempfile
 
 from conftest import make_site
 
+import pytest
+
 
 def _stub_oracle(S, rule_name, recipe, outputs):
     """Oracle that writes placeholder outputs."""
@@ -17,6 +19,9 @@ def _stub_oracle(S, rule_name, recipe, outputs):
     for o in outputs:
         write_text(site_path(S, o), f"output from {rule_name}\n")
     return {"tokens_in": 10, "tokens_out": 10, "cost_usd": 0.001, "fuel_steps": 1}
+
+
+@pytest.mark.alpha
 
 
 def test_trial_charges_global_fuel():
@@ -47,6 +52,9 @@ def test_trial_charges_global_fuel():
         assert S["status"] == "committed"
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_trial_stops_at_fuel_limit():
@@ -80,6 +88,9 @@ def test_trial_stops_at_fuel_limit():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.alpha
+
+
 def test_trial_halts_at_zero_fuel():
     """A trial at fuel=1 fires the rule but can fire 0 branches -> halt."""
     from husks.build import build, rule, trial, oracle
@@ -101,6 +112,9 @@ def test_trial_halts_at_zero_fuel():
         assert S["status"] == "halted"
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_trial_branch_history_records_actual_fuel_steps():
@@ -167,6 +181,9 @@ def test_trial_branch_history_records_actual_fuel_steps():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_trial_action_branch_uses_store_usage():

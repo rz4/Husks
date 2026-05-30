@@ -17,7 +17,7 @@ husks/
   manifest.py          Manifest/seal/trial-report reader utilities
   graph.py             Dependency graph rendering (text, mermaid, dot, json)
   gate.py              Conformance gate for external CSE readers
-  setup.py             husks selftest and husks init
+  setup.py             husks doctor --selftest and husks init
   cli.py               Argparse CLI (11 commands)
 
   designs/

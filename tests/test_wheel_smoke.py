@@ -18,7 +18,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
 
+
+@pytest.mark.beta
+@pytest.mark.gate_g
+@pytest.mark.slow
 def test_wheel_build_and_install():
     """Beta Gate G4: Build wheel, install in clean venv, run smoke tests.
 

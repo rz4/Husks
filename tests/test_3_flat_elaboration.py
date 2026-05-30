@@ -68,16 +68,22 @@ DEMO_FLAT_DESIGN_REVERSED = {
 class TestGoldenVectorElaboration:
     """Flat design elaborates to the exact same CSE bytes as demo.husk."""
 
+    @pytest.mark.alpha
+
     def test_elaborate_matches_demo_bytes(self):
         husk_bytes, _ = load_demo()
         tree = elaborate(DEMO_FLAT_DESIGN)
         assert encode(tree) == husk_bytes
+
+    @pytest.mark.alpha
 
     def test_elaborate_matches_demo_ast(self):
         husk_bytes, _ = load_demo()
         expected = parse(husk_bytes)
         actual = elaborate(DEMO_FLAT_DESIGN)
         assert actual == expected
+
+    @pytest.mark.alpha
 
     def test_elaborate_root_preservation(self):
         _, expected_root = load_demo()
@@ -92,10 +98,14 @@ class TestGoldenVectorElaboration:
 class TestOrderIndependence:
     """Different rule orderings in the flat design produce identical output."""
 
+    @pytest.mark.alpha
+
     def test_reversed_order_same_bytes(self):
         a = encode(elaborate(DEMO_FLAT_DESIGN))
         b = encode(elaborate(DEMO_FLAT_DESIGN_REVERSED))
         assert a == b
+
+    @pytest.mark.alpha
 
     def test_reversed_order_same_root(self):
         _, expected_root = load_demo()
@@ -176,10 +186,14 @@ DIAMOND_DESIGN_SHUFFLED = {
 class TestDiamondDAG:
     """Shared producer duplicated in tree; order-independent."""
 
+    @pytest.mark.alpha
+
     def test_diamond_same_bytes_regardless_of_order(self):
         a = encode(elaborate(DIAMOND_DESIGN))
         b = encode(elaborate(DIAMOND_DESIGN_SHUFFLED))
         assert a == b
+
+    @pytest.mark.alpha
 
     def test_diamond_tree_structure(self):
         tree = elaborate(DIAMOND_DESIGN)
@@ -198,6 +212,8 @@ class TestDiamondDAG:
         assert len(right["children"]) == 1
         assert left["children"][0]["name"] == "shared"
         assert right["children"][0]["name"] == "shared"
+
+    @pytest.mark.alpha
 
     def test_diamond_children_ordered_by_input_reference(self):
         """Children appear in order of first reference in parent's input list."""
@@ -236,6 +252,8 @@ class TestDiamondDAG:
 class TestRecipeElaboration:
     """Each recipe kind elaborates correctly."""
 
+    @pytest.mark.alpha
+
     def test_action_recipe(self):
         design = {
             "name": "b", "fuel": 1, "target": "r",
@@ -245,6 +263,8 @@ class TestRecipeElaboration:
         tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["targets"][0]["recipe"] == {"form": "action"}
+
+    @pytest.mark.alpha
 
     def test_oracle_recipe_nil_name(self):
         design = {
@@ -262,6 +282,8 @@ class TestRecipeElaboration:
         assert recipe["tools"] == ["t1"]
         assert recipe["fuel"] == "3"
 
+    @pytest.mark.alpha
+
     def test_oracle_recipe_with_name(self):
         design = {
             "name": "b", "fuel": 5, "target": "r",
@@ -273,6 +295,8 @@ class TestRecipeElaboration:
         tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["targets"][0]["recipe"]["name"] == "my-oracle"
+
+    @pytest.mark.alpha
 
     def test_trial_recipe(self):
         design = {
@@ -299,6 +323,8 @@ class TestRecipeElaboration:
 class TestElaborateEdgeCases:
     """Flat-design edge cases."""
 
+    @pytest.mark.alpha
+
     def test_single_rule_no_children(self):
         design = {
             "name": "solo", "fuel": 1, "target": "r",
@@ -308,6 +334,8 @@ class TestElaborateEdgeCases:
         tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["targets"][0]["children"] == []
+
+    @pytest.mark.alpha
 
     def test_target_defaults_to_last_rule(self):
         design = {
@@ -320,6 +348,8 @@ class TestElaborateEdgeCases:
         tree = elaborate(design)
         j = ast_to_json(tree)
         assert j["build"]["targets"][0]["name"] == "b"
+
+    @pytest.mark.alpha
 
     def test_site_inputs_not_children(self):
         """Inputs from site_inputs don't create child dependencies."""
@@ -334,6 +364,8 @@ class TestElaborateEdgeCases:
         assert j["build"]["targets"][0]["inputs"] == ["ext.txt"]
         assert j["build"]["targets"][0]["children"] == []
 
+    @pytest.mark.alpha
+
     def test_fuel_as_int_becomes_string_atom(self):
         design = {
             "name": "b", "fuel": 42, "target": "r",
@@ -344,6 +376,8 @@ class TestElaborateEdgeCases:
         j = ast_to_json(tree)
         assert j["build"]["fuel"] == "42"
         assert isinstance(j["build"]["fuel"], str)
+
+    @pytest.mark.alpha
 
     def test_elaborate_then_json_round_trip(self):
         """elaborate -> ast_to_json -> json_to_ast -> encode is stable."""

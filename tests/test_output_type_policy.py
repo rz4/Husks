@@ -12,6 +12,14 @@ import shutil
 import os
 from pathlib import Path
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
 
 def test_regular_file_output_accepted():
     """Regular files are accepted as valid outputs."""
@@ -39,6 +47,12 @@ def test_regular_file_output_accepted():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_directory_output_rejected():
@@ -74,6 +88,12 @@ def test_directory_output_rejected():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_symlink_output_rejected():
@@ -114,6 +134,12 @@ def test_symlink_output_rejected():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_broken_symlink_output_rejected():
     """Broken symlinks are rejected as outputs."""
     from husks.build import build, rule, action
@@ -141,6 +167,12 @@ def test_broken_symlink_output_rejected():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_fifo_output_rejected():
@@ -171,6 +203,12 @@ def test_fifo_output_rejected():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_output_type_policy_with_transaction():
@@ -212,6 +250,12 @@ def test_output_type_policy_with_transaction():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_multiple_outputs_one_invalid_type():
     """If one output has invalid type, validation fails before promoting any."""
     from husks.build import build, rule, action
@@ -249,6 +293,12 @@ def test_multiple_outputs_one_invalid_type():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_empty_file_still_valid_for_actions():
     """Empty regular files are valid for action recipes (only oracles reject empty)."""
     from husks.build import build, rule, action
@@ -276,6 +326,12 @@ def test_empty_file_still_valid_for_actions():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_nested_output_paths_still_regular_files():

@@ -4,6 +4,14 @@ import tempfile
 import shutil
 from pathlib import Path
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
 
 def test_failed_action_cannot_seal_live_writes():
     """Python actions that fail after writing to live site must not seal.
@@ -53,6 +61,12 @@ def test_failed_action_cannot_seal_live_writes():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
+
+
 def test_action_writing_to_staging_succeeds():
     """Python actions that correctly use staging should work normally."""
     from husks.build import build, rule, action
@@ -94,6 +108,12 @@ def test_action_writing_to_staging_succeeds():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_oracle_cannot_bypass_staging():
@@ -143,6 +163,12 @@ def test_oracle_cannot_bypass_staging():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_b
 
 
 def test_non_staged_build_still_validates_outputs():

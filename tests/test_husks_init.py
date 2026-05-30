@@ -16,11 +16,25 @@ from conftest import run_husks_cli
 from husks.designs.ir import from_json, check, run
 from husks.setup import _DEMO_DESIGN
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
 
 def test_demo_design_is_valid():
     """The demo design template passes validation."""
     errors = check(_DEMO_DESIGN)
     assert len(errors) == 0, f"Demo design should be valid, got errors: {errors}"
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
 
 
 def test_demo_design_has_required_fields():
@@ -30,6 +44,12 @@ def test_demo_design_has_required_fields():
     assert "target" in _DEMO_DESIGN
     assert "rules" in _DEMO_DESIGN
     assert len(_DEMO_DESIGN["rules"]) > 0
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
 
 
 def test_demo_design_runs_with_stub():
@@ -53,6 +73,12 @@ def test_demo_design_runs_with_stub():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
 
 
 def test_husks_init_creates_valid_project():
@@ -90,6 +116,12 @@ def test_husks_init_creates_valid_project():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
 def test_husks_init_check_command():
     """Generated project passes `husks check`."""
     tmpdir = tempfile.mkdtemp(prefix="init-check-")
@@ -111,6 +143,12 @@ def test_husks_init_check_command():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
 
 
 def test_husks_init_run_stub_command():
@@ -141,6 +179,12 @@ def test_husks_init_run_stub_command():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
 
 
 def test_husks_init_creates_claude_md():

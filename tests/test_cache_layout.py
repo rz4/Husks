@@ -20,6 +20,14 @@ import shutil
 import json
 from pathlib import Path
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
 
 def test_cache_key_determinism():
     """Same recipe and inputs produce same cache key."""
@@ -33,6 +41,12 @@ def test_cache_key_determinism():
 
     assert key1 == key2, "cache key should be deterministic"
     assert len(key1) == 64, "cache key should be SHA-256 hex (64 chars)"
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
 
 
 def test_cache_key_input_order_independence():
@@ -49,6 +63,12 @@ def test_cache_key_input_order_independence():
     assert key1 == key2, "cache key should be independent of input order"
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_cache_key_changes_with_recipe():
     """Different recipe produces different cache key."""
     from husks.build.cache import cache_key
@@ -60,6 +80,12 @@ def test_cache_key_changes_with_recipe():
     assert key1 != key2, "different recipes should have different cache keys"
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_cache_key_changes_with_inputs():
     """Different inputs produce different cache key."""
     from husks.build.cache import cache_key
@@ -69,6 +95,12 @@ def test_cache_key_changes_with_inputs():
     key2 = cache_key(recipe_rd, {"input.txt": "hash2"})
 
     assert key1 != key2, "different input hashes should have different cache keys"
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
 
 
 def test_cache_put_get_round_trip():
@@ -114,6 +146,12 @@ def test_cache_put_get_round_trip():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_cache_miss_on_changed_input():
     """Cache miss when input changes."""
     from husks.build.cache import cache_put, cache_get
@@ -152,6 +190,12 @@ def test_cache_miss_on_changed_input():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_cache_miss_on_changed_recipe():
     """Cache miss when recipe changes."""
     from husks.build.cache import cache_put, cache_get
@@ -181,6 +225,12 @@ def test_cache_miss_on_changed_recipe():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
 
 
 def test_cache_reuse_count_increments():
@@ -231,6 +281,12 @@ def test_cache_reuse_count_increments():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_cache_metadata_tracking():
     """Cache metadata includes timestamps and run IDs."""
     from husks.build.cache import cache_put, cache_dir
@@ -271,6 +327,12 @@ def test_cache_metadata_tracking():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_cache_list():
     """Cache list returns all cache entries."""
     from husks.build.cache import cache_put, cache_list
@@ -303,6 +365,12 @@ def test_cache_list():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_cache_clear():
     """Cache clear removes all entries."""
     from husks.build.cache import cache_put, cache_list, cache_clear
@@ -333,6 +401,12 @@ def test_cache_clear():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_action_recipes_not_cached():
     """Action recipes are not cached (oracle/trial only)."""
     from husks.build.cache import cache_put, cache_get
@@ -361,6 +435,12 @@ def test_action_recipes_not_cached():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
 
 
 def test_cache_directory_structure():

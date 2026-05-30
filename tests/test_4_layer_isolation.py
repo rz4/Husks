@@ -74,12 +74,16 @@ def _non_husks_imports(filepath):
 class TestCoreIsolation:
     """Layer 0: core.py imports no husks modules and only uses stdlib."""
 
+    @pytest.mark.alpha
+
     def test_no_husks_imports(self):
         path = os.path.join(SRC_DIR, "core.py")
         imports = _husks_imports(path)
         assert imports == set(), (
             f"core.py imports husks modules: {imports}"
         )
+
+    @pytest.mark.alpha
 
     def test_stdlib_only(self):
         path = os.path.join(SRC_DIR, "core.py")
@@ -95,12 +99,16 @@ class TestCoreIsolation:
 class TestTransportIsolation:
     """Layer 1: transport.py imports only from husks.core and stdlib."""
 
+    @pytest.mark.alpha
+
     def test_only_imports_core(self):
         path = os.path.join(SRC_DIR, "designs", "transport.py")
         imports = _husks_imports(path)
         assert imports == {"husks.core"}, (
             f"transport.py husks imports: {imports}, expected only husks.core"
         )
+
+    @pytest.mark.alpha
 
     def test_stdlib_only(self):
         path = os.path.join(SRC_DIR, "designs", "transport.py")
@@ -111,6 +119,8 @@ class TestTransportIsolation:
             f"transport.py non-husks imports: {imports}, "
             f"expected only {allowed_stdlib}"
         )
+
+    @pytest.mark.alpha
 
     def test_no_engine_imports(self):
         """transport must not import from engine or instrument layers."""
@@ -131,11 +141,15 @@ class TestTransportIsolation:
 class TestLayerBoundaries:
     """No module imports from a layer below it."""
 
+    @pytest.mark.alpha
+
     def test_core_never_imports_downward(self):
         """Core (Layer 0) imports nothing from Layers 1-3."""
         path = os.path.join(SRC_DIR, "core.py")
         imports = _husks_imports(path)
         assert imports == set()
+
+    @pytest.mark.alpha
 
     def test_transport_never_imports_engine_or_instrument(self):
         """Transport (Layer 1) imports nothing from Layers 2-3."""
@@ -146,6 +160,8 @@ class TestLayerBoundaries:
         assert violations == set(), (
             f"transport.py imports from lower layers: {violations}"
         )
+
+    @pytest.mark.alpha
 
     def test_designs_ir_does_not_import_instrument(self):
         """designs/ir.py (Layer 2) should not directly import instrument modules
@@ -180,9 +196,13 @@ class TestLayerBoundaries:
 class TestOracleBackendProtocol:
     """The OracleBackend protocol is defined and content-keyed."""
 
+    @pytest.mark.alpha
+
     def test_protocol_importable(self):
         from husks.designs.transport import OracleBackend
         assert OracleBackend is not None
+
+    @pytest.mark.alpha
 
     def test_protocol_is_runtime_checkable(self):
         from husks.designs.transport import OracleBackend
@@ -190,6 +210,8 @@ class TestOracleBackendProtocol:
         def my_backend(recipe_form, inputs):
             return {}, {}
         assert isinstance(my_backend, OracleBackend)
+
+    @pytest.mark.alpha
 
     def test_protocol_signature_is_content_keyed(self):
         """The protocol accepts recipe_form and inputs (content),
@@ -206,6 +228,8 @@ class TestOracleBackendProtocol:
                 f"OracleBackend.__call__ has '{banned}' parameter -- "
                 f"instrumentation must not cross the boundary"
             )
+
+    @pytest.mark.alpha
 
     def test_stub_backend_conforms(self):
         """A minimal stub backend satisfies the protocol."""
@@ -230,10 +254,14 @@ class TestOracleBackendProtocol:
 class TestLayerDocumentation:
     """Verify that modules document their layer membership."""
 
+    @pytest.mark.alpha
+
     def test_core_docstring_mentions_dependency_free(self):
         import husks.core
         assert "dependency" in husks.core.__doc__.lower() or \
                "stdlib" in husks.core.__doc__.lower()
+
+    @pytest.mark.alpha
 
     def test_transport_docstring_mentions_bijection(self):
         import husks.designs.transport

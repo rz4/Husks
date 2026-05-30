@@ -139,6 +139,11 @@ def cache_get(
 
         seal_data = json.loads(seal_file.read_text())
 
+        # Beta Readiness Task 5: Validate cache seal version
+        seal_version = seal_data.get("cache_seal_version")
+        if seal_version and seal_version != "1.0":
+            return None  # Unsupported seal version
+
         # 2. Verify recipe digest matches (prevents recipe tampering)
         if seal_data.get("recipe_digest") != recipe_rd:
             return None
@@ -241,7 +246,9 @@ def cache_put(
             content_hash = hashlib.sha256(content.encode()).hexdigest()
             output_hashes[name] = content_hash
 
+        # Beta Readiness Task 5: Add schema version to cache seal
         seal_data = {
+            "cache_seal_version": "1.0",
             "recipe_digest": recipe_rd,
             "outputs": output_hashes,
             "inputs": input_sigs,

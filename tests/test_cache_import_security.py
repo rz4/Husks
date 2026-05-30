@@ -20,6 +20,14 @@ from pathlib import Path
 from husks.build.site import fresh_store
 from husks.build.cache import cache_import
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
 
 def test_reject_absolute_paths():
     """Reject tarball with absolute paths."""
@@ -48,6 +56,12 @@ def test_reject_absolute_paths():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_reject_path_traversal():
     """Reject tarball with .. path traversal."""
     tmpdir = tempfile.mkdtemp(prefix="cache-traversal-")
@@ -73,6 +87,12 @@ def test_reject_path_traversal():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
 
 
 def test_reject_symlinks():
@@ -103,6 +123,12 @@ def test_reject_symlinks():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_reject_hardlinks():
     """Reject tarball with hardlinks."""
     tmpdir = tempfile.mkdtemp(prefix="cache-hardlink-")
@@ -131,6 +157,12 @@ def test_reject_hardlinks():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_reject_special_files():
     """Reject tarball with device files."""
     tmpdir = tempfile.mkdtemp(prefix="cache-device-")
@@ -156,6 +188,12 @@ def test_reject_special_files():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
 
 
 def test_reject_oversized_members():
@@ -200,6 +238,12 @@ def test_reject_oversized_members():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_reject_invalid_cache_key():
     """Reject tarball with invalid cache key (not hex)."""
     tmpdir = tempfile.mkdtemp(prefix="cache-badkey-")
@@ -224,6 +268,12 @@ def test_reject_invalid_cache_key():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
 
 
 def test_reject_unexpected_filename():
@@ -253,6 +303,12 @@ def test_reject_unexpected_filename():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_reject_unexpected_nesting():
     """Reject tarball with deep nesting."""
     tmpdir = tempfile.mkdtemp(prefix="cache-nesting-")
@@ -277,6 +333,12 @@ def test_reject_unexpected_nesting():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
 
 
 def test_accept_valid_cache():

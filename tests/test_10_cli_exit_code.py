@@ -12,6 +12,8 @@ import sys
 import tempfile
 import shutil
 
+import pytest
+
 
 def _run_cli(*extra_args, design=None):
     """Invoke the CLI via subprocess and return (returncode, stdout, stderr)."""
@@ -43,6 +45,9 @@ def _run_cli(*extra_args, design=None):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.alpha
+
+
 def test_committed_build_exits_zero():
     """A simple action that succeeds should exit 0."""
     design = {
@@ -63,6 +68,9 @@ def test_committed_build_exits_zero():
     assert rc == 0, f"committed build should exit 0, got {rc}\nstdout: {out}\nstderr: {err}"
 
 
+@pytest.mark.alpha
+
+
 def test_halted_build_exits_nonzero():
     """A build that halts (e.g. action exits nonzero) must exit 1."""
     design = {
@@ -81,6 +89,9 @@ def test_halted_build_exits_nonzero():
     }
     rc, out, err = _run_cli(design=design)
     assert rc == 1, f"halted build should exit 1, got {rc}\nstdout: {out}\nstderr: {err}"
+
+
+@pytest.mark.alpha
 
 
 def test_halted_build_soft_fail_exits_zero():

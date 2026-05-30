@@ -30,3 +30,16 @@ packages = ["src/husks"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+markers = [
+    "alpha: Old sequential engine regression tests (chronological build-up)",
+    "beta: Three-machine beta proof tests (proof boundary)",
+    "gate_a: Seed portability and site_inputs",
+    "gate_b: Transaction safety and output validation",
+    "gate_c: Artifact identity and comparison",
+    "gate_d: Cache reuse and trust",
+    "gate_e: Independent re-realization",
+    "gate_f: Report and cost proof",
+    "gate_g: Release smoke tests",
+    "gate_h: Bloat-control regression",
+    "slow: Wheel builds or subprocess-heavy tests",
+]

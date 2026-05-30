@@ -15,6 +15,14 @@ from husks.build.site import Store
 from husks.build.identity import recipe_to_cse
 from husks.core import recipe_digest
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
 
 def test_cache_get_is_single_validation_path():
     """cache_get() performs all required validation (Task 11).
@@ -78,6 +86,12 @@ def test_cache_get_is_single_validation_path():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
 def test_cache_validation_prevents_bypass():
     """Direct .cache/ access bypasses validation (anti-pattern).
 
@@ -129,6 +143,12 @@ def test_cache_validation_prevents_bypass():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
 
 
 def test_cache_get_validation_steps():

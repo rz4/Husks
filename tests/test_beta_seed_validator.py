@@ -15,12 +15,38 @@ import os
 sys.path.insert(0, str(Path(__file__).parent.parent / "examples" / "beta_seed"))
 from validate import validate_response
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
+@pytest.mark.gate_c
+
+
+@pytest.mark.gate_e
+
 
 def test_validator_accepts_correct_live_answer():
     """Validator accepts correctly formatted live answer."""
     valid, message = validate_response("ANSWER: Paris")
     assert valid is True, f"Should accept correct answer: {message}"
     assert message == "PASS"
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
+@pytest.mark.gate_c
+
+
+@pytest.mark.gate_e
 
 
 def test_validator_accepts_case_insensitive():
@@ -32,6 +58,18 @@ def test_validator_accepts_case_insensitive():
     assert valid is True, f"Should accept case variations: {message}"
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
+@pytest.mark.gate_c
+
+
+@pytest.mark.gate_e
+
+
 def test_validator_accepts_stub_output():
     """Validator accepts stub oracle placeholder."""
     valid, message = validate_response("ANSWER: Stub oracle output")
@@ -41,12 +79,36 @@ def test_validator_accepts_stub_output():
     assert valid is True, f"Should accept placeholder: {message}"
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
+@pytest.mark.gate_c
+
+
+@pytest.mark.gate_e
+
+
 def test_validator_rejects_missing_answer_prefix():
     """Validator rejects response without ANSWER: prefix (Task 5)."""
     valid, message = validate_response("Paris")
     assert valid is False, "Should reject answer without prefix"
     assert "FAIL" in message
     assert "Expected 'ANSWER:" in message
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
+@pytest.mark.gate_c
+
+
+@pytest.mark.gate_e
 
 
 def test_validator_rejects_malformed_format():
@@ -67,6 +129,18 @@ def test_validator_rejects_malformed_format():
     assert "Invalid answer" in message
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
+@pytest.mark.gate_c
+
+
+@pytest.mark.gate_e
+
+
 def test_validator_accepts_whitespace_variations():
     """Validator handles whitespace variations gracefully."""
     valid, message = validate_response("ANSWER:   Paris   ")
@@ -76,12 +150,36 @@ def test_validator_accepts_whitespace_variations():
     assert valid is True, f"Should handle leading/trailing whitespace: {message}"
 
 
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
+@pytest.mark.gate_c
+
+
+@pytest.mark.gate_e
+
+
 def test_validator_rejects_incorrect_answer():
     """Validator rejects incorrect answer even with correct format."""
     valid, message = validate_response("ANSWER: Berlin")
     assert valid is False, "Should reject Berlin (wrong answer)"
     assert "Invalid answer" in message
     assert "Berlin" in message
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_a
+
+
+@pytest.mark.gate_c
+
+
+@pytest.mark.gate_e
 
 
 def test_validator_with_multiline_response():

@@ -26,6 +26,8 @@ SKILL_PATH = os.path.join(os.path.dirname(__file__), "..",
 class TestSkillWorkflowVerifies:
     """The skill's design -> elaborate -> encode -> verify pathway works."""
 
+    @pytest.mark.alpha
+
     def test_elaborate_encode_parse_roundtrip(self):
         """A skill-authored flat design elaborates to parseable CSE."""
         design = {
@@ -49,6 +51,8 @@ class TestSkillWorkflowVerifies:
         # The frozen reader can parse the skill's output
         parsed = parse(husk_bytes)
         assert parsed == tree
+
+    @pytest.mark.alpha
 
     def test_elaborate_produces_valid_husk_structure(self):
         """Elaborated design has the correct CSE form structure."""
@@ -101,11 +105,15 @@ class TestSkillWorkflowVerifies:
         assert gen["recipe"]["form"] == "oracle"
         assert gen["recipe"]["prompt"] == "Generate a result."
 
+    @pytest.mark.alpha
+
     def test_golden_vector_verifies(self):
         """The demo.husk verifies against the frozen reader -- the
         fundamental gate that proves permanence."""
         husk_bytes, expected_root = load_demo()
         assert verify(husk_bytes, DEMO_SITE, expected_root)
+
+    @pytest.mark.alpha
 
     def test_elaborate_demo_design_verifies(self):
         """A flat design matching demo.husk elaborates to bytes that
@@ -137,6 +145,8 @@ class TestSkillWorkflowVerifies:
         husk_bytes = encode(elaborate(design))
         assert verify(husk_bytes, DEMO_SITE, expected_root)
 
+    @pytest.mark.alpha
+
     def test_husk_file_written_to_disk_verifies(self):
         """Writing .husk bytes to disk and reading them back
         reproduces the same root -- the file is self-contained."""
@@ -161,6 +171,8 @@ class TestSkillWorkflowVerifies:
 class TestTwoFormVocabulary:
     """action and oracle are sufficient for any decomposition."""
 
+    @pytest.mark.alpha
+
     def test_action_only_design(self):
         """A design with only action rules elaborates correctly."""
         design = {
@@ -182,6 +194,8 @@ class TestTwoFormVocabulary:
         assert j["build"]["targets"][0]["recipe"] == {"form": "action"}
         # Parseable by reader
         assert parse(encode(tree)) == tree
+
+    @pytest.mark.alpha
 
     def test_oracle_only_design(self):
         """A design with only oracle rules elaborates correctly."""
@@ -207,6 +221,8 @@ class TestTwoFormVocabulary:
         assert recipe["form"] == "oracle"
         assert recipe["prompt"] == "Generate content."
         assert parse(encode(tree)) == tree
+
+    @pytest.mark.alpha
 
     def test_mixed_action_oracle_design(self):
         """The common pattern: oracle produces, action verifies."""
@@ -247,6 +263,8 @@ class TestTwoFormVocabulary:
 class TestConvergenceProperties:
     """Sealed rules produce stable hashes; recipe changes alter the root."""
 
+    @pytest.mark.alpha
+
     def test_same_design_same_root(self):
         """Elaborating the same design twice produces identical bytes."""
         design = {
@@ -268,6 +286,8 @@ class TestConvergenceProperties:
         a = encode(elaborate(design))
         b = encode(elaborate(design))
         assert a == b
+
+    @pytest.mark.alpha
 
     def test_prompt_change_changes_bytes(self):
         """Changing the oracle prompt changes the CSE bytes (and thus
@@ -296,6 +316,8 @@ class TestConvergenceProperties:
         a = encode(elaborate(design_a))
         b = encode(elaborate(design_b))
         assert a != b
+
+    @pytest.mark.alpha
 
     def test_fuel_change_changes_bytes(self):
         """Changing oracle fuel changes the recipe and thus the seal."""
@@ -345,24 +367,36 @@ class TestSkillDocument:
         with open(SKILL_PATH, "r") as f:
             self.skill = f.read()
 
+    @pytest.mark.alpha
+
     def test_mentions_two_forms(self):
         assert "action" in self.skill
         assert "oracle" in self.skill
         assert "Two Forms" in self.skill
 
+    @pytest.mark.alpha
+
     def test_mentions_verification(self):
         assert "verify" in self.skill.lower() or "recompute_root" in self.skill
+
+    @pytest.mark.alpha
 
     def test_mentions_convergence(self):
         assert "Convergence" in self.skill or "convergence" in self.skill
         assert "sealed" in self.skill.lower()
 
+    @pytest.mark.alpha
+
     def test_mentions_cse_permanence(self):
         assert "CSE" in self.skill or "canonical s-expression" in self.skill.lower()
         assert "permanent" in self.skill.lower() or "outlives" in self.skill.lower()
 
+    @pytest.mark.alpha
+
     def test_mentions_elaborate(self):
         assert "elaborate" in self.skill.lower()
+
+    @pytest.mark.alpha
 
     def test_workflow_includes_verify_step(self):
         """The workflow must include a verification step after build."""

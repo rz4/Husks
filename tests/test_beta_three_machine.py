@@ -27,6 +27,14 @@ import shutil
 import json
 from pathlib import Path
 
+import pytest
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_e
+
 
 def test_machine_1_and_3_independent_realization():
     """Machine 1 and Machine 3 independently realize same seed with comparable cost.
@@ -134,6 +142,12 @@ def test_machine_1_and_3_independent_realization():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_e
 
 
 def test_three_machine_full_proof():

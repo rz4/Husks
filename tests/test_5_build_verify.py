@@ -10,6 +10,8 @@ import os
 import shutil
 import tempfile
 
+import pytest
+
 from husks.core import recompute_root
 
 
@@ -58,6 +60,9 @@ def _run_build(design):
     return run(design)
 
 
+@pytest.mark.alpha
+
+
 def test_engine_root_equals_reader_root():
     """Engine-computed build-root == core-reader build-root on a live build."""
     tmpdir = tempfile.mkdtemp(prefix="phase1-gate-")
@@ -92,6 +97,9 @@ def test_engine_root_equals_reader_root():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.alpha
+
+
 def test_seal_determinism():
     """Running the same build twice produces the same root."""
     tmpdir = tempfile.mkdtemp(prefix="phase1-determ-")
@@ -120,6 +128,9 @@ def test_seal_determinism():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.alpha
+
+
 def test_freshness_skip():
     """Second run skips execution (seals fresh), same root."""
     tmpdir = tempfile.mkdtemp(prefix="phase1-fresh-")
@@ -146,6 +157,9 @@ def test_freshness_skip():
         assert len(sealed_events) > 0, "expected some rules to be sealed on second run"
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_cond_file_nonempty_branching():
@@ -201,6 +215,9 @@ def test_cond_file_nonempty_branching():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.alpha
+
+
 def test_staleness_changes_root():
     """Modifying an input file changes the root."""
     tmpdir = tempfile.mkdtemp(prefix="phase1-stale-")
@@ -227,6 +244,9 @@ def test_staleness_changes_root():
 
 
 # ── Import tests ──────────────────────────────────────────────
+
+
+@pytest.mark.alpha
 
 
 def test_imports_readable():
@@ -283,6 +303,9 @@ def _read_import_action(S):
     write_text(write_path(S, "result.txt"), f"read: {data}")
 
 
+@pytest.mark.alpha
+
+
 def test_imports_write_blocked():
     """Writing to an imported (read-only) path is rejected by the sandbox."""
     tmpdir = tempfile.mkdtemp(prefix="import-write-")
@@ -320,6 +343,9 @@ def test_imports_write_blocked():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_imports_build_succeeds():
@@ -363,6 +389,9 @@ def test_imports_build_succeeds():
 # ── Multi-target tests ─────────────────────────────────────────
 
 
+@pytest.mark.alpha
+
+
 def test_multi_target_build():
     """Multi-target design with two independent commit rules builds successfully."""
     tmpdir = tempfile.mkdtemp(prefix="multi-target-")
@@ -393,6 +422,9 @@ def test_multi_target_build():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_multi_target_engine_equals_reader_root():
@@ -446,6 +478,9 @@ def test_multi_target_engine_equals_reader_root():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.alpha
+
+
 def test_single_target_string_backward_compat():
     """Single 'target' (string) still works after multi-target changes."""
     tmpdir = tempfile.mkdtemp(prefix="compat-target-")
@@ -481,6 +516,9 @@ def test_single_target_string_backward_compat():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_different_shell_commands_different_seal():
@@ -538,6 +576,9 @@ def test_different_shell_commands_different_seal():
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_imports_check_validation():

@@ -19,6 +19,8 @@ from husks.utils.events import BuildTrace
 
 # ── Phase 0: Trace lifecycle (#3) ─────────────────────────────────
 
+@pytest.mark.alpha
+
 def test_trace_clear_preserves_listeners():
     """BuildTrace.clear() resets state but keeps listeners attached."""
     t = BuildTrace()
@@ -42,6 +44,9 @@ def test_trace_clear_preserves_listeners():
     assert events[-1]["name"] == "second"
 
 
+@pytest.mark.alpha
+
+
 def test_trace_clear_listeners():
     """BuildTrace.clear_listeners() removes all listeners."""
     t = BuildTrace()
@@ -56,6 +61,9 @@ def test_trace_clear_listeners():
 
     t.clear_listeners()
     assert len(t._listeners) == 0
+
+
+@pytest.mark.alpha
 
 
 def test_sequential_builds_independent_traces():
@@ -109,6 +117,8 @@ def test_sequential_builds_independent_traces():
 
 # ── Phase 1: Usability (#13 list target) ──────────────────────────
 
+@pytest.mark.alpha
+
 def test_check_list_target_tolerated():
     """check() handles 'target' being a list without crashing."""
     from husks.designs.ir import check
@@ -130,6 +140,9 @@ def test_check_list_target_tolerated():
     assert not errors, f"unexpected errors: {errors}"
 
 
+@pytest.mark.alpha
+
+
 def test_check_list_target_multiple():
     """check() handles 'target' being a list of multiple targets."""
     from husks.designs.ir import check
@@ -148,6 +161,8 @@ def test_check_list_target_multiple():
 
 
 # ── Phase 2: Integrity (#7 path sandboxing) ───────────────────────
+
+@pytest.mark.alpha
 
 def test_check_rejects_path_traversal_output():
     """check() rejects outputs with '..' components."""
@@ -170,6 +185,9 @@ def test_check_rejects_path_traversal_output():
     assert any(".." in e for e in errors), f"expected path traversal error, got: {errors}"
 
 
+@pytest.mark.alpha
+
+
 def test_check_rejects_absolute_path_output():
     """check() rejects outputs with absolute paths."""
     from husks.designs.ir import check
@@ -189,6 +207,9 @@ def test_check_rejects_absolute_path_output():
     }
     errors = check(design)
     assert any("absolute" in e for e in errors), f"expected absolute path error, got: {errors}"
+
+
+@pytest.mark.alpha
 
 
 def test_check_rejects_path_traversal_input():
@@ -213,6 +234,9 @@ def test_check_rejects_path_traversal_input():
     assert any(".." in e for e in errors), f"expected path traversal error, got: {errors}"
 
 
+@pytest.mark.alpha
+
+
 def test_site_path_rejects_escape():
     """site_path() raises ValueError on path traversal."""
     from husks.build import site_path
@@ -227,6 +251,8 @@ def test_site_path_rejects_escape():
 
 
 # ── Phase 2: Integrity (#5 output-hash freshness) ─────────────────
+
+@pytest.mark.alpha
 
 def test_tampered_output_detected_as_stale():
     """freshness_check() detects tampered outputs after seal is written."""
@@ -269,6 +295,8 @@ def test_tampered_output_detected_as_stale():
 
 # ── Phase 2: Integrity (#8 verdict identity) ──────────────────────
 
+@pytest.mark.alpha
+
 def test_verdict_policy_changes_recipe_digest():
     """Changing the verdict policy changes the recipe digest."""
     from husks.build import recipe_to_cse, first_valid
@@ -293,6 +321,9 @@ def test_verdict_policy_changes_recipe_digest():
     assert digest1 != digest2, "different verdict policies must produce different digests"
 
 
+@pytest.mark.alpha
+
+
 def test_verdict_policy_name_in_cse():
     """The verdict policy name appears in the CSE form for trial recipes."""
     from husks.build import recipe_to_cse, first_valid
@@ -309,6 +340,8 @@ def test_verdict_policy_name_in_cse():
 
 
 # ── Phase 1: #4 JSON output should not contain console trace ──────
+
+@pytest.mark.alpha
 
 def test_json_output_clean(tmp_path):
     """--json output should be valid JSON without console trace pollution."""
@@ -357,6 +390,8 @@ def test_json_output_clean(tmp_path):
 
 # ── litellm import isolation ──────────────────────────────────────
 
+@pytest.mark.alpha
+
 def test_litellm_not_imported_at_module_level():
     """Importing husks.oracle.kernel should not trigger litellm import."""
     import subprocess
@@ -380,6 +415,8 @@ def test_litellm_not_imported_at_module_level():
 
 # ── Import local name validation ─────────────────────────────────
 
+@pytest.mark.alpha
+
 def test_check_rejects_traversal_import_name():
     """check() rejects import local names with '..' components."""
     from husks.designs.ir import check
@@ -395,6 +432,9 @@ def test_check_rejects_traversal_import_name():
     }
     errors = check(design)
     assert any(".." in e for e in errors), f"expected path traversal error, got: {errors}"
+
+
+@pytest.mark.alpha
 
 
 def test_check_rejects_absolute_import_name():
@@ -415,6 +455,8 @@ def test_check_rejects_absolute_import_name():
 
 
 # ── Oracle fuel budget ────────────────────────────────────────────
+
+@pytest.mark.alpha
 
 def test_check_allows_oracle_fuel_independent_of_global():
     """check() allows oracle fuel > global fuel (they're independent).
@@ -445,6 +487,9 @@ def test_check_allows_oracle_fuel_independent_of_global():
     assert len(errors) == 0, f"should allow oracle fuel > global fuel, got: {errors}"
 
 
+@pytest.mark.alpha
+
+
 def test_check_allows_oracle_fuel_within_budget():
     """check() accepts designs where oracle fuel fits within the budget."""
     from husks.designs.ir import check
@@ -470,6 +515,8 @@ def test_check_allows_oracle_fuel_within_budget():
 
 
 # ── Old seal without output hashes → stale ────────────────────────
+
+@pytest.mark.alpha
 
 def test_old_seal_without_outputs_is_stale():
     """A seal missing 'outputs' field is treated as stale for upgrade."""
@@ -513,6 +560,8 @@ def test_old_seal_without_outputs_is_stale():
 
 
 # ── Staged promotion atomicity ────────────────────────────────────
+
+@pytest.mark.alpha
 
 def test_staging_promotion_is_atomic():
     """Staged promotion validates all outputs before promoting any.
@@ -563,6 +612,9 @@ def test_staging_promotion_is_atomic():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_staging_promotion_preserves_backups():

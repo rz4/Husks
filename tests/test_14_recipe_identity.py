@@ -13,6 +13,8 @@ import tempfile
 
 from conftest import make_site
 
+import pytest
+
 
 def _make_design(site, action_fn, outputs=None):
     """Build a minimal design with a callable action."""
@@ -24,6 +26,9 @@ def _make_design(site, action_fn, outputs=None):
         recipe=action(action_fn),
     )
     return build("recipe-id-test", 10, node, site=site)
+
+
+@pytest.mark.alpha
 
 
 def test_callable_body_change_changes_root():
@@ -51,6 +56,9 @@ def test_callable_body_change_changes_root():
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_callable_rename_same_body_same_root():
@@ -83,6 +91,9 @@ def test_callable_rename_same_body_same_root():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.alpha
+
+
 def test_shell_action_identity_is_command():
     """Shell actions with the same command produce the same recipe digest."""
     from husks.build import recipe_to_cse
@@ -103,6 +114,9 @@ def test_shell_action_identity_is_command():
     )
 
 
+@pytest.mark.alpha
+
+
 def test_shell_action_different_command_different_digest():
     """Shell actions with different commands produce different digests."""
     from husks.build import recipe_to_cse
@@ -121,6 +135,9 @@ def test_shell_action_different_command_different_digest():
     assert rd_a != rd_b, (
         "shell actions with different commands must have different digests"
     )
+
+
+@pytest.mark.alpha
 
 
 def test_cond_pred_different_args_different_roots():
@@ -161,6 +178,9 @@ def test_cond_pred_different_args_different_roots():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@pytest.mark.alpha
+
+
 def test_cond_pred_same_spec_same_root():
     """Cond predicates with the same spec string produce the same root."""
     from husks.build import build, cond, commit, halt
@@ -186,6 +206,9 @@ def test_cond_pred_same_spec_same_root():
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.alpha
 
 
 def test_v1_vectors_still_verify():
