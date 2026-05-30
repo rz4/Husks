@@ -96,24 +96,54 @@ def _cmd_status(args):
 def _cmd_explain(args):
     """Dispatch to the appropriate explain mode.
 
-    In graph mode, treat subject as the design file path.
+    Default (no flags): bordered DAG tree.
+    --graph is kept as a backwards-compat no-op (graph IS the default).
     """
-    if args.graph:
-        # Graph mode: subject is the design file
-        if args.subject:
-            args.design = args.subject
-        _explain_graph(args)
-    elif args.diff:
-        _explain_diff(args)
+    if args.diff:
+        _explain_diff(args)          # legacy
     elif args.seal:
-        _explain_seal(args)
+        _explain_seal(args)          # legacy
     elif args.subject:
-        _explain_subject(args)
+        subject = args.subject
+        if subject.endswith(('.json', '.hy')):
+            args.design = subject
+            _explain_graph(args)
+        else:
+            _explain_subject(args)   # legacy
     else:
-        print("error: explain requires SUBJECT, --graph, --diff, or --seal",
-              file=sys.stderr)
-        sys.exit(EXIT_USAGE)
+        _explain_graph(args)
 
+
+def _explain_graph(args):
+    """Render the bordered DAG tree (primary explain output)."""
+    from husks.graph import render_graph
+    from husks.manifest import read_manifest
+
+    design_path = resolve_design(args)
+    design = from_json(design_path)
+
+    # Extract root hash from manifest when a site is provided
+    root_hash = None
+    site = getattr(args, "site", None) or design.get("site")
+    if site:
+        try:
+            manifest = read_manifest(site)
+            if manifest:
+                root_hash = manifest.get("root")
+        except Exception:
+            pass
+
+    print(render_graph(
+        design,
+        fmt=args.graph_format,
+        site=site,
+        root_hash=root_hash,
+    ))
+
+
+# ── legacy ───────────────────────────────────────────────────────
+# These modes are kept for backwards compatibility but are clearly
+# separated from the primary bordered-tree explain output above.
 
 def _explain_subject(args):
     """Explain a rule, artifact, or root by name."""
@@ -201,17 +231,8 @@ def _explain_subject(args):
         _render_explain(info)
 
 
-def _explain_graph(args):
-    """Render the dependency graph (formerly top-level 'graph' command)."""
-    from husks.graph import render_graph
-
-    design_path = resolve_design(args)
-    design = from_json(design_path)
-    print(render_graph(design, fmt=args.graph_format, site=args.site))
-
-
 def _explain_diff(args):
-    """Show differences between sealed and current artifacts (formerly top-level 'diff')."""
+    """Show differences between sealed and current artifacts."""
     from husks.manifest import compute_artifact_states
 
     manifest, site = _load_manifest(args)

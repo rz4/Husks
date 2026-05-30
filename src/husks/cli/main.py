@@ -77,11 +77,11 @@ def main():
                         help="Exit 4 if any rule is stale")
 
     # explain
-    e = sub.add_parser("explain", help="Explain a rule, artifact, graph, diff, or seal")
+    e = sub.add_parser("explain", help="Bordered DAG tree (default), or --diff / --seal")
     e.add_argument("subject", nargs="?", default=None,
-                   help="Subject: rule/artifact name, or design file for --graph mode")
+                   help="Design file path (.json/.hy), or rule/artifact name")
     e.add_argument("--graph", action="store_true",
-                   help="Render the dependency graph")
+                   help=argparse.SUPPRESS)  # backwards-compat no-op
     e.add_argument("--diff", action="store_true",
                    help="Show differences between sealed and current artifacts")
     e.add_argument("--seal", metavar="SUBJECT",
