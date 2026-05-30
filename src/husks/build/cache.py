@@ -140,9 +140,10 @@ def cache_get(
         seal_data = json.loads(seal_file.read_text())
 
         # Beta Readiness Task 5: Validate cache seal version
+        # Reject missing or unsupported versions
         seal_version = seal_data.get("cache_seal_version")
-        if seal_version and seal_version != "1.0":
-            return None  # Unsupported seal version
+        if seal_version != "1.0":
+            return None  # Missing or unsupported seal version
 
         # 2. Verify recipe digest matches (prevents recipe tampering)
         if seal_data.get("recipe_digest") != recipe_rd:

@@ -187,3 +187,113 @@ def test_cache_get_validation_steps():
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
+def test_cache_rejects_missing_seal_version():
+    """Beta Readiness Task 4: Reject cache entries without cache_seal_version."""
+    tmpdir = tempfile.mkdtemp(prefix="cache-seal-version-")
+    try:
+        S: Store = {"site": tmpdir, "run-id": "test"}
+
+        recipe = {
+            "type": "oracle",
+            "name": "test",
+            "prompt": "test",
+            "outputs": ["out.txt"],
+        }
+        inputs = []
+        outputs = {"out.txt": "content"}
+
+        # Create cache entry manually without cache_seal_version (simulating old cache)
+        from husks.build.cache import cache_key, cache_dir
+        from husks.build.identity import recipe_to_cse
+        from husks.core import recipe_digest
+        from husks.build.site import ensure_dir
+        import hashlib
+
+        recipe_form = recipe_to_cse(recipe)
+        recipe_rd = recipe_digest(recipe_form)
+        key = cache_key(recipe_rd, {})
+        cdir = cache_dir(S, key)
+        ensure_dir(cdir)
+
+        # Write outputs.json
+        outputs_file = Path(cdir) / "outputs.json"
+        outputs_file.write_text(json.dumps(outputs))
+
+        # Write seal.json WITHOUT cache_seal_version (old format)
+        output_hashes = {
+            name: hashlib.sha256(content.encode()).hexdigest()
+            for name, content in outputs.items()
+        }
+        seal_data = {
+            # NOTE: Missing cache_seal_version!
+            "recipe_digest": recipe_rd,
+            "outputs": output_hashes,
+            "inputs": {},
+        }
+        seal_file = Path(cdir) / "seal.json"
+        seal_file.write_text(json.dumps(seal_data))
+
+        # Try to retrieve - should reject due to missing cache_seal_version
+        result = cache_get(S, recipe, inputs, declared_outputs=["out.txt"])
+        assert result is None, "cache_get should reject cache entry without cache_seal_version"
+
+        print("\n✓ Beta Readiness Task 4: Missing cache_seal_version rejected")
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.beta
+
+
+@pytest.mark.gate_d
+
+
+def test_cache_rejects_unsupported_seal_version():
+    """Beta Readiness Task 4: Reject cache entries with unsupported cache_seal_version."""
+    tmpdir = tempfile.mkdtemp(prefix="cache-seal-version-unsupported-")
+    try:
+        S: Store = {"site": tmpdir, "run-id": "test"}
+
+        recipe = {
+            "type": "oracle",
+            "name": "test",
+            "prompt": "test",
+            "outputs": ["out.txt"],
+        }
+        inputs = []
+        outputs = {"out.txt": "content"}
+
+        # Create cache entry with unsupported version
+        cache_put(S, recipe, inputs, outputs)
+
+        # Find and modify the seal to use unsupported version
+        from husks.build.cache import cache_key
+        from husks.build.identity import recipe_to_cse
+        from husks.core import recipe_digest
+
+        recipe_form = recipe_to_cse(recipe)
+        recipe_rd = recipe_digest(recipe_form)
+        key = cache_key(recipe_rd, {})
+        seal_file = Path(tmpdir) / ".cache" / key / "seal.json"
+
+        seal_data = json.loads(seal_file.read_text())
+        seal_data["cache_seal_version"] = "2.0"  # Unsupported version
+        seal_file.write_text(json.dumps(seal_data))
+
+        # Try to retrieve - should reject due to unsupported version
+        result = cache_get(S, recipe, inputs, declared_outputs=["out.txt"])
+        assert result is None, "cache_get should reject unsupported cache_seal_version"
+
+        print("\n✓ Beta Readiness Task 4: Unsupported cache_seal_version rejected")
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
