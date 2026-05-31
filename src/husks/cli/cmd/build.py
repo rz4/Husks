@@ -584,8 +584,6 @@ def _cmd_run(args, design):
         if args.verbose:
             # Emit final frame with verbose details (trace drawers, etc.)
             output = emit_residue(residue, json_mode=False, verbose=True)
-            print("\n" + "="*60)
-            print("FINAL STATE:")
             print(output)
         else:
             # Non-verbose: single frame with final state

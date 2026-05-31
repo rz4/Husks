@@ -60,7 +60,7 @@ def render_dag(residue: CliResidue, *, verbose: bool = False) -> str:
         return ""
 
     lines = []
-    separator = "─" * 60
+    separator = "─" * 32
 
     # Beta 100: Bounded CSE block format
     status_display = _map_visual_status(residue.status, residue.command)
@@ -72,7 +72,7 @@ def render_dag(residue: CliResidue, *, verbose: bool = False) -> str:
     # Site
     site_display = residue.site if residue.site else "none"
 
-    # Fuel - Blocker #5: dry check shows just ⚡20, hydrated shows ⚡10/20
+    # Fuel - shows budget only for dry check, used/budget for runs
     if residue.fuel_budget > 0:
         if residue.fuel_used > 0 or residue.command != "check":
             # Hydrated run: show used/budget
@@ -83,37 +83,31 @@ def render_dag(residue: CliResidue, *, verbose: bool = False) -> str:
     else:
         fuel_display = ""
 
-    # Header section - Beta 100 format
+    # Header section - Beta 100 format (32-char width)
     lines.append(separator)
 
     # Line 1: <name> <status> <fuel>
-    line1_parts = [f" {residue.design_name}"]
-    line1_parts.append(" " * (20 - len(residue.design_name)))  # Pad to column 20
-    line1_parts.append(status_display)
+    # Format: " core-bootstrap        checked    ⚡20"
+    line1_base = f" {residue.design_name}"
+    padding1 = max(1, 22 - len(line1_base))
+    line1 = f"{line1_base}{' ' * padding1}{status_display}"
     if fuel_display:
-        # Right-align fuel
-        current_len = len(residue.design_name) + 1 + len(status_display) + 21
-        padding_needed = max(1, 60 - current_len - len(fuel_display))
-        line1_parts.append(" " * padding_needed)
-        line1_parts.append(fuel_display)
-    lines.append("".join(line1_parts))
+        padding2 = max(1, 32 - len(line1) - len(fuel_display))
+        line1 += f"{' ' * padding2}{fuel_display}"
+    lines.append(line1)
 
-    # Line 2: cse:<path> root:<hash> OR cse:<path> site:<name>
-    # If root exists (sealed run), show cse and root on line 2, site on line 3
-    # If no root (dry check), show cse and site on line 2
+    # Line 2+: cse/root/site
     if root_display:
         # Sealed run: line 2 = cse + root, line 3 = site
-        line2 = f" cse:{cse_display} {root_display}"
-        lines.append(line2)
+        lines.append(f" cse:{cse_display} {root_display}")
         lines.append(f" site:{site_display}")
     else:
-        # Dry check: line 2 = cse + site (no line 3)
-        line2 = f" cse:{cse_display}"
-        # Pad cse to align site at a fixed column
-        cse_len = len(cse_display) + 5  # " cse:" = 5 chars
-        padding = max(1, 22 - cse_len)  # Align site at roughly column 22
-        line2 += " " * padding + f"site:{site_display}"
-        lines.append(line2)
+        # Dry/hydrating: line 2 = cse + site on same line
+        cse_part = f" cse:{cse_display}"
+        site_part = f"site:{site_display}"
+        # Pad between cse and site to reach ~column 22
+        padding = max(2, 22 - len(cse_part))
+        lines.append(f"{cse_part}{' ' * padding}{site_part}")
 
     lines.append(separator)
 
@@ -219,21 +213,21 @@ def _render_node_tree(
     visible_len = len(full_prefix) + 1 + 1 + len(node.name)  # prefix + glyph + space + name
     padding = max(1, 22 - visible_len)  # At least 1 space
 
-    # Build node line: root nodes have no leading space, child nodes use full_prefix
+    # Build node line with leading space for bounded box formatting
     metadata_str = f"     {metadata}" if metadata else ""
-    node_line = f"{full_prefix}{name_field}{' ' * padding}{node.kind}{metadata_str}"
+    node_line = f" {full_prefix}{name_field}{' ' * padding}{node.kind}{metadata_str}"
     lines.append(node_line.rstrip())
 
     # Beta 100: Show outputs (always, not just verbose)
-    # Output lines indent to align under the node (3 spaces from margin for root, under glyph for children)
+    # Output lines indent to align under the node content
     if node.outputs:
-        # For output details, indent 3 spaces from the start of the node line
+        # Detail lines: 6 spaces for child nodes (1 leading + 3 connector + 2 padding), 4 for root (1 leading + 3 padding)
         if prefix:
-            # Child node: indent relative to the full prefix
-            detail_indent = prefix + ("   " if is_last else "│  ")
+            # Child node: preserve tree structure with continuation
+            detail_indent = " " + prefix + ("   " if is_last else "│  ")
         else:
-            # Root node: simple 3-space indent
-            detail_indent = "   "
+            # Root node: indent under the glyph
+            detail_indent = "    "
         for output in node.outputs:
             hash_short = output.sha256[:6] if output.sha256 else "??????"
             lines.append(f"{detail_indent}out:{output.path}@{hash_short}")
@@ -242,9 +236,9 @@ def _render_node_tree(
     if verbose:
         # Reuse the same detail indent for verbose trace info
         if prefix:
-            detail_indent = prefix + ("   " if is_last else "│  ")
+            detail_indent = " " + prefix + ("   " if is_last else "│  ")
         else:
-            detail_indent = "   "
+            detail_indent = "    "
 
         # Show trace drawer for oracle nodes
         if node.trace:

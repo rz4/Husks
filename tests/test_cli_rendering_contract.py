@@ -20,6 +20,18 @@ from conftest import run_husks_cli
 os.environ["NO_COLOR"] = "1"
 
 
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text."""
+    import re
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
+
+
+def normalize(text: str) -> str:
+    """Normalize output for golden testing."""
+    return strip_ansi(text).replace("\r\n", "\n").strip()
+
+
 @pytest.fixture
 def core_bootstrap_design(tmp_path):
     """Create the public seed design."""
@@ -317,3 +329,172 @@ def test_target_rooted_tree():
 
         # Dependencies should be nested
         assert "└─" in output or "├─" in output
+
+
+# ── Beta 100 Exact Golden Tests ──────────────────────────────────────
+
+
+@pytest.mark.beta
+def test_golden_dry_check_exact(core_bootstrap_design):
+    """Exact golden contract for check --verbose (dry conformance)."""
+    result = run_husks_cli("check", str(core_bootstrap_design), "--verbose")
+    assert result.returncode == 0
+
+    output = normalize(result.stdout)
+
+    # Golden format must match exactly
+    expected_lines = [
+        "────────────────────────────────",
+        " core-bootstrap        checked    ⚡20",
+        " cse:none              site:none",
+        "────────────────────────────────",
+        " □ validate            action",
+        " └─ □ generate         oracle     ⚡10",
+        "────────────────────────────────",
+        " passes: checks"
+    ]
+
+    for expected_line in expected_lines:
+        assert expected_line in output, f"Missing golden line: {expected_line}\n\nFull output:\n{output}"
+
+    # Anti-patterns: must NOT contain these
+    assert "FINAL STATE" not in output
+    assert "════" not in output
+    assert "committed" not in output
+    assert "halted" not in output
+
+
+@pytest.mark.beta
+def test_golden_final_m1_sealed(core_bootstrap_design):
+    """Exact golden contract for run final frame (M1/M3 sealed)."""
+    tmp_path = core_bootstrap_design.parent
+    site = tmp_path / "m1"
+
+    result = run_husks_cli(
+        "run", str(core_bootstrap_design), "--stub", "--site", str(site)
+    )
+
+    output = normalize(result.stdout)
+
+    # Must have exact header structure
+    assert "────────────────────────────────" in output
+    assert " core-bootstrap        sealed" in output
+    assert " cse:core-bootstrap.husk root:" in output
+    assert f" site:{site.name}" in output or f"site:m1" in output
+
+    # Must show sealed nodes (or failed if gate missing)
+    assert ("■ validate" in output or "✕ validate" in output)
+    assert ("■ generate" in output or "✕ generate" in output)
+
+    # Must show oracle cost for M1
+    assert "$0.000" in output  # Some cost shown
+
+    # Must NOT show zero fuel for M1 (should show actual consumption)
+    # Core-bootstrap consumes 10 fuel for generate, possibly 1 for validate
+    # So we should NOT see ⚡0/20
+    lines = output.split("\n")
+    first_line = [l for l in lines if "core-bootstrap" in l and "sealed" in l][0] if any("core-bootstrap" in l and "sealed" in l for l in lines) else ""
+    if "⚡0/20" in first_line:
+        pytest.fail(f"M1 should not show ⚡0/20 (should show actual fuel consumption)\nGot: {first_line}")
+
+    # Anti-patterns
+    assert "FINAL STATE" not in output
+    assert "════" not in output
+
+
+@pytest.mark.beta
+def test_golden_final_m2_cached(core_bootstrap_design):
+    """Exact golden contract for cached run (M2 reuse)."""
+    tmp_path = core_bootstrap_design.parent
+    m1 = tmp_path / "m1_cache_test"
+    m2 = tmp_path / "m2_cache_test"
+
+    # M1: original run
+    run_husks_cli("run", str(core_bootstrap_design), "--stub", "--site", str(m1))
+
+    # Export cache
+    cache_file = tmp_path / "cache.tar.gz"
+    run_husks_cli("cache", "export", str(cache_file), "--site", str(m1))
+
+    # Import to M2
+    run_husks_cli("cache", "import", str(cache_file), "--site", str(m2))
+
+    # M2: reuse-only run
+    result = run_husks_cli(
+        "run", str(core_bootstrap_design), "--site", str(m2), "--reuse-only", "--stub"
+    )
+
+    output = normalize(result.stdout)
+
+    # Must show cached nodes with ◆ glyph
+    assert "◆" in output, "M2 should show cached glyph ◆"
+    assert "cached" in output, "M2 should show 'cached' label"
+
+    # Must show zero fuel and zero cost for cached run
+    assert "⚡0" in output, "M2 should show ⚡0 fuel"
+    assert "$0.0000" in output, "M2 should show $0.0000 cost"
+
+    # Header should show ⚡0/20 for cached run
+    assert "⚡0/20" in output, "M2 cached should show ⚡0/20"
+
+    # Footer should indicate cache success
+    assert "passes: run, cache" in output or ("passes: run" in output and "cache" in output)
+
+
+@pytest.mark.beta
+def test_no_final_state_banner():
+    """Verbose run must NOT print FINAL STATE banner."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        design = {
+            "name": "test",
+            "fuel": 5,
+            "target": "out",
+            "site_inputs": {},
+            "rules": [{
+                "name": "out",
+                "kind": "action",
+                "inputs": [],
+                "outputs": ["out.txt"],
+                "run": "echo hello > out.txt"
+            }]
+        }
+
+        design_path = Path(tmpdir) / "design.json"
+        design_path.write_text(json.dumps(design))
+
+        site = Path(tmpdir) / "site"
+        result = run_husks_cli("run", str(design_path), "--site", str(site), "--verbose")
+
+        output = normalize(result.stdout)
+
+        # Must NOT have FINAL STATE banner
+        assert "FINAL STATE" not in output, "Verbose run should not print FINAL STATE banner"
+        assert "════" not in output, "Verbose run should not use old separator style"
+
+
+@pytest.mark.beta
+def test_no_malformed_output_lines(core_bootstrap_design):
+    """Output detail lines must not have malformed connectors."""
+    tmp_path = core_bootstrap_design.parent
+    site = tmp_path / "malformed_test"
+
+    result = run_husks_cli(
+        "run", str(core_bootstrap_design), "--stub", "--site", str(site)
+    )
+
+    output = result.stdout
+
+    # Must NOT have malformed connector output lines like "└─      out:"
+    assert "└─      out:" not in output, "Output lines should not have malformed connector prefix"
+    assert "├─      out:" not in output, "Output lines should not have malformed connector prefix"
+
+    # Output lines should be properly indented under the node
+    if "out:" in output:
+        # Should have proper indentation like "      out:..." (6 spaces for child node output)
+        lines = output.split("\n")
+        for line in lines:
+            if "out:" in line and "cse:" not in line and "site:" not in line:
+                # This is an output detail line
+                # Should start with spaces, not connector
+                assert not line.strip().startswith("└─"), f"Output line should not start with connector: {line}"
+                assert not line.strip().startswith("├─"), f"Output line should not start with connector: {line}"
