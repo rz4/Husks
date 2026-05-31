@@ -72,8 +72,16 @@ def render_dag(residue: CliResidue, *, verbose: bool = False) -> str:
     # Site
     site_display = residue.site if residue.site else "none"
 
-    # Fuel
-    fuel_display = f"⚡{residue.fuel_used}/{residue.fuel_budget}" if residue.fuel_budget > 0 else ""
+    # Fuel - Blocker #5: dry check shows just ⚡20, hydrated shows ⚡10/20
+    if residue.fuel_budget > 0:
+        if residue.fuel_used > 0 or residue.command != "check":
+            # Hydrated run: show used/budget
+            fuel_display = f"⚡{residue.fuel_used}/{residue.fuel_budget}"
+        else:
+            # Dry check: show just budget
+            fuel_display = f"⚡{residue.fuel_budget}"
+    else:
+        fuel_display = ""
 
     # Header section - Beta 100 format
     lines.append(separator)
@@ -90,14 +98,22 @@ def render_dag(residue: CliResidue, *, verbose: bool = False) -> str:
         line1_parts.append(fuel_display)
     lines.append("".join(line1_parts))
 
-    # Line 2: cse:<path> <root>
-    line2 = f" cse:{cse_display}"
+    # Line 2: cse:<path> root:<hash> OR cse:<path> site:<name>
+    # If root exists (sealed run), show cse and root on line 2, site on line 3
+    # If no root (dry check), show cse and site on line 2
     if root_display:
-        line2 += f" {root_display}"
-    lines.append(line2)
-
-    # Line 3: site:<name>
-    lines.append(f" site:{site_display}")
+        # Sealed run: line 2 = cse + root, line 3 = site
+        line2 = f" cse:{cse_display} {root_display}"
+        lines.append(line2)
+        lines.append(f" site:{site_display}")
+    else:
+        # Dry check: line 2 = cse + site (no line 3)
+        line2 = f" cse:{cse_display}"
+        # Pad cse to align site at a fixed column
+        cse_len = len(cse_display) + 5  # " cse:" = 5 chars
+        padding = max(1, 22 - cse_len)  # Align site at roughly column 22
+        line2 += " " * padding + f"site:{site_display}"
+        lines.append(line2)
 
     lines.append(separator)
 
@@ -200,11 +216,12 @@ def _render_node_tree(
     lines.append(node_line.rstrip())
 
     # Beta 100: Show outputs (always, not just verbose)
+    # Blocker #5: outputs should indent properly with tree structure
     if node.outputs:
         detail_prefix = full_prefix + ("   " if is_last else "│  ")
         for output in node.outputs:
             hash_short = output.sha256[:6] if output.sha256 else "??????"
-            lines.append(f"      out:{output.path}@{hash_short}")
+            lines.append(f" {detail_prefix}  out:{output.path}@{hash_short}")
 
     # Verbose: add trace and error details
     if verbose:

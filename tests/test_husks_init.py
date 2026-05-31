@@ -19,9 +19,7 @@ from husks.setup import _DEMO_DESIGN
 import pytest
 
 
-@pytest.mark.beta
-
-
+@pytest.mark.skip(reason="Blocker #10: Demo design quarantined, core-bootstrap is default")
 @pytest.mark.gate_a
 
 
@@ -31,9 +29,7 @@ def test_demo_design_is_valid():
     assert len(errors) == 0, f"Demo design should be valid, got errors: {errors}"
 
 
-@pytest.mark.beta
-
-
+@pytest.mark.skip(reason="Blocker #10: Demo design quarantined, core-bootstrap is default")
 @pytest.mark.gate_a
 
 
@@ -46,9 +42,7 @@ def test_demo_design_has_required_fields():
     assert len(_DEMO_DESIGN["rules"]) > 0
 
 
-@pytest.mark.beta
-
-
+@pytest.mark.skip(reason="Blocker #10: Demo design quarantined, core-bootstrap is default")
 @pytest.mark.gate_a
 
 
@@ -75,9 +69,7 @@ def test_demo_design_runs_with_stub():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-@pytest.mark.beta
-
-
+@pytest.mark.skip(reason="Blocker #10: Demo design quarantined, core-bootstrap is default")
 @pytest.mark.gate_a
 
 

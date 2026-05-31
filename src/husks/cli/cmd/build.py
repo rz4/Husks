@@ -11,6 +11,112 @@ from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_MISSING
 from husks.cli.residue import CliResidue, CliNode
 
 
+# ── Verbose frame emitter (Blocker #6) ───────────────────────────────
+
+class VerboseFrameEmitter:
+    """Live verbose frame emitter for run --verbose.
+
+    Blocker #6: Emits sequential frames showing DAG hydration as nodes execute.
+    Shows ◉ running state during execution, then ■ sealed or ◆ cached on completion.
+    """
+
+    def __init__(self, design: dict):
+        self.design = design
+        self.rules = {r["name"]: r for r in design.get("rules", [])}
+        # Track current state of each node: unrealized, running, sealed, cached, failed
+        self.node_states = {r["name"]: "unrealized" for r in design.get("rules", [])}
+        # Track which nodes have been seen
+        self.nodes_seen = set()
+
+    def notify(self, event: dict) -> None:
+        """Handle trace events and emit frames (TraceListener protocol)."""
+        event_type = event.get("event")
+
+        if event_type == "rule_start":
+            rule_name = event.get("rule")
+            if rule_name and rule_name in self.node_states:
+                self.node_states[rule_name] = "running"
+                self.nodes_seen.add(rule_name)
+                self._emit_frame()
+
+        elif event_type == "rule_done":
+            rule_name = event.get("rule")
+            if rule_name and rule_name in self.node_states:
+                self.node_states[rule_name] = "sealed"
+                self._emit_frame()
+
+        elif event_type == "rule_sealed":
+            rule_name = event.get("rule")
+            if rule_name and rule_name in self.node_states:
+                self.node_states[rule_name] = "cached"
+                self._emit_frame()
+
+        elif event_type == "rule_halted":
+            rule_name = event.get("rule")
+            if rule_name and rule_name in self.node_states:
+                self.node_states[rule_name] = "failed"
+                self._emit_frame()
+
+    def _emit_frame(self) -> None:
+        """Emit a frame showing current DAG state."""
+        from husks.cli.view import render_dag
+        from husks.cli.residue import CliOutput
+
+        # Build lightweight residue for current frame
+        nodes = []
+        for rule_name, state in self.node_states.items():
+            rule = self.rules.get(rule_name, {})
+
+            # Only show nodes that have been seen (started execution)
+            # Unrealized nodes that haven't started yet are not shown
+            if rule_name not in self.nodes_seen and state == "unrealized":
+                continue
+
+            # Build dependency list
+            rule_inputs = set(rule.get("inputs", []))
+            children = []
+            for other_name, other_rule in self.rules.items():
+                other_outputs = set(other_rule.get("outputs", []))
+                if rule_inputs & other_outputs:
+                    children.append(other_name)
+
+            node = CliNode(
+                name=rule_name,
+                kind=rule.get("kind", "action"),
+                state=state,
+                children=children,
+                fuel_budget=rule.get("fuel"),
+            )
+            nodes.append(node)
+
+        # Reorder: target first
+        target_name = self.design.get("target") or self.design.get("targets", [None])[0]
+        if target_name and nodes:
+            target_idx = next((i for i, n in enumerate(nodes) if n.name == target_name), 0)
+            if target_idx > 0:
+                nodes.insert(0, nodes.pop(target_idx))
+
+        # Build minimal residue for frame
+        residue = CliResidue(
+            command="run",
+            design_name=self.design.get("name", "unknown"),
+            site="<executing>",
+            cse_path="<pending>",
+            status="hydrating",
+            target=target_name,
+            fuel_budget=self.design.get("fuel", 0),
+            nodes=nodes,
+            passes=[],
+            fails=[],
+        )
+
+        # Render and print frame
+        frame = render_dag(residue, verbose=False)  # Concise during execution
+        # Clear previous frame and print new one
+        # Simple approach: just print with separators
+        print("\n" + frame)
+
+
 # ── Residue collectors (Beta Gate 95) ────────────────────────────────
 
 def collect_dry_residue(design: dict) -> CliResidue:
@@ -155,11 +261,14 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
                     break
 
         # Beta 100: Build trace info for oracle/action nodes
+        # Blocker #8: Add provenance hashes
         trace = None
         if rule_usage:
             trace = CliTrace(
                 backend=rule_usage.get("backend", "unknown"),
                 model=rule_usage.get("model"),
+                config_hash=rule_usage.get("config_hash"),
+                prompt_hash=rule_usage.get("prompt_hash"),
                 input_tokens=rule_usage.get("tokens_in", 0),
                 output_tokens=rule_usage.get("tokens_out", 0),
                 elapsed_s=duration,
@@ -329,9 +438,22 @@ def _cmd_check(args, design):
                 residue.site = site
                 residue.root = manifest.get("root")
                 residue.status = "committed" if manifest.get("root") else "dry"
-                # Update summary
-                residue.passes = sum(1 for n in residue.nodes if n.state == "sealed")
-                residue.fails = sum(1 for n in residue.nodes if n.state in ("stale", "failed"))
+
+                # Blocker #9: Update summary with category lists, not counts
+                # If site is sealed, update cse_path to show the .husk file
+                if manifest.get("root"):
+                    residue.cse_path = f"{design.get('name', 'unknown')}.husk"
+
+                # Build category lists based on conformance
+                all_sealed = all(n.state == "sealed" for n in residue.nodes)
+                has_stale = any(n.state in ("stale", "failed") for n in residue.nodes)
+
+                residue.passes = ["checks"]  # Design validated
+                if all_sealed:
+                    residue.passes.append("site")  # All nodes fresh
+                residue.fails = []
+                if has_stale:
+                    residue.fails.append("site")  # Some nodes stale
         except Exception:
             # Site not built or manifest missing - keep dry states
             pass
@@ -368,9 +490,15 @@ def _cmd_run(args, design):
             overrides["oracle_backend"] = live_oracle
         overrides["oracle_model"] = args.model
 
-    # Suppress console trace (we use residue→surface→view instead)
+    # Blocker #6: For verbose mode, attach live frame emitter
+    # For non-verbose, suppress console trace (we use residue→surface→view instead)
     from husks.utils import trace as T_pre
     T_pre.clear_listeners()
+
+    verbose_emitter = None
+    if args.verbose:
+        verbose_emitter = VerboseFrameEmitter(design)
+        T_pre.add_listener(verbose_emitter)
 
     # Beta Gate F/G: Catch setup/validation failures and emit JSON errors when --json specified
     try:
@@ -420,18 +548,46 @@ def _cmd_run(args, design):
     # Build Report
     from husks.utils import trace as T
 
-    # Beta 100: For --json, use full report schema (compare-runs compatible)
-    # For visual output, use residue→surface→view architecture
-    if args.json_output:
+    # Blocker #1: Handle sidecar JSON report (--report-json)
+    # Generate report once, output to both stdout and/or sidecar
+    report_json_path = getattr(args, 'report_json', None)
+
+    # Generate JSON report if needed (for --json stdout or --report-json sidecar)
+    if args.json_output or report_json_path:
         from husks.report import assemble, render_json
         report = assemble(S, T, design)
-        print(render_json(report))
+        report_json = render_json(report)
+
+        # Write to sidecar file if requested
+        if report_json_path:
+            try:
+                from pathlib import Path
+                Path(report_json_path).write_text(report_json)
+            except Exception as e:
+                print(f"error: failed to write --report-json to {report_json_path}: {e}",
+                      file=sys.stderr)
+                sys.exit(EXIT_BUILD_FAIL)
+
+        # Print to stdout only if --json (not if only --report-json)
+        if args.json_output:
+            print(report_json)
     else:
         # Visual output: use residue→surface→view
         from husks.cli.surface import emit_residue
         residue = collect_hydrated_residue(S, T, design)
-        output = emit_residue(residue, json_mode=False, verbose=args.verbose)
-        print(output)
+
+        # Blocker #6: For verbose mode, frames were already emitted during execution
+        # Emit final summary frame with full details
+        if args.verbose:
+            # Emit final frame with verbose details (trace drawers, etc.)
+            output = emit_residue(residue, json_mode=False, verbose=True)
+            print("\n" + "="*60)
+            print("FINAL STATE:")
+            print(output)
+        else:
+            # Non-verbose: single frame with final state
+            output = emit_residue(residue, json_mode=False, verbose=False)
+            print(output)
 
     # Preserve exit code logic
     if S.get("status") == "halted" and not args.soft_fail:

@@ -428,7 +428,29 @@ def default_oracle_backend(
 
     Beta 100: For the bootstrap 'generate' rule, produces a valid CSE reader
     to enable --stub mode to complete the full core-bootstrap design.
+
+    Blocker #8: Include provenance hashes for stub oracle.
     """
+    # Compute provenance hashes for stub
+    import hashlib
+    import json as jsonlib
+
+    prompt = recipe.get('prompt', '')
+    tools = recipe.get('tools', [])
+    fuel = recipe.get('fuel', 1)
+
+    # Simplified config hash for stub (no temperature, fixed params)
+    config = {
+        "backend": "stub",
+        "model": "stub",
+        "max_tokens": 1024,  # Fixed for stub
+    }
+    if tools:
+        config["tools"] = sorted(tools) if isinstance(tools, list) else [tools]
+
+    config_json = jsonlib.dumps(config, sort_keys=True, separators=(",", ":"))
+    config_hash = hashlib.sha256(config_json.encode("utf-8")).hexdigest()
+    prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
     # Beta 100: Bootstrap stub path
     # Narrow deterministic path for core-bootstrap --stub
     if rule_name == "generate" and any("generated_reader.py" in o for o in outputs):
@@ -453,11 +475,12 @@ def default_oracle_backend(
                 "cost_usd": 0.0008,
                 "fuel_steps": 10,
                 "backend": "stub",
-                "model": "stub"
+                "model": "stub",
+                "config_hash": config_hash,
+                "prompt_hash": prompt_hash,
             }
 
-    # Generic stub for other rules
-    prompt = recipe.get('prompt', '')
+    # Generic stub for other rules (prompt already extracted above for hashing)
 
     # Task 5: Check if prompt requires "ANSWER:" format
     # This allows structured validators to work with stub mode
@@ -474,7 +497,16 @@ def default_oracle_backend(
     for o in outputs:
         write_text(site_path(S, o, write=True), content)
 
-    return {"tokens_in": 840, "tokens_out": 320, "cost_usd": 0.0008, "fuel_steps": 1}
+    return {
+        "tokens_in": 840,
+        "tokens_out": 320,
+        "cost_usd": 0.0008,
+        "fuel_steps": 1,
+        "backend": "stub",
+        "model": "stub",
+        "config_hash": config_hash,
+        "prompt_hash": prompt_hash,
+    }
 
 
 def eval_oracle(
@@ -530,12 +562,17 @@ def eval_oracle(
     S["usage"]["total_output_tokens"] += tokens_out
 
     # Track per-rule usage (Beta Gate D6: include cached flag)
+    # Blocker #8: Add provenance fields (backend, model, config_hash, prompt_hash)
     if rule_name not in S["usage"]["by_rule"]:
         S["usage"]["by_rule"][rule_name] = {
             "cost_usd": 0.0,
             "input_tokens": 0,
             "output_tokens": 0,
             "cached": False,
+            "backend": None,
+            "model": None,
+            "config_hash": None,
+            "prompt_hash": None,
         }
     S["usage"]["by_rule"][rule_name]["cost_usd"] += cost_usd
     S["usage"]["by_rule"][rule_name]["input_tokens"] += tokens_in
@@ -543,6 +580,16 @@ def eval_oracle(
     # Mark as cached if this run was cached (once cached, stays cached for this build)
     if is_cached:
         S["usage"]["by_rule"][rule_name]["cached"] = True
+
+    # Store provenance metadata (only on first execution, not accumulated)
+    if "backend" in u and S["usage"]["by_rule"][rule_name]["backend"] is None:
+        S["usage"]["by_rule"][rule_name]["backend"] = u["backend"]
+    if "model" in u and S["usage"]["by_rule"][rule_name]["model"] is None:
+        S["usage"]["by_rule"][rule_name]["model"] = u["model"]
+    if "config_hash" in u and S["usage"]["by_rule"][rule_name]["config_hash"] is None:
+        S["usage"]["by_rule"][rule_name]["config_hash"] = u["config_hash"]
+    if "prompt_hash" in u and S["usage"]["by_rule"][rule_name]["prompt_hash"] is None:
+        S["usage"]["by_rule"][rule_name]["prompt_hash"] = u["prompt_hash"]
 
     T.oracle_done(
         rule_name,

@@ -66,6 +66,8 @@ def main():
                    help="Exit 0 even when the build halts")
     r.add_argument("--verbose", "-v", action="store_true",
                    help="Verbose output (full trace + detailed report)")
+    r.add_argument("--report-json", metavar="PATH",
+                   help="Write JSON report to file (sidecar; may be used with --verbose)")
 
     # status
     st_cmd = sub.add_parser("status", help="Show freshness state of a built site")
@@ -78,6 +80,8 @@ def main():
                         help="Exit 4 if any artifact is modified")
     st_cmd.add_argument("--fail-if-stale", action="store_true",
                         help="Exit 4 if any rule is stale")
+    st_cmd.add_argument("--verbose", "-v", action="store_true",
+                        help="Verbose output (full DAG visualization)")
 
     # explain
     e = sub.add_parser("explain", help="Bordered DAG tree (default), or --diff / --seal")
@@ -181,6 +185,14 @@ def main():
         p.print_help()
         sys.exit(EXIT_USAGE)
 
+    # Validate mutually exclusive flags
+    if args.cmd in ("run", "check"):
+        verbose = getattr(args, 'verbose', False)
+        json_output = getattr(args, 'json_output', False)
+        if verbose and json_output:
+            print("error: --verbose and --json are mutually exclusive", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+
     # ── init ──────────────────────────────────────────────────
     if args.cmd == "init":
         from husks.setup import init
@@ -256,6 +268,10 @@ def main():
         _cmd_check(args, design)
 
     elif args.cmd == "run":
+        # Blocker #3: run requires --site at CLI layer
+        if not args.site:
+            print("error: run requires --site", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
         _cmd_run(args, design)
 
     elif args.cmd == "history":

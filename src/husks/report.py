@@ -174,6 +174,12 @@ def assemble(
                 "recipe_changed": recipe_changed,
             }
 
+        # Blocker #8: Extract provenance metadata
+        backend = rule_usage.get("backend")
+        model = rule_usage.get("model")
+        config_hash = rule_usage.get("config_hash")
+        prompt_hash = rule_usage.get("prompt_hash")
+
         node_dict: dict[str, Any] = {
             "name": name,
             "kind": kind,
@@ -197,6 +203,16 @@ def assemble(
             },
             "seal": seal_info,
         }
+
+        # Blocker #8: Add provenance fields if available (oracle nodes only)
+        if backend is not None:
+            node_dict["backend"] = backend
+        if model is not None:
+            node_dict["model"] = model
+        if config_hash is not None:
+            node_dict["config_hash"] = config_hash
+        if prompt_hash is not None:
+            node_dict["prompt_hash"] = prompt_hash
 
         # Diagnosis: only when state == "failed"
         if state == "failed":

@@ -52,10 +52,12 @@ def test_beta100_public_three_machine_from_init(tmp_path):
     assert check_data["command"] == "check"
     assert check_data["status"] in ["checked", "valid"]
 
-    # Step 3: M1 realizes the design
+    # Step 3: M1 realizes the design (with sidecar JSON report)
     m1 = project / "m1"
+    m1_json = project / "m1.json"
     r1 = run_husks_cli(
         "run", str(design), "--site", str(m1), "--stub", "--verbose",
+        "--report-json", str(m1_json),
         cwd=project
     )
     assert r1.returncode == 0, f"M1 run failed: {r1.stderr}"
@@ -63,9 +65,10 @@ def test_beta100_public_three_machine_from_init(tmp_path):
     assert "■ validate" in r1.stdout or "validate" in r1.stdout
     assert "■ generate" in r1.stdout or "◆ generate" in r1.stdout or "generate" in r1.stdout
 
-    # Verify M1 husk artifact was created
+    # Verify M1 husk artifact and JSON report were created
     husk_artifact = m1 / "core-bootstrap.husk"
     assert husk_artifact.exists(), "M1 did not produce core-bootstrap.husk"
+    assert m1_json.exists(), "M1 did not produce JSON report"
 
     # Step 4: Export M1 cache
     cache = project / "cache.tar.gz"
@@ -84,46 +87,42 @@ def test_beta100_public_three_machine_from_init(tmp_path):
     )
     assert import_result.returncode == 0, f"cache import failed: {import_result.stderr}"
 
-    # Step 6: M2 reuses cache at zero oracle cost
+    # Step 6: M2 reuses cache at zero oracle cost (with sidecar JSON report)
+    m2_json = project / "m2.json"
     r2 = run_husks_cli(
         "run", str(design), "--site", str(m2), "--reuse-only", "--stub", "--verbose",
+        "--report-json", str(m2_json),
         cwd=project
     )
     assert r2.returncode == 0, f"M2 run failed: {r2.stderr}"
     assert "◆ generate" in r2.stdout or "cached" in r2.stdout.lower()
     assert "$0.0000" in r2.stdout or "$0.00" in r2.stdout
+    assert m2_json.exists(), "M2 did not produce JSON report"
 
-    # Step 7: M3 independently re-realizes
+    # Step 7: M3 independently re-realizes (with sidecar JSON report)
     m3 = project / "m3"
+    m3_json = project / "m3.json"
     r3 = run_husks_cli(
         "run", str(design), "--site", str(m3), "--stub", "--verbose",
+        "--report-json", str(m3_json),
         cwd=project
     )
     assert r3.returncode == 0, f"M3 run failed: {r3.stderr}"
     assert "■ generate" in r3.stdout or "generate" in r3.stdout
+    assert m3_json.exists(), "M3 did not produce JSON report"
 
-    # Step 8: Get JSON reports from all three machines
-    for name, site in [("m1", m1), ("m2", m2), ("m3", m3)]:
-        out = project / f"{name}.json"
-        res = run_husks_cli(
-            "run", str(design), "--site", str(site), "--stub", "--json",
-            cwd=project
-        )
-        assert res.returncode == 0, f"{name} JSON run failed: {res.stderr}"
-
-        # Validate JSON structure
-        data = json.loads(res.stdout)
-        assert "status" in data
-        assert "nodes" in data or "rules" in data
-
-        out.write_text(res.stdout)
+    # Step 8: Validate JSON report structure
+    for name, json_path in [("m1", m1_json), ("m2", m2_json), ("m3", m3_json)]:
+        data = json.loads(json_path.read_text())
+        assert "status" in data, f"{name} JSON missing status"
+        assert "nodes" in data or "rules" in data, f"{name} JSON missing nodes/rules"
 
     # Step 9: Compare runs to prove three-machine equivalence
     cmp = run_husks_cli(
         "compare-runs",
-        str(project / "m1.json"),
-        str(project / "m2.json"),
-        str(project / "m3.json"),
+        str(m1_json),
+        str(m2_json),
+        str(m3_json),
         "--json",
         cwd=project
     )
@@ -133,7 +132,7 @@ def test_beta100_public_three_machine_from_init(tmp_path):
     assert cmp_data["equivalent"] is True, "Three-machine runs not equivalent"
 
     # Verify M2 reuse proof
-    m2_data = json.loads((project / "m2.json").read_text())
+    m2_data = json.loads(m2_json.read_text())
     # M2 should have zero oracle calls or zero cost
     if "oracle_calls" in m2_data:
         assert m2_data["oracle_calls"] == 0, "M2 made oracle calls despite reuse-only"
@@ -245,8 +244,13 @@ def test_beta100_verbose_and_json_mutually_exclusive(tmp_path):
     run_husks_cli("init", str(project))
     design = project / "core-bootstrap.json"
 
-    # check with both flags should fail or warn
+    # check with both flags should fail with usage error
     result = run_husks_cli("check", str(design), "--verbose", "--json", cwd=project)
-    # Either fails with error, or one flag is ignored - implementation choice
-    # For now, just document that this is the intended behavior
-    # The implementation will enforce this
+    assert result.returncode != 0, "--verbose and --json should be mutually exclusive"
+    assert "mutually exclusive" in result.stderr.lower() or "error" in result.stderr.lower()
+
+    # run with both flags should also fail
+    site = project / "site1"
+    result = run_husks_cli("run", str(design), "--site", str(site), "--verbose", "--json", "--stub", cwd=project)
+    assert result.returncode != 0, "run with --verbose and --json should fail"
+    assert "mutually exclusive" in result.stderr.lower() or "error" in result.stderr.lower()

@@ -22,8 +22,9 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
     Builds target-rooted tree.
 
     Beta 100: Adds cse_path, target, and output records.
+    Blocker #7: Check history for cache evidence to distinguish sealed vs cached.
     """
-    from husks.manifest import compute_rule_states
+    from husks.manifest import compute_rule_states, read_history
     from husks.cli.residue import CliOutput
     import os
 
@@ -43,9 +44,23 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
 
     nodes = []
     for rs in rule_states:
+        rule_name = rs["name"]
+        rule = rules_by_name.get(rule_name, {})
+
+        # Blocker #7: Check history for cache evidence
+        history = read_history(site, rule_name)
+        was_cached = False
+        if history:
+            last_run = history[-1]
+            was_cached = last_run.get("cached", False)
+
         # Map manifest state to CLI state
-        state = map_manifest_state(rs["state"])
-        rule = rules_by_name.get(rs["name"], {})
+        # If fresh and was cached in last run, show as cached instead of sealed
+        manifest_state = rs["state"]
+        if manifest_state == "fresh" and was_cached:
+            state = "cached"
+        else:
+            state = map_manifest_state(manifest_state)
 
         # Beta 100: Collect outputs with hashes for sealed nodes
         outputs = []
