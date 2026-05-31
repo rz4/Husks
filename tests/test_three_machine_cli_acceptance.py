@@ -32,18 +32,22 @@ def test_three_machine_cli_acceptance_stub():
 
     tmpdir = tempfile.mkdtemp(prefix="cli-three-machine-")
     try:
-        # Use beta seed example
-        beta_seed_dir = Path(__file__).parent.parent / "examples" / "beta_seed"
-        assert beta_seed_dir.exists(), f"Beta seed not found: {beta_seed_dir}"
+        # Beta 100: Use husks init instead of examples/beta_seed
+        project_dir = Path(tmpdir) / "project"
+        project_dir.mkdir()
 
-        # Beta Gate E7: File inventory guard - verify expected seed files exist
-        design_path = beta_seed_dir / "design.json"
-        prompt_path = beta_seed_dir / "prompt.txt"
-        readme_path = beta_seed_dir / "README.md"
+        # Initialize project with core-bootstrap template
+        init_result = run_husks_cli("init", str(project_dir), cwd=str(tmpdir))
+        assert init_result.returncode == 0, (
+            f"husks init should succeed\n"
+            f"stdout: {init_result.stdout}\nstderr: {init_result.stderr}"
+        )
 
+        # Verify init created expected files
+        design_path = project_dir / "design.json"
         assert design_path.exists(), f"design.json not found: {design_path}"
-        assert prompt_path.exists(), f"prompt.txt not found: {prompt_path}"
-        assert readme_path.exists(), f"README.md not found: {readme_path}"
+
+        # Beta 100: core-bootstrap uses embedded prompts, no separate prompt.txt file
 
         # ──────────────────────────────────────────────────────────
         # Machine 1: Original realization with empty cache

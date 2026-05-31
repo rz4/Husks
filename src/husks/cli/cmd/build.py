@@ -320,6 +320,9 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
     cse_path = f"{design_name}.husk"  # Standard naming
     target_name = design.get("target") or design.get("targets", [None])[0]
 
+    # Compute fuel_used from node-level fuel consumption, not Store delta
+    fuel_used = sum(n.fuel for n in nodes if n.fuel is not None)
+
     return CliResidue(
         command="run",
         design_name=design_name,
@@ -329,7 +332,7 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
         root=S.get("root"),
         target=target_name,
         fuel_budget=design.get("fuel", 0),
-        fuel_used=design.get("fuel", 0) - S.get("fuel", 0),
+        fuel_used=fuel_used,
         cost=usage.get("total_cost_usd", 0.0),
         nodes=nodes,
         passes=passes,
@@ -549,28 +552,28 @@ def _cmd_run(args, design):
     from husks.utils import trace as T
 
     # Blocker #1: Handle sidecar JSON report (--report-json)
-    # Generate report once, output to both stdout and/or sidecar
     report_json_path = getattr(args, 'report_json', None)
 
-    # Generate JSON report if needed (for --json stdout or --report-json sidecar)
-    if args.json_output or report_json_path:
+    # Write sidecar JSON report if requested
+    if report_json_path:
         from husks.report import assemble, render_json
         report = assemble(S, T, design)
         report_json = render_json(report)
+        try:
+            from pathlib import Path
+            Path(report_json_path).write_text(report_json)
+        except Exception as e:
+            print(f"error: failed to write --report-json to {report_json_path}: {e}",
+                  file=sys.stderr)
+            sys.exit(EXIT_BUILD_FAIL)
 
-        # Write to sidecar file if requested
-        if report_json_path:
-            try:
-                from pathlib import Path
-                Path(report_json_path).write_text(report_json)
-            except Exception as e:
-                print(f"error: failed to write --report-json to {report_json_path}: {e}",
-                      file=sys.stderr)
-                sys.exit(EXIT_BUILD_FAIL)
-
-        # Print to stdout only if --json (not if only --report-json)
-        if args.json_output:
-            print(report_json)
+    # Determine primary output mode
+    if args.json_output:
+        # JSON to stdout
+        from husks.report import assemble, render_json
+        report = assemble(S, T, design)
+        report_json = render_json(report)
+        print(report_json)
     else:
         # Visual output: use residue→surface→view
         from husks.cli.surface import emit_residue

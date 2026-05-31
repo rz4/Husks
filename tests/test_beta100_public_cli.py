@@ -117,7 +117,16 @@ def test_beta100_public_three_machine_from_init(tmp_path):
         assert "status" in data, f"{name} JSON missing status"
         assert "nodes" in data or "rules" in data, f"{name} JSON missing nodes/rules"
 
-    # Step 9: Compare runs to prove three-machine equivalence
+    # Step 9: Status shows realization state for each site
+    for site_name, site_path in [("m1", m1), ("m2", m2), ("m3", m3)]:
+        status_result = run_husks_cli(
+            "status", str(design), "--site", str(site_path), "--verbose",
+            cwd=project
+        )
+        assert status_result.returncode == 0, f"status --verbose failed for {site_name}: {status_result.stderr}"
+        assert "cse:core-bootstrap.husk" in status_result.stdout or "core-bootstrap" in status_result.stdout
+
+    # Step 10: Compare runs to prove three-machine equivalence
     cmp = run_husks_cli(
         "compare-runs",
         str(m1_json),

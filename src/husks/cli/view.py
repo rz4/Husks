@@ -172,20 +172,29 @@ def _render_node_tree(
     # Node line: glyph + name + kind + metadata (table-aligned)
     metadata_parts = []
 
+    # For cached nodes, show "cached" label
+    if node.cache:
+        metadata_parts.append("cached")
+
     # Add time/fuel/cost
-    if node.duration is not None:
+    if node.duration is not None and node.duration > 0:
         metadata_parts.append(f"{node.duration:.2f}s")
 
-    if node.fuel is not None:
-        metadata_parts.append(f"⚡{node.fuel}")
+    # For cached nodes, show explicit zero fuel and cost
+    if node.cache:
+        metadata_parts.append("⚡0")
+        metadata_parts.append("$0.0000")
+    else:
+        # Non-cached nodes: show actual fuel and cost
+        if node.fuel is not None:
+            metadata_parts.append(f"⚡{node.fuel}")
 
-    if node.cost is not None and node.cost > 0:
-        metadata_parts.append(f"${node.cost:.4f}")
-    elif node.cache:
-        metadata_parts.append("⚡0  $0.0000")
+        if node.cost is not None and node.cost > 0:
+            metadata_parts.append(f"${node.cost:.4f}")
 
-    if node.fuel_budget is not None:
-        metadata_parts.append(f"⚡{node.fuel_budget}")
+        # Show fuel budget for unrealized nodes
+        if node.fuel_budget is not None and node.state == "unrealized":
+            metadata_parts.append(f"⚡{node.fuel_budget}")
 
     metadata = "     ".join(metadata_parts) if metadata_parts else ""
 
@@ -201,63 +210,73 @@ def _render_node_tree(
 
     # Build name field with padding to reach column 2
     full_prefix = prefix + connector
-    name_field = f"{full_prefix}{color}{glyph}{RESET} {node.name}"
+    name_field = f"{color}{glyph}{RESET} {node.name}"
 
     # Get children for later rendering
     children_names = getattr(node, 'children', [])
 
     # Calculate visible length (excluding ANSI codes)
     visible_len = len(full_prefix) + 1 + 1 + len(node.name)  # prefix + glyph + space + name
-    padding = max(1, 28 - visible_len)  # At least 1 space
+    padding = max(1, 22 - visible_len)  # At least 1 space
 
-    # Add space before metadata to align with header fuel column
-    metadata_str = f" {metadata}" if metadata else ""
-    node_line = f" {name_field}{' ' * padding}{node.kind:<15s}{metadata_str}"
+    # Build node line: root nodes have no leading space, child nodes use full_prefix
+    metadata_str = f"     {metadata}" if metadata else ""
+    node_line = f"{full_prefix}{name_field}{' ' * padding}{node.kind}{metadata_str}"
     lines.append(node_line.rstrip())
 
     # Beta 100: Show outputs (always, not just verbose)
-    # Blocker #5: outputs should indent properly with tree structure
+    # Output lines indent to align under the node (3 spaces from margin for root, under glyph for children)
     if node.outputs:
-        detail_prefix = full_prefix + ("   " if is_last else "│  ")
+        # For output details, indent 3 spaces from the start of the node line
+        if prefix:
+            # Child node: indent relative to the full prefix
+            detail_indent = prefix + ("   " if is_last else "│  ")
+        else:
+            # Root node: simple 3-space indent
+            detail_indent = "   "
         for output in node.outputs:
             hash_short = output.sha256[:6] if output.sha256 else "??????"
-            lines.append(f" {detail_prefix}  out:{output.path}@{hash_short}")
+            lines.append(f"{detail_indent}out:{output.path}@{hash_short}")
 
     # Verbose: add trace and error details
     if verbose:
-        detail_prefix = full_prefix + ("   " if is_last else "│  ")
+        # Reuse the same detail indent for verbose trace info
+        if prefix:
+            detail_indent = prefix + ("   " if is_last else "│  ")
+        else:
+            detail_indent = "   "
 
         # Show trace drawer for oracle nodes
         if node.trace:
             trace = node.trace
-            lines.append(f" {detail_prefix}trace:")
+            lines.append(f"{detail_indent}trace:")
             if trace.backend:
-                lines.append(f" {detail_prefix}  backend: {trace.backend}")
+                lines.append(f"{detail_indent}  backend: {trace.backend}")
             if trace.model:
-                lines.append(f" {detail_prefix}  model: {trace.model}")
+                lines.append(f"{detail_indent}  model: {trace.model}")
             if trace.prompt_hash:
-                lines.append(f" {detail_prefix}  prompt: sha256:{trace.prompt_hash[:6]}")
+                lines.append(f"{detail_indent}  prompt: sha256:{trace.prompt_hash[:6]}")
             if trace.input_tokens > 0:
-                lines.append(f" {detail_prefix}  input_tokens: {trace.input_tokens}")
+                lines.append(f"{detail_indent}  input_tokens: {trace.input_tokens}")
             if trace.output_tokens > 0:
-                lines.append(f" {detail_prefix}  output_tokens: {trace.output_tokens}")
+                lines.append(f"{detail_indent}  output_tokens: {trace.output_tokens}")
             if trace.elapsed_s is not None:
-                lines.append(f" {detail_prefix}  elapsed: {trace.elapsed_s:.2f}s")
+                lines.append(f"{detail_indent}  elapsed: {trace.elapsed_s:.2f}s")
             if trace.cost_usd > 0:
-                lines.append(f" {detail_prefix}  cost: ${trace.cost_usd:.4f}")
+                lines.append(f"{detail_indent}  cost: ${trace.cost_usd:.4f}")
             if trace.stdout:
                 stdout_preview = trace.stdout[:100] + "..." if len(trace.stdout) > 100 else trace.stdout
-                lines.append(f" {detail_prefix}  stdout: {stdout_preview}")
+                lines.append(f"{detail_indent}  stdout: {stdout_preview}")
             if trace.stderr:
                 stderr_preview = trace.stderr[:100] + "..." if len(trace.stderr) > 100 else trace.stderr
-                lines.append(f" {detail_prefix}  stderr: {stderr_preview}")
+                lines.append(f"{detail_indent}  stderr: {stderr_preview}")
 
         # Show stale reason or diagnosis
         if node.stale_reason:
-            lines.append(f" {detail_prefix}reason: {node.stale_reason}")
+            lines.append(f"{detail_indent}reason: {node.stale_reason}")
         if node.diagnosis:
             # Show full diagnosis without truncation
-            lines.append(f" {detail_prefix}error: {node.diagnosis}")
+            lines.append(f"{detail_indent}error: {node.diagnosis}")
 
     # Render children (children_names already fetched above for leaf detection)
     children = [nodes_by_name[name] for name in children_names if name in nodes_by_name]

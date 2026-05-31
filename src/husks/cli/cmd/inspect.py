@@ -24,7 +24,7 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
     Beta 100: Adds cse_path, target, and output records.
     Blocker #7: Check history for cache evidence to distinguish sealed vs cached.
     """
-    from husks.manifest import compute_rule_states, read_history
+    from husks.manifest import compute_rule_states
     from husks.cli.residue import CliOutput
     import os
 
