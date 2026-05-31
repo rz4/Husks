@@ -4,11 +4,15 @@ llm.py -- LiteLLM wrapper with cumulative usage tracking.
 Uniform calling interface for LLM providers via litellm.completion().
 Per-UsageTracker instance token/cost accumulation.  No husks imports;
 only external dependency is litellm.
+
+Beta 100: Adds provenance hashing for config and prompt reproducibility.
 """
 
 from __future__ import annotations
 
 from typing import Any
+import hashlib
+import json
 
 
 def _litellm():
@@ -25,6 +29,69 @@ def _litellm():
 # ── Default model ─────────────────────────────────────────────────
 
 DEFAULT_MODEL: str = "anthropic/claude-haiku-4-5-20251001"
+
+
+# ── Provenance hashing (Beta 100) ────────────────────────────────
+
+def compute_config_hash(
+    model: str,
+    max_tokens: int,
+    temperature: float | None = None,
+    tools: list[dict] | None = None,
+) -> str:
+    """Compute deterministic config hash for oracle provenance.
+
+    Beta 100: Hash stable config fields for M1/M3 comparability.
+
+    Parameters
+    ----------
+    model : str
+        LiteLLM model identifier
+    max_tokens : int
+        Maximum output tokens
+    temperature : float, optional
+        Sampling temperature
+    tools : list of dicts, optional
+        Tool definitions (we hash tool names only, not implementations)
+
+    Returns
+    -------
+    str
+        SHA-256 hex hash of config (lowercase)
+    """
+    # Build stable config dict
+    config = {
+        "backend": "litellm",
+        "model": model,
+        "max_tokens": max_tokens,
+    }
+
+    if temperature is not None:
+        config["temperature"] = temperature
+
+    if tools:
+        # Hash tool names only (stable across implementations)
+        config["tools"] = sorted([t.get("function", {}).get("name", "") for t in tools])
+
+    # JSON serialize with sorted keys for determinism
+    config_json = json.dumps(config, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(config_json.encode("utf-8")).hexdigest()
+
+
+def compute_prompt_hash(prompt: str) -> str:
+    """Compute deterministic prompt hash.
+
+    Parameters
+    ----------
+    prompt : str
+        Prompt content
+
+    Returns
+    -------
+    str
+        SHA-256 hex hash (lowercase)
+    """
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
 # ── Usage tracker ─────────────────────────────────────────────────
@@ -111,7 +178,10 @@ def call(
     temperature: float | None = None,
     tracker: UsageTracker | None = None,
 ) -> Any:
-    """Single-shot LLM call.  Returns the litellm response object."""
+    """Single-shot LLM call.  Returns the litellm response object.
+
+    Beta 100: Attaches config_hash and prompt_hash to response for provenance.
+    """
     msgs: list[dict[str, Any]] = []
     if system:
         msgs.append({"role": "system", "content": system})
@@ -123,6 +193,11 @@ def call(
         kwargs["temperature"] = temperature
     r = _litellm().completion(**kwargs)
     (tracker or _usage).track(r)
+
+    # Beta 100: Attach provenance hashes to response
+    r._husks_config_hash = compute_config_hash(model, max_tokens, temperature, tools)
+    r._husks_prompt_hash = compute_prompt_hash(prompt)
+
     return r
 
 
@@ -139,6 +214,8 @@ def call_messages(
     tracker: UsageTracker | None = None,
 ) -> Any:
     """Multi-turn LLM call with pre-built messages list.
+
+    Beta 100: Attaches config_hash and prompt_hash to response for provenance.
 
     Parameters
     ----------
@@ -173,6 +250,13 @@ def call_messages(
         kwargs["temperature"] = temperature
     r = _litellm().completion(**kwargs)
     (tracker or _usage).track(r, rule=rule)
+
+    # Beta 100: Attach provenance hashes
+    r._husks_config_hash = compute_config_hash(model, max_tokens, temperature, tools)
+    # For messages, hash the entire conversation
+    prompt_content = json.dumps(msgs, sort_keys=True, separators=(",", ":"))
+    r._husks_prompt_hash = hashlib.sha256(prompt_content.encode("utf-8")).hexdigest()
+
     return r
 
 
@@ -181,8 +265,10 @@ def call_messages(
 def meta(response: Any) -> dict[str, Any]:
     """Extract metadata from a litellm response (OpenAI shape).
 
+    Beta 100: Includes config_hash and prompt_hash for provenance.
+
     Returns a dict with keys: model, input_tokens, output_tokens,
-    finish_reason, cost_usd, text.
+    finish_reason, cost_usd, text, config_hash, prompt_hash.
     """
     msg = response.choices[0].message
     u = response.usage
@@ -192,7 +278,8 @@ def meta(response: Any) -> dict[str, Any]:
         cost = _litellm().completion_cost(completion_response=response)
     except Exception:
         cost = 0.0
-    return {
+
+    result = {
         "model": response.model,
         "input_tokens": inp,
         "output_tokens": out,
@@ -200,3 +287,11 @@ def meta(response: Any) -> dict[str, Any]:
         "cost_usd": round(cost, 6),
         "text": msg.content or "",
     }
+
+    # Beta 100: Include provenance hashes if available
+    if hasattr(response, "_husks_config_hash"):
+        result["config_hash"] = response._husks_config_hash
+    if hasattr(response, "_husks_prompt_hash"):
+        result["prompt_hash"] = response._husks_prompt_hash
+
+    return result

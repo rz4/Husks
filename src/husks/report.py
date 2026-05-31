@@ -142,7 +142,8 @@ def assemble(
         # Per-node cost (Beta Gate D6: include cached flag)
         rule_usage = by_rule.get(name, {})
         this_run_cost = rule_usage.get("cost_usd", 0.0) if state == "fired" and kind == "oracle" else 0.0
-        cached = rule_usage.get("cached", False)
+        # Beta 100: Check both usage.cached AND trace state for cache detection
+        cached = rule_usage.get("cached", False) or (raw_state == "reused")
         tokens_in = rule_usage.get("input_tokens", 0)
         tokens_out = rule_usage.get("output_tokens", 0)
         first_paid: float | None = None

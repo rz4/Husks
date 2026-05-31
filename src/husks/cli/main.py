@@ -30,8 +30,10 @@ def main():
     i = sub.add_parser("init", help="Create a runnable Husks project")
     i.add_argument("target", nargs="?", default=".",
                    help="Target directory (default: .)")
-    i.add_argument("template", nargs="?", default="demo",
-                   help="Project template (default: demo)")
+    i.add_argument("template", nargs="?", default="core-bootstrap",
+                   help="Project template (default: core-bootstrap)")
+    i.add_argument("--hy", action="store_true",
+                   help="Also emit bootstrap.hy (Hy design equivalent)")
     i.add_argument("--force", action="store_true",
                    help="Overwrite existing files")
 
@@ -182,7 +184,8 @@ def main():
     # ── init ──────────────────────────────────────────────────
     if args.cmd == "init":
         from husks.setup import init
-        sys.exit(init(args.target, template=args.template, claude_code=True, force=args.force))
+        emit_hy = getattr(args, 'hy', False)
+        sys.exit(init(args.target, template=args.template, emit_hy=emit_hy, claude_code=True, force=args.force))
 
     # ── status (may or may not need a design) ────────────────
     if args.cmd == "status":

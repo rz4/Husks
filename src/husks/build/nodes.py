@@ -135,7 +135,7 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
             if result.returncode != 0:
                 raise RuntimeError(
                     f"command failed (exit {result.returncode}): {cmd}\n"
-                    f"{result.stderr[:500]}"
+                    f"{result.stderr}"
                 )
         except Exception:
             # Rollback: restore live site outputs if command failed or violated isolation

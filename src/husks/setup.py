@@ -230,6 +230,85 @@ _DEMO_SPEC_MD = textwrap.dedent("""\
     - Ends with an exclamation mark
 """)
 
+# ── core-bootstrap template ─────────────────────────────────────────
+_CORE_BOOTSTRAP_DESIGN = {
+    "name": "core-bootstrap",
+    "fuel": 20,
+    "target": "validate",
+    "site_inputs": {
+        "CSE-v1.md": "spec/CSE-v1.md",
+        "CSE-v2.md": "spec/CSE-v2.md"
+    },
+    "rules": [
+        {
+            "name": "generate",
+            "kind": "oracle",
+            "inputs": ["CSE-v1.md", "CSE-v2.md"],
+            "outputs": ["readers/generated_reader.py"],
+            "prompt": "Read CSE-v1.md (the frozen spec) and CSE-v2.md (clarifications with worked examples). Implement a dependency-free CSE reader in a single Python file at readers/generated_reader.py. Constraints: use ONLY the Python standard library, and ONLY hashlib, sys, os. Do NOT use json, re, ast, pickle, or any parsing library. Write a byte-level netstring parser: read the decimal length prefix, then a colon, then exactly that many raw bytes. Reject leading zeros in a length (e.g. 05:hello is invalid). Reject an atom whose declared length exceeds the remaining bytes. Implement the seal preimage, recipe digest, output bindings, and Merkle node digest exactly as specified, using SHA-256 and lowercase hex. Critical: children of a rule are the CSE values at positions 5+ in the parsed rule list — recurse into them in positional order. Do NOT match children against input filenames. All intermediate digests (recipe-digest, seal, child digests) are 64-byte lowercase hex string atoms, not raw 32-byte hashes. Command-line contract: `python generated_reader.py <husk-file> <site-dir>` must print the lowercase-hex build-root to stdout and exit 0; on any CSE violation it must exit with a nonzero status. Write only readers/generated_reader.py.",
+            "tools": ["read-file", "write-file"],
+            "fuel": 10
+        },
+        {
+            "name": "validate",
+            "kind": "action",
+            "inputs": ["readers/generated_reader.py"],
+            "outputs": ["readers/gate-report.txt", "readers/VERIFIED"],
+            "run": "python3 -m py_compile readers/generated_reader.py && echo 'PASS: reader compiles' > readers/gate-report.txt && touch readers/VERIFIED"
+        }
+    ]
+}
+
+_CORE_BOOTSTRAP_HY = textwrap.dedent("""\
+    #!/usr/bin/env hy
+    \"\"\"Bootstrap-core: generate a CSE reader and gate it.
+
+    Usage:
+        husks run bootstrap.hy --stub
+    \"\"\"
+
+    (import husks.build [build rule oracle])
+    (import husks.oracle [live_oracle set_oracle_model])
+    (require husks.macros [deforacle ->])
+
+    (set_oracle_model "anthropic/claude-haiku-4-5-20251001")
+
+    (deforacle generate-reader
+      :prompt (+ "Read CSE-v1.md (the frozen spec) and CSE-v2.md (clarifications with worked examples). "
+                 "Implement a dependency-free CSE reader in a single Python file at readers/generated_reader.py. "
+                 "Constraints: use ONLY the Python standard library, and ONLY hashlib, sys, os. "
+                 "Do NOT use json, re, ast, pickle, or any parsing library. "
+                 "Write a byte-level netstring parser: read the decimal length prefix, "
+                 "then a colon, then exactly that many raw bytes. Reject leading zeros in a length "
+                 "(e.g. 05:hello is invalid). Reject an atom whose declared length exceeds the remaining bytes. "
+                 "Implement the seal preimage, recipe digest, output bindings, and Merkle node digest exactly "
+                 "as specified, using SHA-256 and lowercase hex. Critical: children of a rule are the CSE values "
+                 "at positions 5+ in the parsed rule list — recurse into them in positional order. Do NOT match "
+                 "children against input filenames. All intermediate digests (recipe-digest, seal, child digests) "
+                 "are 64-byte lowercase hex string atoms, not raw 32-byte hashes. Command-line contract: `python "
+                 "generated_reader.py <husk-file> <site-dir>` must print the lowercase-hex build-root to stdout "
+                 "and exit 0; on any CSE violation it must exit with a nonzero status. Write only readers/generated_reader.py.")
+      :tools ["read-file" "write-file"]
+      :fuel 10)
+
+    (build
+      :name "bootstrap-core"
+      :fuel 20
+      :site "site"
+      :site_inputs {"CSE-v1.md" "spec/CSE-v1.md" "CSE-v2.md" "spec/CSE-v2.md"}
+      :oracle_backend live_oracle
+
+      (-> (rule :name "generate"
+                :inputs ["CSE-v1.md" "CSE-v2.md"]
+                :recipe (generate-reader)
+                :outputs ["readers/generated_reader.py"])
+
+          (rule :name "validate"
+                :inputs ["readers/generated_reader.py"]
+                :run "python3 -m husks.gate 'python3 readers/generated_reader.py' --stamp-dir readers"
+                :outputs ["readers/gate-report.txt" "readers/VERIFIED"])))
+    """)
+
 
 def _write_if(path: Path, content: str, force: bool) -> bool:
     """Write content to path if it doesn't exist or force is set. Returns True if written."""
@@ -242,9 +321,93 @@ def _write_if(path: Path, content: str, force: bool) -> bool:
     return True
 
 
-def _scaffold_template(target: Path, template: str, force: bool) -> bool:
+def _copy_spec_files(target: Path) -> bool:
+    """Copy CSE spec files from the package to the target spec/ directory."""
+    # Find the spec files - they should be in the repo or bundled with the package
+    pkg_root = Path(__file__).resolve().parent
+
+    # Try multiple locations
+    spec_sources = [
+        pkg_root.parents[1] / "spec",  # repo: src/husks -> src -> repo
+        pkg_root / "_resources" / "spec",  # bundled in wheel
+    ]
+
+    spec_dir = None
+    for candidate in spec_sources:
+        if candidate.exists() and (candidate / "CSE-v1.md").exists():
+            spec_dir = candidate
+            break
+
+    if spec_dir is None:
+        print("  warning: could not find CSE spec files, creating placeholders", file=sys.stderr)
+        # Create minimal placeholders
+        (target / "spec").mkdir(parents=True, exist_ok=True)
+        (target / "spec" / "CSE-v1.md").write_text("# CSE v1 specification\n\n(Placeholder - install husks with spec files)\n")
+        (target / "spec" / "CSE-v2.md").write_text("# CSE v2 clarifications\n\n(Placeholder - install husks with spec files)\n")
+        print("        created spec/ directory with placeholders")
+        return True
+
+    # Copy the actual spec files
+    import shutil
+    (target / "spec").mkdir(parents=True, exist_ok=True)
+    for fname in ["CSE-v1.md", "CSE-v2.md"]:
+        src = spec_dir / fname
+        dst = target / "spec" / fname
+        if dst.exists():
+            print(f"        spec/{fname} exists")
+        else:
+            shutil.copy2(src, dst)
+            print(f"        copied spec/{fname}")
+    return True
+
+
+def _scaffold_core_bootstrap(target: Path, force: bool, emit_hy: bool) -> bool:
+    """Scaffold the core-bootstrap beta seed project."""
+    # 1. Create core-bootstrap.json
+    _write_if(
+        target / "core-bootstrap.json",
+        json.dumps(_CORE_BOOTSTRAP_DESIGN, indent=2) + "\n",
+        force
+    )
+
+    # 2. Copy spec files
+    _copy_spec_files(target)
+
+    # 3. Create .gitignore
+    gitignore_content = textwrap.dedent("""\
+        # Husks build artifacts
+        *.husk
+        .env
+
+        # Site directories
+        m1/
+        m2/
+        m3/
+        site/
+
+        # Generated outputs
+        readers/
+        cache.tar.gz
+        *.json.report
+
+        # Python
+        __pycache__/
+        *.pyc
+        """)
+    _write_if(target / ".gitignore", gitignore_content, force)
+
+    # 4. Optionally create bootstrap.hy
+    if emit_hy:
+        _write_if(target / "bootstrap.hy", _CORE_BOOTSTRAP_HY, force)
+
+    return True
+
+
+def _scaffold_template(target: Path, template: str, force: bool, emit_hy: bool = False) -> bool:
     """Scaffold project files for the given template. Returns True on success."""
-    if template == "demo":
+    if template == "core-bootstrap":
+        return _scaffold_core_bootstrap(target, force, emit_hy)
+    elif template == "demo":
         _write_if(target / "design.json",
                   json.dumps(_DEMO_DESIGN, indent=2) + "\n", force)
         _write_if(target / "check-greeting.py", _DEMO_CHECK_GREETING, force)
@@ -272,7 +435,7 @@ def _ensure_gitignored(target: Path, entry: str):
             f.write(("" if not lines or lines[-1] == "" else "\n") + entry + "\n")
 
 
-def init(target=".", template="demo", claude_code=True, force=False):
+def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True, force=False):
     """Scaffold a Husks project and wire it to Claude Code."""
     target = Path(target).resolve()
     target.mkdir(parents=True, exist_ok=True)
@@ -280,16 +443,17 @@ def init(target=".", template="demo", claude_code=True, force=False):
 
     # 1. scaffold template files
     print(f"  [1/5] scaffolding '{template}' template")
-    if not _scaffold_template(target, template, force):
+    if not _scaffold_template(target, template, force, emit_hy):
         return 1
     print()
 
     # 2. soundness gate — refuse to wire up an engine that doesn't verify
     print("  [2/5] verifying engine soundness")
-    if not selftest():
+    if not selftest(verbose=False):
         print("\n  aborted: engine selftest failed. Fix conformance before wiring up.",
               file=sys.stderr)
         return 1
+    print("        engine soundness verified ✓")
     print()
 
     # 3. API key
@@ -353,9 +517,12 @@ def init(target=".", template="demo", claude_code=True, force=False):
         print("        wrote CLAUDE.md")
     print()
 
+    # Success message - show appropriate commands for the template
     rel = os.path.relpath(target)
+    design_file = "core-bootstrap.json" if template == "core-bootstrap" else "design.json"
+
     print("  done. Next:")
     print(f"    cd {rel}")
-    print("    husks check")
-    print("    husks run --stub")
+    print(f"    husks check {design_file} --verbose")
+    print(f"    husks run {design_file} --site m1 --stub --verbose")
     return 0

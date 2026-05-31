@@ -426,9 +426,37 @@ def default_oracle_backend(
 ) -> dict[str, Any]:
     """Stub oracle backend that writes placeholder outputs.
 
-    Task 5: Stub outputs follow same structured format as live oracle
-    to pass deterministic validation contracts.
+    Beta 100: For the bootstrap 'generate' rule, produces a valid CSE reader
+    to enable --stub mode to complete the full core-bootstrap design.
     """
+    # Beta 100: Bootstrap stub path
+    # Narrow deterministic path for core-bootstrap --stub
+    if rule_name == "generate" and any("generated_reader.py" in o for o in outputs):
+        # Load the reference bootstrap reader
+        from pathlib import Path
+
+        pkg_root = Path(__file__).resolve().parent.parent
+        ref_reader = pkg_root / "_resources" / "bootstrap_reader.py"
+
+        if ref_reader.exists():
+            # Copy the reference reader to the output location
+            for o in outputs:
+                if "generated_reader.py" in o:
+                    output_path = site_path(S, o, write=True)
+                    # Read and write content to ensure parent directories are created
+                    content = ref_reader.read_text()
+                    write_text(output_path, content)
+                    break
+            return {
+                "tokens_in": 840,
+                "tokens_out": 320,
+                "cost_usd": 0.0008,
+                "fuel_steps": 10,
+                "backend": "stub",
+                "model": "stub"
+            }
+
+    # Generic stub for other rules
     prompt = recipe.get('prompt', '')
 
     # Task 5: Check if prompt requires "ANSWER:" format

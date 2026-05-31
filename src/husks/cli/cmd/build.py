@@ -16,26 +16,56 @@ from husks.cli.residue import CliResidue, CliNode
 def collect_dry_residue(design: dict) -> CliResidue:
     """Collect dry residue for check command (design without site).
 
-    Maps all rules to 'dry' state since no execution has happened.
+    Maps all rules to 'unrealized' state since no execution has happened.
+    Builds target-rooted tree from dependencies.
     """
-    nodes = []
     rules = design.get("rules", [])
+    rules_by_name = {r["name"]: r for r in rules}
 
+    # Build dependency map (rule -> inputs it depends on)
+    deps = {}
+    for rule in rules:
+        rule_inputs = set(rule.get("inputs", []))
+        deps[rule["name"]] = []
+        # Find rules that produce these inputs
+        for other in rules:
+            other_outputs = set(other.get("outputs", []))
+            if rule_inputs & other_outputs:  # Intersection
+                deps[rule["name"]].append(other["name"])
+
+    # Build nodes with children
+    nodes = []
     for rule in rules:
         node = CliNode(
             name=rule["name"],
             kind=rule.get("kind", "action"),
-            state="dry",  # All nodes are dry in check mode
+            state="unrealized",  # All nodes are unrealized in check mode
+            children=deps.get(rule["name"], []),
+            fuel_budget=rule.get("fuel"),
         )
         nodes.append(node)
+
+    # Reorder: target first, then dependencies
+    target_name = design.get("target") or design.get("targets", [None])[0]
+    if target_name:
+        target_idx = next((i for i, n in enumerate(nodes) if n.name == target_name), 0)
+        if target_idx > 0:
+            nodes.insert(0, nodes.pop(target_idx))
+
+    # Beta 100: Add cse_path and target
+    target_name = design.get("target") or design.get("targets", [None])[0]
 
     return CliResidue(
         command="check",
         design_name=design.get("name", "unknown"),
         site=None,
-        status="dry",
+        cse_path="none",  # No CSE for dry check
+        status="dry",  # Internal status (mapped to "checked" in view)
+        target=target_name,
         fuel_budget=design.get("fuel", 0),
         nodes=nodes,
+        passes=["checks"],
+        fails=[],
     )
 
 
@@ -44,13 +74,26 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
 
     Extracts node facts from Store (S), Trace (T), and usage data.
     Maps trace events to unified state vocabulary.
-    """
-    from husks.cli.residue import map_trace_state
+    Builds target-rooted tree.
 
-    nodes = []
+    Beta 100: Adds cse_path, target, outputs with hashes, and trace info.
+    """
+    from husks.cli.residue import map_trace_state, CliOutput, CliTrace
+
     rules = design.get("rules", [])
+    rules_by_name = {r["name"]: r for r in rules}
     usage = S.get("usage", {})
     by_rule = usage.get("by_rule", {})
+
+    # Build dependency map
+    deps = {}
+    for rule in rules:
+        rule_inputs = set(rule.get("inputs", []))
+        deps[rule["name"]] = []
+        for other in rules:
+            other_outputs = set(other.get("outputs", []))
+            if rule_inputs & other_outputs:
+                deps[rule["name"]].append(other["name"])
 
     # Build trace event lookup from _node_events
     # _node_events is a list of tuples: (name, status, elapsed)
@@ -62,6 +105,7 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
             "elapsed": elapsed,
         }
 
+    nodes = []
     for rule in rules:
         rule_name = rule["name"]
         rule_usage = by_rule.get(rule_name, {})
@@ -86,14 +130,18 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
             state = "dry"  # Never executed
             cached = False
 
-        # Extract output hash from artifacts
-        output_hash = None
-        if rule.get("outputs"):
-            first_output = rule["outputs"][0]
-            for output_path, artifact_info in T._artifacts.items():
-                if output_path == first_output:
+        # Beta 100: Collect outputs with hashes
+        outputs = []
+        for output_path in rule.get("outputs", []):
+            output_hash = None
+            for artifact_path, artifact_info in T._artifacts.items():
+                if artifact_path == output_path:
                     output_hash = artifact_info.get("hash")
                     break
+            outputs.append(CliOutput(path=output_path, sha256=output_hash))
+
+        # Keep legacy output_hash for compatibility (first output)
+        output_hash = outputs[0].sha256 if outputs else None
 
         # Extract duration
         duration = event["elapsed"] if event else None
@@ -106,29 +154,71 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
                     diagnosis = evt.get("reason")
                     break
 
+        # Beta 100: Build trace info for oracle/action nodes
+        trace = None
+        if rule_usage:
+            trace = CliTrace(
+                backend=rule_usage.get("backend", "unknown"),
+                model=rule_usage.get("model"),
+                input_tokens=rule_usage.get("tokens_in", 0),
+                output_tokens=rule_usage.get("tokens_out", 0),
+                elapsed_s=duration,
+                cost_usd=rule_usage.get("cost_usd", 0.0),
+                cache_source="local" if cached else None,
+            )
+
         node = CliNode(
             name=rule_name,
             kind=rule.get("kind", "action"),
             state=state,
+            children=deps.get(rule_name, []),
             fuel=rule_usage.get("fuel_consumed"),
+            fuel_budget=rule.get("fuel"),
             cost=rule_usage.get("cost_usd"),
             cache=cached,
             output_hash=output_hash,
             duration=duration,
             diagnosis=diagnosis,
+            outputs=outputs,
+            trace=trace,
         )
         nodes.append(node)
 
-    # Compute summary
-    passes = sum(1 for n in nodes if n.state in ("sealed", "cached"))
-    fails = sum(1 for n in nodes if n.state == "failed")
+    # Reorder: target first
+    target_name = design.get("target") or design.get("targets", [None])[0]
+    if target_name:
+        target_idx = next((i for i, n in enumerate(nodes) if n.name == target_name), 0)
+        if target_idx > 0:
+            nodes.insert(0, nodes.pop(target_idx))
+
+    # Compute summary categories
+    has_cached = any(n.cache for n in nodes)
+    has_failed = any(n.state == "failed" for n in nodes)
+
+    passes = []
+    fails = []
+
+    if not has_failed:
+        passes.append("run")
+    else:
+        fails.append("run")
+
+    if has_cached:
+        passes.append("cache")
+
+    # Beta 100: Find CSE husk path
+    design_name = design.get("name", "unknown")
+    cse_path = f"{design_name}.husk"  # Standard naming
+    target_name = design.get("target") or design.get("targets", [None])[0]
 
     return CliResidue(
         command="run",
-        design_name=design.get("name", "unknown"),
+        design_name=design_name,
         site=S.get("site"),
+        cse_path=cse_path,
         status=S.get("status", "unknown"),
         root=S.get("root"),
+        target=target_name,
         fuel_budget=design.get("fuel", 0),
         fuel_used=design.get("fuel", 0) - S.get("fuel", 0),
         cost=usage.get("total_cost_usd", 0.0),
@@ -144,10 +234,9 @@ def _cmd_run_hy(args):
     """Execute a .hy design file directly."""
     design_path = str(Path(args.design).resolve())
 
-    # Suppress console trace in JSON mode or non-verbose default mode
-    if args.json_output or not args.verbose:
-        from husks.utils import trace as T_pre
-        T_pre.clear_listeners()
+    # Suppress console trace (we use residue→surface→view instead)
+    from husks.utils import trace as T_pre
+    T_pre.clear_listeners()
 
     # Configure oracle backend before executing the .hy file
     if args.stub:
@@ -279,10 +368,9 @@ def _cmd_run(args, design):
             overrides["oracle_backend"] = live_oracle
         overrides["oracle_model"] = args.model
 
-    # Suppress console trace in JSON mode or non-verbose default mode
-    if args.json_output or not args.verbose:
-        from husks.utils import trace as T_pre
-        T_pre.clear_listeners()
+    # Suppress console trace (we use residue→surface→view instead)
+    from husks.utils import trace as T_pre
+    T_pre.clear_listeners()
 
     # Beta Gate F/G: Catch setup/validation failures and emit JSON errors when --json specified
     try:
@@ -329,16 +417,21 @@ def _cmd_run(args, design):
             print(f"error: {e}", file=sys.stderr)
         sys.exit(EXIT_BUILD_FAIL)
 
-    # Build Report - Beta Gate 95: Use residue→surface→view architecture
-    from husks.cli.surface import emit_residue
+    # Build Report
     from husks.utils import trace as T
 
-    # Collect hydrated residue from completed build
-    residue = collect_hydrated_residue(S, T, design)
-
-    # Emit via surface layer
-    output = emit_residue(residue, json_mode=args.json_output, verbose=args.verbose)
-    print(output)
+    # Beta 100: For --json, use full report schema (compare-runs compatible)
+    # For visual output, use residue→surface→view architecture
+    if args.json_output:
+        from husks.report import assemble, render_json
+        report = assemble(S, T, design)
+        print(render_json(report))
+    else:
+        # Visual output: use residue→surface→view
+        from husks.cli.surface import emit_residue
+        residue = collect_hydrated_residue(S, T, design)
+        output = emit_residue(residue, json_mode=False, verbose=args.verbose)
+        print(output)
 
     # Preserve exit code logic
     if S.get("status") == "halted" and not args.soft_fail:

@@ -52,28 +52,33 @@ def _emit_json(residue: CliResidue) -> str:
     """Emit residue as pure JSON with shared vocabulary.
 
     **Shared vocabulary** (same across check, run, status):
-    - Top-level: command, design, site, status, root, fuel, cost, nodes, summary
-    - Node-level: name, kind, state, fuel, cost, cache, output_hash, diagnosis
+    - Top-level: command, name, site, status, root, fuel_budget, fuel_used, cost, nodes, passes, fails
+    - Node-level: name, kind, state, fuel, fuel_budget, cost, cache, output_hash, diagnosis, children
 
     **No command-specific fields** in the shared vocabulary.
     """
+    # Map status for visual display (dry → checked for check command)
+    status_display = residue.status
+    if residue.command == "check" and residue.status == "dry":
+        status_display = "checked"
+    elif residue.status == "committed":
+        status_display = "sealed"
+    elif residue.status == "halted":
+        status_display = "failed"
+
     # Build top-level structure
     output = {
         "command": residue.command,
-        "status": residue.status,
-        "design": residue.design_name,
+        "name": residue.design_name,
         "site": residue.site,
+        "status": status_display,
         "root": residue.root,
-        "fuel": {
-            "budget": residue.fuel_budget,
-            "used": residue.fuel_used,
-        },
+        "fuel_budget": residue.fuel_budget,
+        "fuel_used": residue.fuel_used,
         "cost": residue.cost,
         "nodes": [],
-        "summary": {
-            "passes": residue.passes,
-            "fails": residue.fails,
-        },
+        "passes": residue.passes,
+        "fails": residue.fails,
     }
 
     # Build node list
@@ -85,8 +90,12 @@ def _emit_json(residue: CliResidue) -> str:
         }
 
         # Optional fields (only include if not None)
+        if node.children:
+            node_dict["children"] = node.children
         if node.fuel is not None:
             node_dict["fuel"] = node.fuel
+        if node.fuel_budget is not None:
+            node_dict["fuel_budget"] = node.fuel_budget
         if node.cost is not None:
             node_dict["cost"] = node.cost
         if node.cache:

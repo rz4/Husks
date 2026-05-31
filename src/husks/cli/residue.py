@@ -17,20 +17,73 @@ from typing import Optional
 
 
 @dataclass
+class CliOutput:
+    """Represents a single output artifact from a rule."""
+
+    path: str
+    """Output file path"""
+
+    sha256: Optional[str] = None
+    """Content hash of the output (lowercase hex)"""
+
+
+@dataclass
+class CliTrace:
+    """Oracle provenance and execution metadata."""
+
+    backend: Optional[str] = None
+    """Backend type: 'litellm', 'stub', or custom"""
+
+    provider: Optional[str] = None
+    """LLM provider (e.g., 'anthropic')"""
+
+    model: Optional[str] = None
+    """Model identifier (e.g., 'claude-haiku-4-5')"""
+
+    config_hash: Optional[str] = None
+    """Hash of oracle config (provider+model+params)"""
+
+    prompt_hash: Optional[str] = None
+    """Hash of prompt content"""
+
+    input_tokens: int = 0
+    """Input tokens consumed"""
+
+    output_tokens: int = 0
+    """Output tokens generated"""
+
+    elapsed_s: Optional[float] = None
+    """Execution time in seconds"""
+
+    cost_usd: float = 0.0
+    """Cost in USD"""
+
+    stdout: Optional[str] = None
+    """Captured stdout (for action rules)"""
+
+    stderr: Optional[str] = None
+    """Captured stderr (for action rules)"""
+
+    cache_source: Optional[str] = None
+    """Cache source identifier (e.g., 'local', 'imported')"""
+
+
+@dataclass
 class CliNode:
     """Represents a single node (rule) in CLI output.
 
     **State vocabulary (unified across check, run, status):**
-    - dry: Node exists in design but hasn't run (check mode without site)
+    - unrealized: Node exists in design but hasn't run
     - sealed: Previously built, inputs unchanged, outputs fresh
-    - cached: Reused from cache with explicit evidence (cached=True flag)
+    - cached: Reused from cache with explicit evidence
     - stale: Recipe/inputs changed, or outputs missing/tampered
     - failed: Execution failed with diagnosis
+    - running: Currently executing (verbose run frames)
 
     **Kind vocabulary:**
     - oracle: LLM-powered generative rule
     - action: Deterministic shell command
-    - trial: Non-committing exploration (not in beta 95 scope)
+    - trial: Non-committing exploration
     """
 
     name: str
@@ -40,10 +93,16 @@ class CliNode:
     """Rule kind: oracle, action, or trial"""
 
     state: str
-    """Node state: dry, sealed, cached, stale, or failed"""
+    """Node state: unrealized, sealed, cached, stale, failed, running"""
+
+    children: list[str] = field(default_factory=list)
+    """Child node names (dependencies)"""
 
     fuel: Optional[int] = None
     """Fuel consumed by this node (None if not executed)"""
+
+    fuel_budget: Optional[int] = None
+    """Fuel budget for this node (oracle rules)"""
 
     cost: Optional[float] = None
     """USD cost for this node (None if not executed or zero-cost)"""
@@ -60,9 +119,17 @@ class CliNode:
     stale_reason: Optional[str] = None
     """Reason for staleness (e.g., 'input_changed:file.txt')"""
 
-    # Additional metadata for verbose rendering
     duration: Optional[float] = None
-    """Execution duration in seconds (only for run command)"""
+    """Execution duration in seconds"""
+
+    outputs: list[CliOutput] = field(default_factory=list)
+    """Output artifacts produced by this node"""
+
+    reason: Optional[str] = None
+    """Reason for current state (e.g., halt reason, cache source)"""
+
+    trace: Optional[CliTrace] = None
+    """Oracle/action execution trace (provenance metadata)"""
 
 
 @dataclass
@@ -79,14 +146,23 @@ class CliResidue:
     design_name: str
     """Design name from design.json"""
 
-    site: Optional[str]
+    status: str
+    """Build status: checked, hydrating, sealed, stale, failed"""
+
+    design: Optional[str] = None
+    """Design file path"""
+
+    site: Optional[str] = None
     """Site directory path (None for check without --site)"""
 
-    status: str
-    """Build status: dry, committed, or halted"""
+    cse_path: Optional[str] = None
+    """CSE husk artifact path (e.g., 'core-bootstrap.husk')"""
 
     root: Optional[str] = None
     """Build root hash (None if not committed)"""
+
+    target: Optional[str] = None
+    """Target rule name"""
 
     fuel_budget: int = 0
     """Total fuel budget from design"""
@@ -98,13 +174,13 @@ class CliResidue:
     """Total USD cost of oracle calls"""
 
     nodes: list[CliNode] = field(default_factory=list)
-    """List of nodes (rules) in execution order"""
+    """List of nodes (rules) in target-rooted order"""
 
-    passes: int = 0
-    """Count of nodes in sealed or cached state"""
+    passes: list[str] = field(default_factory=list)
+    """List of passing categories (e.g., ['checks', 'site', 'cache'])"""
 
-    fails: int = 0
-    """Count of nodes in failed or stale state"""
+    fails: list[str] = field(default_factory=list)
+    """List of failing categories (e.g., ['site', 'run'])"""
 
     # Additional metadata for verbose output
     trace_events: list = field(default_factory=list)
@@ -143,7 +219,7 @@ def map_trace_state(
     - fired + cached=False → sealed
     - reused → cached (legacy)
     - failed → failed
-    - (no event) → dry (not executed)
+    - (no event) → unrealized (not executed)
     """
     if failed:
         return "failed"
@@ -151,4 +227,4 @@ def map_trace_state(
         return "cached"
     if trace_event == "fired":
         return "sealed"
-    return "dry"
+    return "unrealized"

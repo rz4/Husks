@@ -19,37 +19,82 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
     """Collect site residue for status command.
 
     Maps manifest freshness states to unified CLI state vocabulary.
+    Builds target-rooted tree.
+
+    Beta 100: Adds cse_path, target, and output records.
     """
     from husks.manifest import compute_rule_states
+    from husks.cli.residue import CliOutput
+    import os
+
+    rule_states = compute_rule_states(site, manifest)
+    rules = manifest.get("rules", [])
+    rules_by_name = {r["name"]: r for r in rules}
+
+    # Build dependency map
+    deps = {}
+    for rule in rules:
+        rule_inputs = set(rule.get("inputs", []))
+        deps[rule["name"]] = []
+        for other in rules:
+            other_outputs = set(other.get("outputs", []))
+            if rule_inputs & other_outputs:
+                deps[rule["name"]].append(other["name"])
 
     nodes = []
-    rule_states = compute_rule_states(site, manifest)
-
     for rs in rule_states:
         # Map manifest state to CLI state
         state = map_manifest_state(rs["state"])
+        rule = rules_by_name.get(rs["name"], {})
+
+        # Beta 100: Collect outputs with hashes for sealed nodes
+        outputs = []
+        for output_path in rule.get("outputs", []):
+            full_path = os.path.join(site, output_path)
+            output_hash = None
+            if os.path.isfile(full_path):
+                import hashlib
+                with open(full_path, 'rb') as f:
+                    output_hash = hashlib.sha256(f.read()).hexdigest()
+            outputs.append(CliOutput(path=output_path, sha256=output_hash))
 
         node = CliNode(
             name=rs["name"],
-            kind=rs.get("kind", "action"),
+            kind=rule.get("kind", "action"),
             state=state,
+            children=deps.get(rs["name"], []),
+            fuel_budget=rule.get("fuel"),
             stale_reason=rs.get("reason"),
+            outputs=outputs,
         )
         nodes.append(node)
 
-    # Compute summary
-    passes = sum(1 for n in nodes if n.state == "sealed")
-    fails = sum(1 for n in nodes if n.state in ("stale", "failed"))
+    # Reorder: target first
+    target = manifest.get("target")
+    if target:
+        target_idx = next((i for i, n in enumerate(nodes) if n.name == target), 0)
+        if target_idx > 0:
+            nodes.insert(0, nodes.pop(target_idx))
 
-    # Extract design name from manifest
+    # Compute summary categories
+    has_stale = any(n.state == "stale" for n in nodes)
+
+    passes = ["site"] if not has_stale else []
+    fails = ["site"] if has_stale else []
+
+    # Beta 100: Add cse_path and target
     design_name = manifest.get("name", "unknown")
+    cse_path = f"{design_name}.husk"
+    target_name = manifest.get("target")
 
     return CliResidue(
         command="status",
         design_name=design_name,
         site=site,
+        cse_path=cse_path,
         status="committed" if manifest.get("root") else "dry",
         root=manifest.get("root"),
+        target=target_name,
         nodes=nodes,
         passes=passes,
         fails=fails,
@@ -73,7 +118,8 @@ def _cmd_status(args):
     residue = collect_site_residue(manifest, site)
 
     # Step 3: Emit via surface layer
-    output = emit_residue(residue, json_mode=args.json_output, verbose=False)
+    verbose = getattr(args, 'verbose', False)
+    output = emit_residue(residue, json_mode=args.json_output, verbose=verbose)
     print(output)
 
     # Step 4: Preserve exit code logic
@@ -83,7 +129,7 @@ def _cmd_status(args):
             sys.exit(EXIT_DIRTY_STALE)
 
     if args.fail_if_stale:
-        if residue.fails > 0:  # Any stale or failed nodes
+        if len(residue.fails) > 0:  # Any stale or failed nodes
             sys.exit(EXIT_DIRTY_STALE)
 
 
