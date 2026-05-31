@@ -50,9 +50,12 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
         # Blocker #7: Check history for cache evidence
         history = read_history(site, rule_name)
         was_cached = False
+        trace_metadata = None
         if history:
             last_run = history[-1]
             was_cached = last_run.get("cached", False)
+            # Phase 3: Extract trace metadata from history
+            trace_metadata = last_run
 
         # Map manifest state to CLI state
         # If fresh and was cached in last run, show as cached instead of sealed
@@ -73,6 +76,37 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
                     output_hash = hashlib.sha256(f.read()).hexdigest()
             outputs.append(CliOutput(path=output_path, sha256=output_hash))
 
+        # Phase 3: Read seal data for aperture 2
+        from husks.manifest import read_seal
+        seal = read_seal(site, rule_name)
+        seal_digest = None
+        recipe_digest = None
+        input_hashes = None
+        output_hashes = None
+        if seal:
+            seal_digest = seal.get("digest")
+            recipe_digest = seal.get("recipe_digest")
+            input_hashes = seal.get("input_hashes", {})
+            output_hashes = seal.get("output_hashes", {})
+
+        # Phase 3: Build trace for aperture 3
+        from husks.cli.residue import CliTrace
+        trace = None
+        if trace_metadata:
+            trace = CliTrace(
+                backend=trace_metadata.get("backend"),
+                model=trace_metadata.get("model"),
+                config_hash=trace_metadata.get("config_hash"),
+                prompt_hash=trace_metadata.get("prompt_hash"),
+                input_tokens=trace_metadata.get("tokens_in", 0),
+                output_tokens=trace_metadata.get("tokens_out", 0),
+                elapsed_s=trace_metadata.get("elapsed_s"),
+                cost_usd=trace_metadata.get("cost_usd", 0.0),
+                stdout=trace_metadata.get("stdout"),
+                stderr=trace_metadata.get("stderr"),
+                cache_source="local" if was_cached else None,
+            )
+
         node = CliNode(
             name=rs["name"],
             kind=rule.get("kind", "action"),
@@ -81,6 +115,11 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
             fuel_budget=rule.get("fuel"),
             stale_reason=rs.get("reason"),
             outputs=outputs,
+            seal_digest=seal_digest,
+            recipe_digest=recipe_digest,
+            input_hashes=input_hashes,
+            output_hashes=output_hashes,
+            trace=trace,
         )
         nodes.append(node)
 
@@ -150,12 +189,180 @@ def _cmd_status(args):
 
 # ── explain ───────────────────────────────────────────────────────
 
+def _read_key():
+    """Read a single keypress without blocking (Phase 6 task #40).
+
+    Returns:
+        str: Key name ('up', 'down', 'left', 'right', 'q', or raw char)
+    """
+    import sys
+    import tty
+    import termios
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+
+        # Handle escape sequences (arrow keys)
+        if ch == '\x1b':
+            ch2 = sys.stdin.read(1)
+            if ch2 == '[':
+                ch3 = sys.stdin.read(1)
+                if ch3 == 'A':
+                    return 'up'
+                elif ch3 == 'B':
+                    return 'down'
+                elif ch3 == 'C':
+                    return 'right'
+                elif ch3 == 'D':
+                    return 'left'
+
+        # Handle ctrl+c
+        if ch == '\x03':
+            raise KeyboardInterrupt
+
+        return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def _run_interactive_pilot(state):
+    """Run interactive pilot loop (Phase 6 task #41).
+
+    Continuously renders state, reads keyboard input, updates state,
+    and re-renders until user quits.
+
+    Controls:
+        ↑/↓: Move cursor up/down through nodes
+        ←/→: Decrease/increase aperture
+        q: Quit
+    """
+    from husks.cli.navigator import move_cursor, adjust_aperture
+    from husks.cli.view import render_dag
+    import sys
+
+    # Clear screen and hide cursor
+    print('\033[2J\033[H', end='', flush=True)
+    print('\033[?25l', end='', flush=True)  # Hide cursor
+
+    try:
+        while True:
+            # Render current state (task #42)
+            output = render_dag(
+                state.residue,
+                verbose=False,
+                cursor=state.cursor,
+                aperture=state.aperture,
+                controls=True
+            )
+
+            # Clear and redraw
+            print('\033[H', end='')  # Move to top
+            print(output, flush=True)
+
+            # Read keyboard input
+            try:
+                key = _read_key()
+            except KeyboardInterrupt:
+                break
+
+            # Update state based on key
+            if key == 'q':
+                break
+            elif key == 'up':
+                state = move_cursor(state, 'up')
+            elif key == 'down':
+                state = move_cursor(state, 'down')
+            elif key == 'left':
+                state = adjust_aperture(state, -1)
+            elif key == 'right':
+                state = adjust_aperture(state, +1)
+    finally:
+        # Show cursor and clear screen
+        print('\033[?25h', end='', flush=True)  # Show cursor
+        print('\033[2J\033[H', end='', flush=True)  # Clear screen
+
+
+def _explain_navigate(args):
+    """Navigate site residue tree (Phase 5+6).
+
+    Loads site manifest, builds residue, creates ExplainState,
+    and renders with cursor/aperture. No design.json required.
+
+    Phase 6: Interactive mode when --interactive and in a TTY.
+    """
+    from husks.manifest import read_manifest
+    from husks.cli.navigator import create_explain_state
+    from husks.cli.view import render_dag
+    from husks.cli.surface import emit_residue
+    import sys
+
+    site = args.site
+
+    # Phase 5: Infer CSE from site manifest (task #36)
+    try:
+        manifest = read_manifest(site)
+        if not manifest:
+            print(f"error: no manifest found in {site}", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+    except Exception as e:
+        print(f"error: failed to read manifest from {site}: {e}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    # Build site residue (same as status command)
+    residue = collect_site_residue(manifest, site)
+
+    # Create navigation state
+    cursor_node = args.node  # None uses target as default
+    aperture_level = args.aperture
+    state = create_explain_state(residue, cursor=cursor_node, aperture=aperture_level)
+
+    # Phase 5: JSON output (task #37)
+    if args.json_output:
+        output = emit_residue(state.residue, json_mode=True, verbose=False)
+        # Add explain metadata
+        import json
+        data = json.loads(output)
+        data["cursor"] = state.cursor
+        data["aperture"] = state.aperture
+        data["order"] = state.order
+        print(json.dumps(data, indent=2))
+        return
+
+    # Phase 6: TTY detection (task #39)
+    is_tty = sys.stdout.isatty()
+    interactive_requested = getattr(args, 'interactive', False)
+
+    if is_tty and interactive_requested:
+        # Phase 6: Interactive pilot loop (task #41)
+        _run_interactive_pilot(state)
+    else:
+        # Deterministic single-frame render
+        output = render_dag(
+            state.residue,
+            verbose=False,
+            cursor=state.cursor,
+            aperture=state.aperture,
+            controls=interactive_requested  # Show controls if interactive was requested
+        )
+        print(output)
+
+
 def _cmd_explain(args):
     """Dispatch to the appropriate explain mode.
 
-    Default (no flags): bordered DAG tree.
-    --graph is kept as a backwards-compat no-op (graph IS the default).
+    Phase 5: --site mode routes to navigator (deterministic explain)
+    Legacy modes: --diff, --seal, subject path
     """
+    # Phase 5: Navigator mode when --site is provided without legacy flags
+    is_legacy_mode = args.diff or args.seal or (args.subject and not args.site)
+    if args.site and not is_legacy_mode:
+        _explain_navigate(args)
+        return
+
+    # Legacy modes
     if args.diff:
         _explain_diff(args)          # legacy
     elif args.seal:

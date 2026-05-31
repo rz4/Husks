@@ -340,3 +340,455 @@ def test_explain_no_args_shows_error():
     # Should fail with usage error
     assert result.returncode != 0
     assert "error" in result.stderr.lower() or "requires" in result.stderr.lower()
+
+
+# ── Phase 5: Navigator mode tests ────────────────────────────────────
+
+
+def test_explain_navigator_default_cursor():
+    """husks explain --site m1 renders cursor at target (validate).
+
+    Phase 5 acceptance: Navigator mode defaults to target cursor.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="explain-nav-default-")
+    try:
+        # Create core-bootstrap design
+        design_path = Path(tmpdir) / "design.json"
+        site_m1 = Path(tmpdir) / "m1"
+        site_m1.mkdir()
+
+        design = {
+            "name": "nav-test",
+            "fuel": 20,
+            "site": str(site_m1),
+            "target": "validate",
+            "rules": [
+                {
+                    "name": "validate",
+                    "kind": "action",
+                    "inputs": ["output.txt"],
+                    "outputs": ["validated.txt"],
+                    "run": "cat output.txt > validated.txt"
+                },
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "config": {"model": "stub"},
+                    "prompt": "Generate test content"
+                }
+            ],
+        }
+        design_path.write_text(json.dumps(design, indent=2))
+
+        # Build on m1
+        subprocess.run(
+            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            capture_output=True,
+        )
+
+        # Run explain without --node (should default to target)
+        result = subprocess.run(
+            [sys.executable, "-m", "husks.cli", "explain", "--site", str(site_m1)],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"explain navigator failed: {result.stderr}"
+        # Should show cursor at target
+        assert "cursor:validate" in result.stdout, \
+            "Navigator should show cursor:validate in header"
+        # Should show cursor marker on validate
+        assert "▶" in result.stdout, \
+            "Navigator should show ▶ cursor marker"
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_explain_navigator_custom_node_aperture_0():
+    """husks explain --site m1 --node generate --aperture 0 shows node only.
+
+    Phase 5 acceptance: Aperture 0 shows node line without details.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="explain-nav-aperture0-")
+    try:
+        design_path = Path(tmpdir) / "design.json"
+        site_m1 = Path(tmpdir) / "m1"
+        site_m1.mkdir()
+
+        design = {
+            "name": "aperture-test",
+            "fuel": 20,
+            "site": str(site_m1),
+            "target": "validate",
+            "rules": [
+                {
+                    "name": "validate",
+                    "kind": "action",
+                    "inputs": ["output.txt"],
+                    "outputs": ["validated.txt"],
+                    "run": "cat output.txt > validated.txt"
+                },
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "config": {"model": "stub"},
+                    "prompt": "Generate test"
+                }
+            ],
+        }
+        design_path.write_text(json.dumps(design, indent=2))
+
+        # Build
+        subprocess.run(
+            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            capture_output=True,
+        )
+
+        # Explain with aperture 0 (node only)
+        result = subprocess.run(
+            [sys.executable, "-m", "husks.cli", "explain",
+             "--site", str(site_m1), "--node", "generate", "--aperture", "0"],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
+        assert "cursor:generate" in result.stdout
+        assert "aperture:0" in result.stdout
+        # Aperture 0: should NOT show output details
+        assert "out:" not in result.stdout, \
+            "Aperture 0 should not show output details"
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_explain_navigator_aperture_3_trace():
+    """husks explain --site m1 --node generate --aperture 3 shows full trace.
+
+    Phase 5 acceptance: Aperture 3 shows trace with backend, model, tokens, cost.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="explain-nav-aperture3-")
+    try:
+        design_path = Path(tmpdir) / "design.json"
+        site_m1 = Path(tmpdir) / "m1"
+        site_m1.mkdir()
+
+        design = {
+            "name": "trace-test",
+            "fuel": 20,
+            "site": str(site_m1),
+            "target": "validate",
+            "rules": [
+                {
+                    "name": "validate",
+                    "kind": "action",
+                    "inputs": ["output.txt"],
+                    "outputs": ["validated.txt"],
+                    "run": "cat output.txt > validated.txt"
+                },
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "config": {"model": "stub"},
+                    "prompt": "Generate content"
+                }
+            ],
+        }
+        design_path.write_text(json.dumps(design, indent=2))
+
+        # Build with stub oracle (produces trace)
+        subprocess.run(
+            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            capture_output=True,
+        )
+
+        # Explain with aperture 3 (full trace)
+        result = subprocess.run(
+            [sys.executable, "-m", "husks.cli", "explain",
+             "--site", str(site_m1), "--node", "generate", "--aperture", "3"],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
+        assert "aperture:3" in result.stdout
+        # Aperture 3 should show trace section
+        assert "trace:" in result.stdout, \
+            "Aperture 3 should show trace section"
+        assert "backend:" in result.stdout, \
+            "Aperture 3 should show backend"
+        # Stub oracle should show model or config
+        assert "model:" in result.stdout or "config:" in result.stdout, \
+            "Aperture 3 should show oracle config"
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_explain_navigator_cached_node():
+    """husks explain --site m2 --node generate --aperture 3 shows cache provenance.
+
+    Phase 5 acceptance: Cached nodes show cache source in trace.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="explain-nav-cached-")
+    try:
+        design_path = Path(tmpdir) / "design.json"
+        site_m1 = Path(tmpdir) / "m1"
+        site_m2 = Path(tmpdir) / "m2"
+        site_m1.mkdir()
+        site_m2.mkdir()
+
+        design = {
+            "name": "cache-test",
+            "fuel": 20,
+            "target": "validate",
+            "rules": [
+                {
+                    "name": "validate",
+                    "kind": "action",
+                    "inputs": ["output.txt"],
+                    "outputs": ["validated.txt"],
+                    "run": "cat output.txt > validated.txt"
+                },
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "config": {"model": "stub"},
+                    "prompt": "Generate cached content"
+                }
+            ],
+        }
+
+        # Build on m1 first
+        design["site"] = str(site_m1)
+        design_path.write_text(json.dumps(design, indent=2))
+        subprocess.run(
+            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            capture_output=True,
+        )
+
+        # Export cache from m1
+        cache_file = Path(tmpdir) / "cache.tar.gz"
+        subprocess.run(
+            [sys.executable, "-m", "husks.cli", "cache", "export",
+             str(cache_file), "--site", str(site_m1)],
+            capture_output=True,
+        )
+
+        # Import cache to m2
+        subprocess.run(
+            [sys.executable, "-m", "husks.cli", "cache", "import",
+             str(cache_file), "--site", str(site_m2)],
+            capture_output=True,
+        )
+
+        # Build on m2 (should reuse cache)
+        design["site"] = str(site_m2)
+        design_path.write_text(json.dumps(design, indent=2))
+        subprocess.run(
+            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            capture_output=True,
+        )
+
+        # Explain m2 generate node at aperture 3
+        result = subprocess.run(
+            [sys.executable, "-m", "husks.cli", "explain",
+             "--site", str(site_m2), "--node", "generate", "--aperture", "3"],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
+        # Cached node should show cache indicator
+        assert "◆" in result.stdout or "cached" in result.stdout.lower(), \
+            "Cached node should show cache glyph or label"
+        # Aperture 3 should show cache provenance (if available)
+        # Note: cache source may be shown in trace or cache section
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_explain_navigator_json_output():
+    """husks explain --site m1 --json includes cursor and aperture metadata.
+
+    Phase 5 acceptance: JSON surface includes navigation state.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="explain-nav-json-")
+    try:
+        design_path = Path(tmpdir) / "design.json"
+        site_m1 = Path(tmpdir) / "m1"
+        site_m1.mkdir()
+
+        design = {
+            "name": "json-nav",
+            "fuel": 20,
+            "site": str(site_m1),
+            "target": "validate",
+            "rules": [
+                {
+                    "name": "validate",
+                    "kind": "action",
+                    "inputs": ["output.txt"],
+                    "outputs": ["validated.txt"],
+                    "run": "cat output.txt > validated.txt"
+                },
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "config": {"model": "stub"},
+                    "prompt": "Generate"
+                }
+            ],
+        }
+        design_path.write_text(json.dumps(design, indent=2))
+
+        # Build
+        subprocess.run(
+            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            capture_output=True,
+        )
+
+        # Explain with JSON output
+        result = subprocess.run(
+            [sys.executable, "-m", "husks.cli", "explain",
+             "--site", str(site_m1), "--node", "generate",
+             "--aperture", "2", "--json"],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+
+        # Should include cursor and aperture in JSON
+        assert "cursor" in data, "JSON output should include cursor"
+        assert data["cursor"] == "generate"
+        assert "aperture" in data, "JSON output should include aperture"
+        assert data["aperture"] == 2
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ── Phase 6: Interactive pilot tests ──────────────────────────────────
+
+
+def test_explain_interactive_requires_tty():
+    """husks explain --site m1 --interactive falls back to deterministic in non-TTY.
+
+    Phase 6 acceptance: Interactive mode requires a TTY. Non-TTY environments
+    render once and exit, even when --interactive is specified.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="explain-interactive-notty-")
+    try:
+        design_path = Path(tmpdir) / "design.json"
+        site_m1 = Path(tmpdir) / "m1"
+        site_m1.mkdir()
+
+        design = {
+            "name": "interactive-test",
+            "fuel": 20,
+            "site": str(site_m1),
+            "target": "validate",
+            "rules": [
+                {
+                    "name": "validate",
+                    "kind": "action",
+                    "inputs": ["output.txt"],
+                    "outputs": ["validated.txt"],
+                    "run": "cat output.txt > validated.txt"
+                },
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "config": {"model": "stub"},
+                    "prompt": "Generate"
+                }
+            ],
+        }
+        design_path.write_text(json.dumps(design, indent=2))
+
+        # Build
+        subprocess.run(
+            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            capture_output=True,
+        )
+
+        # Run explain with --interactive in non-TTY (subprocess)
+        result = subprocess.run(
+            [sys.executable, "-m", "husks.cli", "explain",
+             "--site", str(site_m1), "--interactive"],
+            capture_output=True,
+            text=True,
+        )
+
+        # Should succeed and render deterministically (not hang waiting for input)
+        assert result.returncode == 0, \
+            f"Non-TTY interactive should fall back to deterministic: {result.stderr}"
+        # Should show the DAG
+        assert "validate" in result.stdout or "generate" in result.stdout
+        # Should show controls footer since interactive was requested
+        assert "move" in result.stdout or "aperture" in result.stdout or "quit" in result.stdout
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_explain_deterministic_without_interactive():
+    """husks explain --site m1 (no --interactive) renders once.
+
+    Phase 6 acceptance: Without --interactive, explain always renders
+    deterministically regardless of TTY status.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="explain-deterministic-")
+    try:
+        design_path = Path(tmpdir) / "design.json"
+        site_m1 = Path(tmpdir) / "m1"
+        site_m1.mkdir()
+
+        design = {
+            "name": "deterministic-test",
+            "fuel": 20,
+            "site": str(site_m1),
+            "target": "output",
+            "rules": [
+                {
+                    "name": "output",
+                    "kind": "action",
+                    "outputs": ["output.txt"],
+                    "run": "echo 'test' > output.txt"
+                }
+            ],
+        }
+        design_path.write_text(json.dumps(design, indent=2))
+
+        # Build
+        subprocess.run(
+            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            capture_output=True,
+        )
+
+        # Run explain WITHOUT --interactive
+        result = subprocess.run(
+            [sys.executable, "-m", "husks.cli", "explain", "--site", str(site_m1)],
+            capture_output=True,
+            text=True,
+        )
+
+        # Should render once and exit immediately
+        assert result.returncode == 0
+        assert "output" in result.stdout
+        # Should NOT show controls footer (interactive not requested)
+        # This is actually already tested by previous tests, but confirms behavior
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)

@@ -21,6 +21,9 @@ husks run core-bootstrap.json --site m1 --stub
 
 # Verify outputs
 ls m1/readers/
+
+# Explore the build residue interactively
+husks explain --site m1 --interactive
 ```
 
 ## The Three-Machine Proof
@@ -44,6 +47,11 @@ husks run core-bootstrap.json --site m3 --stub --json > m3.json
 
 # Verify computational equivalence
 husks compare-runs m1.json m2.json m3.json
+
+# Inspect individual machines (optional)
+husks explain --site m1 --node generate --aperture 3  # M1: paid oracle cost
+husks explain --site m2 --node generate --aperture 3  # M2: cached reuse
+husks explain --site m3 --node generate --aperture 3  # M3: independent realization
 ```
 
 **Expected result:**
@@ -203,6 +211,174 @@ husks compare-runs m1.json m2.json m3.json
 - M2: `oracle_calls = 0`, `cost = 0`, `cache_hits > 0`
 - M3: `oracle_calls > 0`, comparable cost to M1
 - All: Same `root` (build equivalence)
+
+### `husks explain --site <dir>`
+
+Explore and navigate a built site's residue tree.
+
+**Purpose:** Inspect sealed builds without requiring design.json. Navigate through the dependency tree with adjustable detail levels.
+
+**Required:**
+- `--site <dir>` - Site directory with manifest and build state
+
+**Options:**
+- `--node <name>` - Select specific node (default: target)
+- `--aperture <0-3>` - Detail level (default: 1)
+  - `0` - Node only (name, kind, state)
+  - `1` - Node + outputs (primary output with hash)
+  - `2` - Node + outputs + seal (recipe, input/output hashes)
+  - `3` - Node + outputs + seal + trace (backend, model, tokens, cost, logs)
+- `--interactive` - Enable interactive navigation (requires TTY)
+- `--json` - JSON output with cursor/aperture metadata
+
+**Examples:**
+
+```bash
+# Inspect site residue at target node
+husks explain --site m1
+
+# Select specific node with full trace
+husks explain --site m1 --node generate --aperture 3
+
+# Interactive navigation
+husks explain --site m1 --interactive
+
+# JSON output for programmatic access
+husks explain --site m1 --node generate --aperture 2 --json
+```
+
+**Interactive Controls:**
+
+When `--interactive` is specified in a TTY environment, explain enters interactive pilot mode:
+
+- `↑/↓` - Move cursor up/down through nodes
+- `←/→` - Decrease/increase aperture (0-3)
+- `q` - Quit
+
+**Non-TTY fallback:** When run in non-TTY environments (pipes, CI), explain renders once deterministically, even if `--interactive` is specified.
+
+**Example Output (aperture 1):**
+
+```
+────────────────────────────────────────
+ core-bootstrap.husk              root:36a407c
+ site:m1                   cursor:validate
+ aperture:1
+────────────────────────────────────────
+▶■ validate                  action
+      out:readers/gate-report.txt@7f6aec
+      out:readers/VERIFIED@e3b0c4
+    └─ ■ generate            oracle
+      out:readers/generated_reader.py@09e95b
+────────────────────────────────────────
+ ↑↓ move   ←→ aperture   q quit
+```
+
+**Example Output (aperture 3):**
+
+```
+────────────────────────────────────────
+ core-bootstrap.husk              root:36a407c
+ site:m1                   cursor:generate
+ aperture:3
+────────────────────────────────────────
+ □ validate                  action
+    └─ ▶■ generate           oracle     ⚡10     $0.0008
+      out:readers/generated_reader.py@09e95b
+      seal:
+        digest: 36a407
+        recipe: f5e2a1
+        inputs: 2
+        outputs: 1
+      trace:
+        backend: stub
+        model: stub
+        input_tokens: 840
+        output_tokens: 320
+        elapsed: 0.01s
+        cost: $0.0008
+────────────────────────────────────────
+ ↑↓ move   ←→ aperture   q quit
+```
+
+**Cached nodes (M2 scenario):**
+
+When exploring a site with cache reuse, cached nodes show the `◆` glyph and cache provenance:
+
+```bash
+husks explain --site m2 --node generate --aperture 3
+```
+
+```
+────────────────────────────────────────
+ core-bootstrap.husk              root:36a407c
+ site:m2                   cursor:generate
+ aperture:3
+────────────────────────────────────────
+ □ validate                  action
+    └─ ▶◆ generate           oracle     cached     ⚡0     $0.0000
+      out:readers/generated_reader.py@09e95b
+      seal:
+        digest: 36a407
+        recipe: f5e2a1
+        inputs: 2
+        outputs: 1
+      cache: local
+────────────────────────────────────────
+ ↑↓ move   ←→ aperture   q quit
+```
+
+**JSON Output:**
+
+With `--json`, explain outputs structured data including cursor and aperture state:
+
+```json
+{
+  "command": "status",
+  "design_name": "core-bootstrap",
+  "status": "sealed",
+  "site": "m1",
+  "cse_path": "core-bootstrap.husk",
+  "root": "36a407c...",
+  "cursor": "generate",
+  "aperture": 2,
+  "order": ["validate", "generate"],
+  "nodes": [
+    {
+      "name": "generate",
+      "kind": "oracle",
+      "state": "sealed",
+      "outputs": [
+        {
+          "path": "readers/generated_reader.py",
+          "sha256": "09e95b..."
+        }
+      ],
+      "seal_digest": "36a407...",
+      "recipe_digest": "f5e2a1...",
+      "fuel": 10,
+      "cost": 0.0008
+    }
+  ]
+}
+```
+
+**Use Cases:**
+
+1. **Post-build inspection:** Explore what was built without needing the design file
+2. **Cache verification:** Inspect cached nodes to verify reuse
+3. **Seal debugging:** Examine recipe and input hashes to understand staleness
+4. **Provenance audit:** Review oracle traces (backend, model, tokens, cost)
+5. **Interactive debugging:** Navigate dependency tree to find failed or stale nodes
+
+**Comparison with other commands:**
+
+| Command | Purpose | Requires design.json? |
+|---------|---------|----------------------|
+| `check` | Validate design structure | Yes |
+| `run` | Execute build | Yes |
+| `status` | Show freshness states | No (--site mode) |
+| `explain` | Navigate residue tree | No (--site mode) |
 
 ## Visual Output Format (Beta 100)
 
@@ -554,6 +730,50 @@ Yes! Core-bootstrap is the default template for testing and proofs, but you can 
 ```
 
 See `examples/json_designs/` for more examples.
+
+### How do I inspect a built site without the design file?
+
+Use `husks explain` with the `--site` flag:
+
+```bash
+husks explain --site m1
+```
+
+This loads the site manifest directly and renders the dependency tree with cursor at the target node. You can navigate interactively:
+
+```bash
+husks explain --site m1 --interactive
+```
+
+Or select a specific node with full trace details:
+
+```bash
+husks explain --site m1 --node generate --aperture 3
+```
+
+### What are aperture levels in explain?
+
+Aperture controls the detail level for the selected node:
+
+- **Aperture 0:** Node only (name, kind, state) - minimal view
+- **Aperture 1:** Node + outputs (primary output with hash) - default view
+- **Aperture 2:** Node + outputs + seal (recipe digest, input/output hashes)
+- **Aperture 3:** Node + outputs + seal + trace (backend, model, tokens, cost, logs)
+
+Use `←/→` arrow keys in interactive mode to adjust aperture on the fly.
+
+### When should I use explain vs status?
+
+Both commands can inspect built sites, but they serve different purposes:
+
+| Use Case | Command |
+|----------|---------|
+| Check freshness states (stale detection) | `status` |
+| Navigate dependency tree | `explain` |
+| Inspect seal/trace details | `explain --aperture 2-3` |
+| Verify cache reuse | `explain --node <name> --aperture 3` |
+| CI/automated checks | `status --json` or `explain --json` |
+| Interactive debugging | `explain --interactive` |
 
 ## Known Limitations (Beta 100)
 

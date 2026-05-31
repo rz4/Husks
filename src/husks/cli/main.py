@@ -84,9 +84,16 @@ def main():
                         help="Verbose output (full DAG visualization)")
 
     # explain
-    e = sub.add_parser("explain", help="Bordered DAG tree (default), or --diff / --seal")
+    e = sub.add_parser("explain", help="Navigate site residue tree (--site mode) or legacy modes")
     e.add_argument("subject", nargs="?", default=None,
                    help="Design file path (.json/.hy), or rule/artifact name")
+    # Phase 5: Navigator mode flags
+    e.add_argument("--node", help="Select node in the residue tree")
+    e.add_argument("--aperture", type=int, choices=[0, 1, 2, 3], default=1,
+                   help="Detail level: 0=node, 1=output, 2=seal, 3=trace (default: 1)")
+    e.add_argument("--interactive", action="store_true",
+                   help="Enable interactive navigation (Phase 6)")
+    # Legacy mode flags
     e.add_argument("--graph", action="store_true",
                    help=argparse.SUPPRESS)  # backwards-compat no-op
     e.add_argument("--diff", action="store_true",

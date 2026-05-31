@@ -131,6 +131,18 @@ class CliNode:
     trace: Optional[CliTrace] = None
     """Oracle/action execution trace (provenance metadata)"""
 
+    seal_digest: Optional[str] = None
+    """Seal hash for this node (composite of recipe+inputs+outputs)"""
+
+    recipe_digest: Optional[str] = None
+    """Recipe digest (hash of oracle config, prompt, or action command)"""
+
+    input_hashes: Optional[dict[str, str]] = None
+    """Input file content hashes {path: sha256}"""
+
+    output_hashes: Optional[dict[str, str]] = None
+    """Output file content hashes {path: sha256}"""
+
 
 @dataclass
 class CliResidue:
