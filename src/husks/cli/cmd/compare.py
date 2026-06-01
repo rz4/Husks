@@ -312,22 +312,6 @@ def _cmd_compare_runs(args):
         else:
             comparison["checks"]["m3_paid_cost"] = True
 
-        # Beta Readiness Task 2: Cost comparability is a hard failure
-        # For stub oracle, costs should be exactly equal
-        # For live oracle, small variance allowed but still enforced
-        cost_diff = abs(m1["cost_paid"] - m3["cost_paid"])
-        cost_tolerance = max(m1["cost_paid"] * 0.1, 0.0001)  # 10% or small epsilon
-
-        if cost_diff > cost_tolerance:
-            comparison["violations"].append(
-                f"M1 and M3 costs not comparable: ${m1['cost_paid']:.6f} vs ${m3['cost_paid']:.6f} "
-                f"(diff: ${cost_diff:.6f}, tolerance: ${cost_tolerance:.6f})"
-            )
-            comparison["equivalent"] = False
-            comparison["checks"]["m1_m3_comparable_cost"] = False
-        else:
-            comparison["checks"]["m1_m3_comparable_cost"] = True
-
         # Beta Hardening Task 3/4: Cross-check proof fields against actual nodes
         # Don't allow empty nodes lists to pass (Task 4)
         for i, run in enumerate([m1, m2, m3], 1):
@@ -395,13 +379,107 @@ def _cmd_compare_runs(args):
         if all(name in m2_oracle_names for name in m2["cached_nodes"]):
             comparison["checks"]["m2_cached_nodes_valid"] = True
 
-        # Check: All have same root (if all committed successfully)
-        roots = [r["root"] for r in comparison["runs"] if r["root"]]
-        if len(set(roots)) > 1:
-            comparison["violations"].append(f"Build roots differ: {roots}")
-            comparison["equivalent"] = False
-        elif len(roots) == 3:
-            comparison["checks"]["same_root"] = True
+        # Beta 100: Three-machine relation with scoped equivalence
+        # Check 1: Cache path is deterministic (M1 root == M2 root exactly)
+        m1_root = reports[0]["data"].get("root")
+        m2_root = reports[1]["data"].get("root")
+        if m1_root and m2_root:
+            if m1_root == m2_root:
+                comparison["checks"]["m1_m2_root_identical"] = True
+            else:
+                comparison["violations"].append(
+                    f"M1/M2 cache nondeterminism: roots differ ({m1_root[:7]} vs {m2_root[:7]})"
+                )
+                comparison["equivalent"] = False
+
+        # Check 2: M3 validator-bounded acceptance
+        # Build node->outputs map for M1 and M3 by path
+        m1_nodes = reports[0]["data"].get("nodes", [])
+        m3_nodes = reports[2]["data"].get("nodes", [])
+
+        m1_outputs_by_node = {}
+        m3_outputs_by_node = {}
+
+        for node in m1_nodes:
+            name = node.get("name")
+            outputs = node.get("outputs", [])
+            if name and outputs:
+                m1_outputs_by_node[name] = {out["path"]: out["hash"] for out in outputs}
+
+        for node in m3_nodes:
+            name = node.get("name")
+            outputs = node.get("outputs", [])
+            if name and outputs:
+                m3_outputs_by_node[name] = {out["path"]: out["hash"] for out in outputs}
+
+        # Compare acceptance outputs (exact) only, exclude free outputs
+        acceptance_outputs = []
+        free_outputs = []
+        acceptance_match = True
+
+        for node in m1_nodes:
+            name = node.get("name")
+            equivalence = node.get("equivalence", {})
+
+            if name not in m1_outputs_by_node or name not in m3_outputs_by_node:
+                continue
+
+            m1_outs = m1_outputs_by_node[name]
+            m3_outs = m3_outputs_by_node[name]
+
+            for path in m1_outs.keys():
+                relation = equivalence.get(path, "exact")  # Default to exact
+
+                if relation == "free":
+                    free_outputs.append(path)
+                    continue
+
+                acceptance_outputs.append(path)
+
+                # Must match exactly
+                if m1_outs.get(path) != m3_outs.get(path):
+                    comparison["violations"].append(
+                        f"M3 acceptance divergence: {path} hash mismatch "
+                        f"(M1:{m1_outs[path][:7]} vs M3:{m3_outs[path][:7]})"
+                    )
+                    comparison["equivalent"] = False
+                    acceptance_match = False
+
+        if acceptance_match and acceptance_outputs:
+            comparison["checks"]["m3_declared_equivalence"] = True
+
+        # Check 3: Cost comparability with declared tolerance
+        cost_tolerance = reports[0]["data"].get("cost_tolerance", {"ratio": [0.5, 2.0]})
+
+        c1 = m1["cost_paid"]
+        c3 = m3["cost_paid"]
+
+        if c1 > 0:
+            cost_ratio = c3 / c1
+            min_ratio, max_ratio = cost_tolerance["ratio"]
+
+            if min_ratio <= cost_ratio <= max_ratio:
+                comparison["checks"]["m1_m3_comparable_cost"] = True
+            else:
+                comparison["violations"].append(
+                    f"M1/M3 cost out of tolerance: C3/C1={cost_ratio:.3f} "
+                    f"(allowed: [{min_ratio}, {max_ratio}])"
+                )
+                comparison["equivalent"] = False
+                comparison["checks"]["m1_m3_comparable_cost"] = False
+        else:
+            if c3 == 0:
+                comparison["checks"]["m1_m3_comparable_cost"] = True
+
+        # Observational convergence (never flips equivalent)
+        m3_root = reports[2]["data"].get("root")
+        convergence = {
+            "m1_m3_same_root": m1_root == m3_root if (m1_root and m3_root) else None,
+            "acceptance_outputs": list(set(acceptance_outputs)),
+            "acceptance_outputs_match": acceptance_match if acceptance_outputs else None,
+            "free_outputs": list(set(free_outputs)),
+        }
+        comparison["convergence"] = convergence
 
     # Beta Readiness Task 1: Enforce invariant - violations implies not equivalent
     if len(comparison["violations"]) > 0:

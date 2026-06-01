@@ -189,7 +189,11 @@ def assemble(
             "prompt_trend": prompt_trend,
             "fuel_consumed": fuel_consumed,
             "fuel_trend": fuel_trend,
-            "output_hashes": cur_hashes,
+            "output_hashes": cur_hashes,  # Keep for backward compatibility
+            "outputs": [  # Beta 100: named outputs
+                {"path": path, "hash": h}
+                for path, h in zip(rule_ir.get("outputs", []), cur_hashes)
+            ],
             "output_changed": output_changed,
             "cost": {
                 "this_run": round(this_run_cost, 6),
@@ -213,6 +217,9 @@ def assemble(
             node_dict["config_hash"] = config_hash
         if prompt_hash is not None:
             node_dict["prompt_hash"] = prompt_hash
+
+        # Beta 100: Surface equivalence map for compare-runs
+        node_dict["equivalence"] = rule_ir.get("equivalence", {})
 
         # Diagnosis: only when state == "failed"
         if state == "failed":
@@ -289,6 +296,8 @@ def assemble(
         "oracle_calls": oracle_calls,
         "cache_hits": cache_hits,
         "cached_nodes": cached_node_names,
+        # Beta 100: Surface cost tolerance for compare-runs
+        "cost_tolerance": design.get("cost_tolerance", {"ratio": [0.5, 2.0]}),
     }
 
     if store["status"] == "halted":
@@ -654,6 +663,23 @@ def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
                 for field in ["input", "output"]:
                     if field not in node["tokens"]:
                         errors.append(f"nodes[{i}].tokens.{field} missing")
+
+            # Beta 100: Optional named outputs and equivalence
+            if "outputs" in node:
+                outputs = node["outputs"]
+                if not isinstance(outputs, list):
+                    errors.append(f"nodes[{i}].outputs must be a list")
+                else:
+                    for j, out in enumerate(outputs):
+                        if not isinstance(out, dict):
+                            errors.append(f"nodes[{i}].outputs[{j}] must be a dict")
+                        elif "path" not in out or "hash" not in out:
+                            errors.append(f"nodes[{i}].outputs[{j}] must have 'path' and 'hash' keys")
+
+            if "equivalence" in node:
+                equiv = node["equivalence"]
+                if not isinstance(equiv, dict):
+                    errors.append(f"nodes[{i}].equivalence must be a dict")
 
     # Validate diagnosis if halted
     if report.get("status") == "halted":

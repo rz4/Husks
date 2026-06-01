@@ -108,6 +108,7 @@ _ALLOWED_DESIGN_FIELDS = frozenset({
     "oracle_model",   # Model identifier
     "imports",        # Import mappings
     "predicates",     # Named predicates for cond rules
+    "cost_tolerance", # Beta 100: Cost comparability tolerance
     "_source_path",   # Internal: source file path (added by from_json)
 })
 
@@ -117,10 +118,12 @@ _ALLOWED_RULE_FIELDS = {
         "name", "kind", "inputs", "outputs",
         "run",        # Shell command
         "action_fn",  # Python callable (programmatic use only)
+        "equivalence", # Beta 100: Per-output equivalence relation
     }),
     "oracle": frozenset({
         "name", "kind", "inputs", "outputs",
         "prompt", "tools", "fuel",
+        "equivalence", # Beta 100: Per-output equivalence relation
     }),
     "trial": frozenset({
         "name", "kind", "inputs", "outputs",
@@ -222,6 +225,22 @@ def check(design: Design) -> list[str]:
     if fuel is None or fuel <= 0:
         errors.append("design has no fuel budget")
 
+    # Beta 100: Validate cost_tolerance if present
+    cost_tol = design.get("cost_tolerance")
+    if cost_tol is not None:
+        if not isinstance(cost_tol, dict):
+            errors.append("cost_tolerance must be a dict")
+        else:
+            ratio = cost_tol.get("ratio")
+            if ratio is None:
+                errors.append("cost_tolerance must have 'ratio' field")
+            elif not isinstance(ratio, list) or len(ratio) != 2:
+                errors.append("cost_tolerance.ratio must be a two-element list [min, max]")
+            elif not all(isinstance(x, (int, float)) and x > 0 for x in ratio):
+                errors.append("cost_tolerance.ratio bounds must be positive numbers")
+            elif ratio[0] > ratio[1]:
+                errors.append("cost_tolerance.ratio minimum must be <= maximum")
+
     rules = design.get("rules", [])
     if not rules:
         errors.append("design has no rules")
@@ -318,6 +337,18 @@ def check(design: Design) -> list[str]:
                 else:
                     produced.add(o)
                     output_producers[o] = tag
+
+            # Beta 100: Validate equivalence map if present
+            equiv = r.get("equivalence", {})
+            if equiv:
+                if not isinstance(equiv, dict):
+                    errors.append(f"{tag}: equivalence must be a dict")
+                else:
+                    for path, relation in equiv.items():
+                        if path not in outputs:
+                            errors.append(f"{tag}: equivalence key '{path}' not in declared outputs")
+                        if relation not in ("exact", "free"):
+                            errors.append(f"{tag}: equivalence value must be 'exact' or 'free', got '{relation}'")
 
             inputs = r.get("inputs", [])
             rule_inputs[tag] = inputs

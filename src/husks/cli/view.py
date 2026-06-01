@@ -90,8 +90,12 @@ def render_dag(
     site_display = residue.site if residue.site else "none"
 
     # Fuel - shows budget only for dry check, used/budget for runs
+    # Beta 100: For sealed runs, use oracle_calls if available
     if residue.fuel_budget > 0:
-        if residue.fuel_used > 0 or residue.command != "check":
+        if residue.status == "committed" and hasattr(residue, 'oracle_calls') and residue.oracle_calls > 0:
+            # Sealed run with oracle_calls data: show oracle calls
+            fuel_display = f"⚡{residue.oracle_calls}/{residue.fuel_budget}"
+        elif residue.fuel_used > 0 or residue.command != "check":
             # Hydrated run: show used/budget
             fuel_display = f"⚡{residue.fuel_used}/{residue.fuel_budget}"
         else:

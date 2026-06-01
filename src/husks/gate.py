@@ -15,6 +15,7 @@ with zero cross-package dependencies.
     husks-gate "python my_reader.py" --stamp-dir stamps
 """
 
+import hashlib
 import os
 import shlex
 import shutil
@@ -92,6 +93,9 @@ def gate(reader_cmd: list[str], *, stamp_dir=None, cross_check=True,
 
     names = _vectors(conf)
 
+    # Beta 100: Collect (name, root) pairs for conformance digest
+    conformance_pairs = []
+
     # ── positive vectors ─────────────────────────────────────
     for name in names:
         root_file = conf / f"{name}.root"
@@ -116,6 +120,8 @@ def gate(reader_cmd: list[str], *, stamp_dir=None, cross_check=True,
             )
             continue
         _print(f"  {name}: root matches {expected[:16]}...")
+        # Beta 100: On pass, collect the verified pair
+        conformance_pairs.append((name, got))
 
     # ── negative vectors ─────────────────────────────────────
     for name in names:
@@ -178,10 +184,34 @@ def gate(reader_cmd: list[str], *, stamp_dir=None, cross_check=True,
             )
 
     # ── stamp ────────────────────────────────────────────────
+    # Beta 100: Write conformance digest instead of "PASS"
     if ok and stamp_dir is not None:
         stamp_dir = Path(stamp_dir)
         stamp_dir.mkdir(parents=True, exist_ok=True)
-        (stamp_dir / "VERIFIED").write_text("PASS\n")
+
+        # Compute conformance digest from sorted (name, root) pairs
+        # This is constant across all correct readers (same frozen roots)
+        # but differs from incorrect readers (which fail before reaching here)
+        digest_input = "\n".join(f"{name}:{root}" for name, root in sorted(conformance_pairs))
+        conformance_digest = hashlib.sha256(digest_input.encode()).hexdigest()
+
+        (stamp_dir / "VERIFIED").write_text(conformance_digest + "\n")
+
+        # Optionally write human-readable report
+        report_lines = [
+            "Conformance Gate Report",
+            "=" * 40,
+            f"Reader: {' '.join(reader_cmd)}",
+            f"Vectors: {len(conformance_pairs)} positive, {len([n for n in names if not (conf / f'{n}.root').exists()])} negative",
+            "",
+            "Verified roots:",
+        ]
+        for name, root in sorted(conformance_pairs):
+            report_lines.append(f"  {name}: {root}")
+        report_lines.append("")
+        report_lines.append(f"Conformance digest: {conformance_digest}")
+
+        (stamp_dir / "gate-report.txt").write_text("\n".join(report_lines) + "\n")
 
     if ok:
         _print("GATE PASS")

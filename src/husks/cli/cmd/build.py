@@ -67,10 +67,8 @@ class VerboseFrameEmitter:
         for rule_name, state in self.node_states.items():
             rule = self.rules.get(rule_name, {})
 
-            # Only show nodes that have been seen (started execution)
-            # Unrealized nodes that haven't started yet are not shown
-            if rule_name not in self.nodes_seen and state == "unrealized":
-                continue
+            # Beta 100: Show all nodes from frame 1 for stable tree
+            # Unrealized nodes appear with "unrealized" state (dimmed glyph)
 
             # Build dependency list
             rule_inputs = set(rule.get("inputs", []))
@@ -323,6 +321,12 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
     # Compute fuel_used from node-level fuel consumption, not Store delta
     fuel_used = sum(n.fuel for n in nodes if n.fuel is not None)
 
+    # Beta 100: Extract oracle_calls from report for sealed runs
+    oracle_calls = 0
+    from husks.report import assemble
+    report_data = assemble(S, T, design)
+    oracle_calls = report_data.get("oracle_calls", 0)
+
     return CliResidue(
         command="run",
         design_name=design_name,
@@ -333,6 +337,7 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
         target=target_name,
         fuel_budget=design.get("fuel", 0),
         fuel_used=fuel_used,
+        oracle_calls=oracle_calls,
         cost=usage.get("total_cost_usd", 0.0),
         nodes=nodes,
         passes=passes,

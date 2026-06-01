@@ -182,6 +182,9 @@ class CliResidue:
     fuel_used: int = 0
     """Fuel consumed by executed rules"""
 
+    oracle_calls: int = 0
+    """Number of oracle calls made (Beta 100: for sealed runs)"""
+
     cost: float = 0.0
     """Total USD cost of oracle calls"""
 
