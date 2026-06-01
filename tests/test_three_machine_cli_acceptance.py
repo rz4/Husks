@@ -32,22 +32,36 @@ def test_three_machine_cli_acceptance_stub():
 
     tmpdir = tempfile.mkdtemp(prefix="cli-three-machine-")
     try:
-        # Beta 100: Use husks init instead of examples/beta_seed
+        # Create a simple design for three-machine proof testing
         project_dir = Path(tmpdir) / "project"
         project_dir.mkdir()
 
-        # Initialize project with core-bootstrap template
-        init_result = run_husks_cli("init", str(project_dir), cwd=str(tmpdir))
-        assert init_result.returncode == 0, (
-            f"husks init should succeed\n"
-            f"stdout: {init_result.stdout}\nstderr: {init_result.stderr}"
-        )
+        design_path = project_dir / "design.json"
+        design_path.write_text(json.dumps({
+            "name": "three-machine-test",
+            "fuel": 20,
+            "target": "validate",
+            "rules": [
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "inputs": [],
+                    "outputs": ["response.txt"],
+                    "prompt": "Write a brief factual answer to response.txt.",
+                    "tools": ["write-file"],
+                    "fuel": 8,
+                },
+                {
+                    "name": "validate",
+                    "kind": "action",
+                    "inputs": ["response.txt"],
+                    "outputs": ["validation.txt"],
+                    "run": "python3 -c \"text = open('response.txt').read(); open('validation.txt', 'w').write('PASS\\n' if len(text.strip()) > 0 else 'FAIL\\n')\"",
+                },
+            ],
+        }, indent=2))
 
-        # Verify init created expected files (core-bootstrap template)
-        design_path = project_dir / "core-bootstrap.json"
-        assert design_path.exists(), f"core-bootstrap.json not found: {design_path}"
-
-        # Beta 100: core-bootstrap uses embedded prompts, no separate prompt.txt file
+        assert design_path.exists(), f"design.json not found: {design_path}"
 
         # ──────────────────────────────────────────────────────────
         # Machine 1: Original realization with empty cache

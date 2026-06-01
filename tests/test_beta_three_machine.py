@@ -92,7 +92,8 @@ def test_machine_1_and_3_independent_realization():
         machine1_site.mkdir()
         (machine1_site / "prompt.txt").write_text("What is the capital of France?\n")
 
-        design1 = {**seed_design, "site": str(machine1_site)}
+        design1 = {**seed_design, "site": str(machine1_site),
+                    "site_inputs": {"prompt.txt": str(machine1_site / "prompt.txt")}}
         S1 = run(design1, oracle_backend=stub_oracle)
 
         # Assertions for Machine 1
@@ -110,7 +111,8 @@ def test_machine_1_and_3_independent_realization():
         machine3_site.mkdir()
         (machine3_site / "prompt.txt").write_text("What is the capital of France?\n")
 
-        design3 = {**seed_design, "site": str(machine3_site)}
+        design3 = {**seed_design, "site": str(machine3_site),
+                    "site_inputs": {"prompt.txt": str(machine3_site / "prompt.txt")}}
         S3 = run(design3, oracle_backend=stub_oracle)
 
         # Assertions for Machine 3
@@ -202,7 +204,8 @@ def test_three_machine_full_proof():
         m1_site.mkdir()
         (m1_site / "prompt.txt").write_text("What is the capital of France?\n")
 
-        design1 = {**seed_design, "site": str(m1_site)}
+        design1 = {**seed_design, "site": str(m1_site),
+                    "site_inputs": {"prompt.txt": str(m1_site / "prompt.txt")}}
         S1 = run(design1, oracle_backend=stub_oracle)
 
         assert S1["status"] == "committed"
@@ -226,7 +229,8 @@ def test_three_machine_full_proof():
 
         # Build with cache-reuse-only mode
         # For now, skip reuse-only mode test and just verify cache is used
-        design2 = {**seed_design, "site": str(m2_site)}
+        design2 = {**seed_design, "site": str(m2_site),
+                    "site_inputs": {"prompt.txt": str(m2_site / "prompt.txt")}}
         S2 = run(design2, oracle_backend=stub_oracle)
 
         assert S2["status"] == "committed"
@@ -239,7 +243,8 @@ def test_three_machine_full_proof():
         m3_site.mkdir()
         (m3_site / "prompt.txt").write_text("What is the capital of France?\n")
 
-        design3 = {**seed_design, "site": str(m3_site)}
+        design3 = {**seed_design, "site": str(m3_site),
+                    "site_inputs": {"prompt.txt": str(m3_site / "prompt.txt")}}
         S3 = run(design3, oracle_backend=stub_oracle)
 
         assert S3["status"] == "committed"

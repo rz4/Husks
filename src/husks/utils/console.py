@@ -221,7 +221,8 @@ def _on_oracle_done(e: dict[str, Any]) -> None:
     if elapsed > 0:
         parts.append(_dur(elapsed))
     if parts:
-        print(f"      {DIM}{' \u00b7 '.join(parts)}{RESET}", flush=True)
+        sep = " \u00b7 "
+        print(f"      {DIM}{sep.join(parts)}{RESET}", flush=True)
 
 
 def _on_tool_call(e: dict[str, Any]) -> None:
@@ -250,7 +251,8 @@ def _on_trial_branch(e: dict[str, Any]) -> None:
     cost = e.get("cost_usd", 0.0)
     if cost > 0:
         parts.append(_cost(cost))
-    print(f"    {DIM}{' \u00b7 '.join(parts)}{RESET}", flush=True)
+    sep = " \u00b7 "
+    print(f"    {DIM}{sep.join(parts)}{RESET}", flush=True)
 
 
 def _on_trial_note(e: dict[str, Any]) -> None:
