@@ -173,6 +173,9 @@ class CliResidue:
     root: Optional[str] = None
     """Build root hash (None if not committed)"""
 
+    husk_hash: Optional[str] = None
+    """SHA256 of the .husk file (CSE at realization)"""
+
     target: Optional[str] = None
     """Target rule name"""
 

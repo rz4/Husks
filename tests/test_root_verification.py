@@ -5,8 +5,8 @@ Tests that status command exposes root and build state information
 for cross-machine comparison.
 
 Tests cover:
-- Valid root verification (status=sealed, root present)
-- Invalid root detection (tampered outputs cause stale nodes)
+- Valid root verification (state=sealed, root present)
+- Invalid root detection (tampered outputs cause stale nodes via --verbose)
 - Missing .husk file (status command exits with error)
 - Corrupt .husk file (status command exits with error)
 - JSON output includes expected schema fields
@@ -18,13 +18,14 @@ from pathlib import Path
 
 
 def test_status_verifies_valid_root():
-    """Status command shows sealed status with valid root for a committed build."""
+    """Status command shows sealed state with valid root for a committed build."""
     from husks.build import build, rule, action
     from conftest import make_site
     from husks.cli.commands import _cmd_status
 
     class Args:
         json_output = True
+        verbose = False
         fail_if_dirty = False
         fail_if_stale = False
         site = None
@@ -59,8 +60,8 @@ def test_status_verifies_valid_root():
         import json
         status = json.loads(captured.getvalue())
 
-        # Verify status is sealed and root is present
-        assert status["status"] == "sealed", "committed build should show as sealed"
+        # Verify state is sealed and root is present
+        assert status["state"] == "sealed", "committed build should show as sealed"
         assert status["root"] is not None, "sealed build should have a root hash"
         assert isinstance(status["root"], str) and len(status["root"]) > 0, \
             "root should be a non-empty string"
@@ -70,15 +71,16 @@ def test_status_verifies_valid_root():
 
 
 def test_status_detects_invalid_root():
-    """Status command detects tampered output via stale nodes and fails list."""
+    """Status with --fail-if-stale detects tampered output."""
     from husks.build import build, rule, action
     from conftest import make_site
     from husks.cli.commands import _cmd_status
 
     class Args:
         json_output = True
+        verbose = False
         fail_if_dirty = False
-        fail_if_stale = False
+        fail_if_stale = True
         site = None
 
     tmpdir = tempfile.mkdtemp(prefix="c3-invalid-")
@@ -97,26 +99,28 @@ def test_status_detects_invalid_root():
         # Tamper with output file
         (Path(site) / "out.txt").write_text("tampered\n")
 
-        # Run status command
+        # Run status command — tampered output should trigger exit
         args = Args()
         args.site = site
 
         import io
         import sys
         old_stdout = sys.stdout
-        sys.stdout = captured = io.StringIO()
+        old_stderr = sys.stderr
+        sys.stdout = io.StringIO()
+        sys.stderr = io.StringIO()
+        exited = False
         try:
             _cmd_status(args)
+        except SystemExit as e:
+            # Expected: --fail-if-stale triggers exit on tampered output
+            exited = True
+            assert e.code != 0, "should exit with nonzero code for stale site"
         finally:
             sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
-        import json
-        status = json.loads(captured.getvalue())
-
-        # Tampered output should cause stale nodes and site in fails list
-        assert status["root"] is not None, "root should still be present"
-        assert len(status["fails"]) > 0, \
-            "tampered output should cause failures in status"
+        assert exited, "tampered output should cause --fail-if-stale to exit"
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -130,6 +134,7 @@ def test_status_missing_husk_file():
 
     class Args:
         json_output = True
+        verbose = False
         fail_if_dirty = False
         fail_if_stale = False
         site = None
@@ -175,7 +180,7 @@ def test_status_missing_husk_file():
                 assert status.get("root") is None, \
                     "root should be None when manifest is missing"
         except SystemExit:
-            # Expected: _load_manifest calls sys.exit when no manifest found
+            # Expected: read_manifest returns None, triggers sys.exit
             pass
         finally:
             sys.stdout = old_stdout
@@ -193,6 +198,7 @@ def test_status_corrupt_husk_file():
 
     class Args:
         json_output = True
+        verbose = False
         fail_if_dirty = False
         fail_if_stale = False
         site = None
@@ -258,6 +264,7 @@ def test_status_json_output_includes_verification_fields():
 
     class Args:
         json_output = True
+        verbose = False
         fail_if_dirty = False
         fail_if_stale = False
         site = None
@@ -291,20 +298,15 @@ def test_status_json_output_includes_verification_fields():
         import json
         status = json.loads(captured.getvalue())
 
-        # JSON output should include all schema fields
-        assert "command" in status, "JSON should include command"
+        # JSON output should include summary schema fields
         assert "name" in status, "JSON should include name"
+        assert "state" in status, "JSON should include state"
         assert "site" in status, "JSON should include site"
-        assert "status" in status, "JSON should include status"
         assert "root" in status, "JSON should include root"
-        assert "nodes" in status, "JSON should include nodes"
-        assert "passes" in status, "JSON should include passes"
-        assert "fails" in status, "JSON should include fails"
 
-        # Root should be present and status should be sealed
+        # Root should be present and state should be sealed
         assert status["root"] is not None, "root should be present for committed build"
-        assert status["status"] == "sealed", "committed build should show as sealed"
-        assert status["command"] == "status", "command should be 'status'"
+        assert status["state"] == "sealed", "committed build should show as sealed"
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

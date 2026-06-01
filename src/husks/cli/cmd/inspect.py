@@ -141,6 +141,14 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
     cse_path = f"{design_name}.husk"
     target_name = manifest.get("target")
 
+    # Compute husk hash (SHA256 of the .husk file)
+    import hashlib
+    husk_hash = None
+    husk_path = os.path.join(site, f"{design_name}.husk")
+    if os.path.isfile(husk_path):
+        with open(husk_path, 'rb') as f:
+            husk_hash = hashlib.sha256(f.read()).hexdigest()
+
     return CliResidue(
         command="status",
         design_name=design_name,
@@ -148,6 +156,7 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
         cse_path=cse_path,
         status="committed" if manifest.get("root") else "dry",
         root=manifest.get("root"),
+        husk_hash=husk_hash,
         target=target_name,
         nodes=nodes,
         passes=passes,
@@ -158,23 +167,70 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
 # ── status ────────────────────────────────────────────────────────────
 
 def _cmd_status(args):
-    """Status command - show site conformance state.
+    """Status command - show site state summary.
 
-    Beta Gate 95: Uses residue→surface→view architecture.
+    Hardened: Takes site as positional arg. Shows name, state, husk hash,
+    root hash, and site location. With --verbose, shows full DAG.
     """
-    from husks.manifest import compute_artifact_states
+    from husks.manifest import read_manifest, compute_artifact_states
     from husks.cli.surface import emit_residue
+    from husks.utils.console import BOLD, DIM, CYAN, RESET
 
-    # Step 1: Load manifest and site (keep existing logic)
-    manifest, site = _load_manifest(args)
+    site = args.site
 
-    # Step 2: Collect site residue
-    residue = collect_site_residue(manifest, site)
+    # Step 1: Read manifest from site
+    try:
+        manifest = read_manifest(site)
+        if not manifest:
+            print(f"error: no manifest found in {site}", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+    except Exception as e:
+        print(f"error: failed to read manifest from {site}: {e}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
 
-    # Step 3: Emit via surface layer
-    verbose = getattr(args, 'verbose', False)
-    output = emit_residue(residue, json_mode=args.json_output, verbose=verbose)
-    print(output)
+    # Step 2: If --verbose, show full DAG
+    if args.verbose:
+        residue = collect_site_residue(manifest, site)
+        output = emit_residue(residue, json_mode=args.json_output, verbose=True)
+        print(output)
+    else:
+        # Step 3: Show summary only
+        name = manifest.get("name", "unknown")
+        root = manifest.get("root")
+
+        # Compute husk hash (SHA256 of the .husk file)
+        import hashlib
+        import os
+        husk_hash = None
+        husk_path = os.path.join(site, f"{name}.husk")
+        if os.path.isfile(husk_path):
+            with open(husk_path, 'rb') as f:
+                husk_hash = hashlib.sha256(f.read()).hexdigest()
+
+        # Determine state
+        if root:
+            state = f"{CYAN}sealed{RESET}"
+        else:
+            state = f"{DIM}dry{RESET}"
+
+        if args.json_output:
+            print(json.dumps({
+                "name": name,
+                "state": "sealed" if root else "dry",
+                "husk": husk_hash,
+                "root": root,
+                "site": site,
+            }, indent=2))
+        else:
+            print()
+            print(f"  {BOLD}name{RESET}:  {name}")
+            print(f"  {BOLD}state{RESET}: {state}")
+            if husk_hash:
+                print(f"  {BOLD}husk{RESET}:  sha256:{husk_hash}")
+            if root:
+                print(f"  {BOLD}root{RESET}:  sha256:{root}")
+            print(f"  {BOLD}site{RESET}:  {site}")
+            print()
 
     # Step 4: Preserve exit code logic
     if args.fail_if_dirty:
@@ -183,7 +239,9 @@ def _cmd_status(args):
             sys.exit(EXIT_DIRTY_STALE)
 
     if args.fail_if_stale:
-        if len(residue.fails) > 0:  # Any stale or failed nodes
+        from husks.manifest import compute_rule_states
+        rule_states = compute_rule_states(site, manifest)
+        if any(rs["state"] != "fresh" for rs in rule_states):
             sys.exit(EXIT_DIRTY_STALE)
 
 

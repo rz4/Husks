@@ -260,7 +260,7 @@ class TestStatusCommand:
     """Contract tests for status command."""
 
     def test_status_with_site(self, tmp_path):
-        """status --site should show site conformance state."""
+        """status <site> should show site state summary."""
         # First build a site
         design = tmp_path / "design.json"
         design.write_text(json.dumps({
@@ -283,13 +283,13 @@ class TestStatusCommand:
         # Build it first
         run_husks_cli("run", str(design), "--site", str(site))
 
-        # Now check status
-        result = run_husks_cli("status", str(design), "--site", str(site))
+        # Now check status (site is positional)
+        result = run_husks_cli("status", str(site))
         assert result.returncode == 0
         assert len(result.stdout) > 0
 
     def test_status_json_mode(self, tmp_path):
-        """status --json should output pure JSON with shared vocabulary."""
+        """status --json should output pure JSON."""
         # First build a site
         design = tmp_path / "design.json"
         design.write_text(json.dumps({
@@ -312,8 +312,8 @@ class TestStatusCommand:
         # Build it first
         run_husks_cli("run", str(design), "--site", str(site))
 
-        # Now check status with JSON
-        result = run_husks_cli("status", str(design), "--site", str(site), "--json")
+        # Now check status with JSON (site is positional)
+        result = run_husks_cli("status", str(site), "--json")
         assert result.returncode == 0
 
         # JSON must be pure
@@ -322,9 +322,8 @@ class TestStatusCommand:
 
         # Parse and verify structure
         data = json.loads(result.stdout)
-        assert data["command"] == "status"
         assert "name" in data
-        assert "nodes" in data
+        assert "state" in data
 
 
 class TestJSONPurity:
@@ -360,7 +359,7 @@ class TestJSONPurity:
             assert not has_ansi_codes(result.stdout), "run --json has ANSI codes"
 
         # Test status --json
-        result = run_husks_cli("status", str(design), "--site", str(site), "--json")
+        result = run_husks_cli("status", str(site), "--json")
         if result.returncode == 0:
             assert not has_ansi_codes(result.stdout), "status --json has ANSI codes"
 
@@ -394,7 +393,7 @@ class TestJSONPurity:
             assert is_valid_json(result.stdout), "run --json not valid JSON"
 
         # Test status --json
-        result = run_husks_cli("status", str(design), "--site", str(site), "--json")
+        result = run_husks_cli("status", str(site), "--json")
         if result.returncode == 0:
             assert is_valid_json(result.stdout), "status --json not valid JSON"
 
@@ -433,17 +432,19 @@ class TestSharedVocabulary:
         if result.returncode == 0 and is_valid_json(result.stdout):
             outputs.append(("run", json.loads(result.stdout)))
 
-        result = run_husks_cli("status", str(design), "--site", str(site), "--json")
-        if result.returncode == 0 and is_valid_json(result.stdout):
-            outputs.append(("status", json.loads(result.stdout)))
-
-        # All should have common fields (run uses different schema)
+        # check and run share residue vocabulary
         for cmd, data in outputs:
             assert "status" in data, f"{cmd} missing required field: status"
             assert "nodes" in data, f"{cmd} missing required field: nodes"
-            # check/status use "name", run uses "build"
             assert "name" in data or "build" in data, \
                 f"{cmd} missing name/build field"
+
+        # status has its own summary schema
+        result = run_husks_cli("status", str(site), "--json")
+        if result.returncode == 0 and is_valid_json(result.stdout):
+            sdata = json.loads(result.stdout)
+            assert "name" in sdata, "status missing name"
+            assert "state" in sdata, "status missing state"
 
     def test_node_structure_consistent(self, tmp_path):
         """Node objects should have consistent structure across commands."""

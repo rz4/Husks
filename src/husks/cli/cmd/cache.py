@@ -37,7 +37,8 @@ def _cmd_cache_export(args):
         }
         print(json.dumps(output, indent=2))
     else:
-        print(f"Exported {count} cache entries from {site} to {export_path}")
+        from husks.utils.console import BOLD, DIM, RESET
+        print(f"  exported {BOLD}{count}{RESET} entries {DIM}\u2192 {export_path}{RESET}")
 
     sys.exit(EXIT_OK)
 
@@ -67,7 +68,7 @@ def _cmd_cache_import(args):
         }
         print(json.dumps(output, indent=2))
     else:
-        action = "Merged" if merge else "Imported"
-        print(f"{action} {count} cache entries from {import_path} into {site}")
+        from husks.utils.console import BOLD, DIM, RESET
+        print(f"  imported {BOLD}{count}{RESET} entries {DIM}\u2192 {site}{RESET}")
 
     sys.exit(EXIT_OK)

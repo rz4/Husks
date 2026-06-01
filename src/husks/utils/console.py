@@ -24,10 +24,117 @@ YELLOW = "\033[33m"
 RED    = "\033[31m"
 CYAN   = "\033[36m"
 
-if not sys.stdout.isatty():
+_IS_TTY = sys.stdout.isatty()
+
+if not _IS_TTY:
     DIM = BOLD = RESET = GREEN = YELLOW = RED = CYAN = ""
 
 W = 60
+
+# -- Cursor control (suppressed when not TTY) ---------------------------------
+
+SAVE_CUR    = "\033[s"   if _IS_TTY else ""
+RESTORE_CUR = "\033[u"   if _IS_TTY else ""
+CLEAR_DOWN  = "\033[J"   if _IS_TTY else ""
+
+
+def is_tty() -> bool:
+    """Return True when stdout is a real terminal."""
+    return _IS_TTY
+
+
+def cursor_up(n: int) -> str:
+    """Return ANSI sequence to move cursor up *n* lines (empty when piped)."""
+    if not _IS_TTY or n <= 0:
+        return ""
+    return f"\033[{n}A"
+
+
+# -- Morphing diamond art -----------------------------------------------------
+
+_DIAMOND = {
+    "dry": [
+        f"     {CYAN}\u25c7{RESET}",
+        f"    {CYAN}\u2571 \u2572{RESET}",
+        f"   {CYAN}\u25c7   \u25c7{RESET}",
+        f"    {CYAN}\u2572 \u2571{RESET}",
+        f"     {CYAN}\u25c7{RESET}",
+    ],
+    "hydrating": [
+        f"     {CYAN}\u2b20{RESET}",
+        f"    {CYAN}\u2571\u00b7\u2572{RESET}",
+        f"   {CYAN}\u25c6 \u00b7 \u25c6{RESET}",
+        f"    {CYAN}\u2572\u00b7\u2571{RESET}",
+        f"     {CYAN}\u2b21{RESET}",
+    ],
+    "sealed": [
+        f"     {CYAN}\u25c6{RESET}",
+        f"    {CYAN}\u2571 \u2572{RESET}",
+        f"   {CYAN}\u25c6 \u25c6 \u25c6{RESET}",
+        f"    {CYAN}\u2572 \u2571{RESET}",
+        f"     {CYAN}\u25c6{RESET}",
+    ],
+}
+
+_DIAMOND_VIS = [6, 7, 8, 7, 6]
+
+
+# -- Shared banner renderer ---------------------------------------------------
+
+def render_banner(stage: str, right_lines: list[str] | None = None) -> str:
+    r"""Return the 5-line morphing diamond banner with left-aligned metadata.
+
+    *stage* selects the diamond variant: ``"dry"``, ``"hydrating"``, or
+    ``"sealed"``.  Falls back to ``"hydrating"`` for unknown stages.
+
+    *right_lines* is a list of up to 5 strings, one per diamond row,
+    left-aligned after the diamond art with a fixed gap.
+
+    Used by both ``main.py`` (help screen) and ``view.py`` (command output).
+    """
+    art = _DIAMOND.get(stage, _DIAMOND["hydrating"])
+    right = (right_lines or []) + [""] * 5  # pad to at least 5 entries
+    max_vis = max(_DIAMOND_VIS)
+
+    lines: list[str] = []
+    for i, (diamond_line, vis) in enumerate(zip(art, _DIAMOND_VIS)):
+        rtxt = right[i]
+        if rtxt:
+            # Pad diamond to max width + 2 spaces, then left-align text
+            gap = max_vis - vis + 2
+            lines.append(f"{diamond_line}{' ' * gap}{rtxt}")
+        else:
+            lines.append(diamond_line)
+
+    return "\n".join(lines)
+
+
+def render_logo(right_lines: list[str] | None = None) -> str:
+    r"""Legacy wrapper — renders the hydrating diamond.
+
+    Kept for backward compatibility.  Prefer :func:`render_banner`.
+    """
+    # Old API: right_lines aligned with rows 2-4.  Remap to 5-row layout.
+    old = (right_lines or []) + [""] * 3
+    five = ["", "", old[0], old[1], old[2]]
+    return render_banner("hydrating", five)
+
+
+def _visible_len(s: str) -> int:
+    """Return the visible terminal-column width of *s* (ANSI-safe).
+
+    Strips ANSI escape sequences, then counts each character according to
+    its East Asian Width: ``W`` (Wide) and ``F`` (Fullwidth) occupy 2
+    columns; everything else occupies 1.
+    """
+    import re
+    import unicodedata
+    stripped = re.sub(r'\x1B\[[0-?]*[ -/]*[@-~]', '', s)
+    w = 0
+    for ch in stripped:
+        eaw = unicodedata.east_asian_width(ch)
+        w += 2 if eaw in ("W", "F") else 1
+    return w
 
 
 # -- Formatting helpers -------------------------------------------------------

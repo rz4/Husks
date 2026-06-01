@@ -14,7 +14,13 @@ import json
 from husks.cli.residue import CliResidue
 
 
-def emit_residue(residue: CliResidue, *, json_mode: bool = False, verbose: bool = False) -> str:
+def emit_residue(
+    residue: CliResidue,
+    *,
+    json_mode: bool = False,
+    verbose: bool = False,
+    quiet: bool = False,
+) -> str:
     """Dispatch residue to JSON or visual output.
 
     **Beta Gate 95**: Enforces mutual exclusivity of --verbose and --json.
@@ -27,6 +33,8 @@ def emit_residue(residue: CliResidue, *, json_mode: bool = False, verbose: bool 
         Output as pure JSON (no ANSI codes, machine-readable)
     verbose : bool
         Output in verbose visual mode (ignored if json_mode=True)
+    quiet : bool
+        Suppress all output (returns empty string)
 
     Returns
     -------
@@ -38,6 +46,9 @@ def emit_residue(residue: CliResidue, *, json_mode: bool = False, verbose: bool 
     ValueError
         If both json_mode and verbose are True (mutually exclusive)
     """
+    if quiet:
+        return ""
+
     if json_mode and verbose:
         raise ValueError("--verbose and --json are mutually exclusive")
 

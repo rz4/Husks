@@ -1,32 +1,49 @@
 """
 CLI View layer - visual DAG renderer with unified grammar.
 
-Beta Gate 95: One shared renderer for check, run, and status commands.
+Unified visual grammar for check / run / status commands.
 
 **Visual grammar:**
 - State glyphs: □ unrealized, ■ sealed, ◆ cached, △ stale, ✕ failed, ◉ running
 - Kind appears as text column, not glyph
 - Target-rooted dependency tree
-- Bounded box with header/footer
+- Crystalline logo header with right-aligned metadata at column R=60
+- Stage headers: check→"design", run→"build", status→"inspect"
+- DIM separator lines, BOLD headers, CYAN accents
 
 **Modes:**
-- Concise: silent or bounded box
-- Verbose: bounded box with tree
+- Standard: logo + motif for all commands (check always shows output)
+- Verbose: same motif, aperture-3 detail on all nodes
+- Explain: separate rendering path (cursor/aperture navigation)
 """
 
 from __future__ import annotations
+import re
 from husks.cli.residue import CliResidue, CliNode
-from husks.utils.console import GREEN, YELLOW, RED, CYAN, DIM, BOLD, RESET
+from husks.utils.console import (
+    GREEN, YELLOW, RED, CYAN, DIM, BOLD, RESET, W,
+    render_banner, _visible_len,
+)
 
+
+# -- Constants ----------------------------------------------------------------
+
+R = W  # Right bound (column 60)
+
+STAGE_MAP = {
+    "check": "design",
+    "run": "build",
+    "status": "inspect",
+}
 
 # State glyphs (leading mark)
 STATE_GLYPHS = {
-    "unrealized": "□",
-    "sealed": "■",
-    "cached": "◆",
-    "stale": "△",
-    "failed": "✕",
-    "running": "◉",
+    "unrealized": "\u25a1",
+    "sealed": "\u25a0",
+    "cached": "\u25c6",
+    "stale": "\u25b3",
+    "failed": "\u2715",
+    "running": "\u25c9",
 }
 
 # State colors
@@ -40,128 +57,511 @@ STATE_COLORS = {
 }
 
 
+# -- Public API ---------------------------------------------------------------
+
 def render_dag(
     residue: CliResidue,
     *,
     verbose: bool = False,
     cursor: str = None,
     aperture: int = 1,
-    controls: bool = False
+    controls: bool = False,
+    log_lines: dict[str, list[str]] | None = None,
 ) -> str:
-    """Render target-rooted DAG in bounded box.
+    """Render target-rooted DAG with unified visual grammar.
 
     Parameters
     ----------
     residue : CliResidue
-        Residue from check, run, or status command
+        Residue from check, run, or status command.
     verbose : bool
-        Show bounded box (False = silent for passing check)
+        Expand all nodes to aperture 3.
     cursor : str, optional
-        Name of selected node (for explain mode)
-    aperture : int, default=1
-        Detail level for selected node (0-3)
-    controls : bool, default=False
-        Show controls footer (for explain mode)
+        Selected node name (explain mode -- separate rendering path).
+    aperture : int
+        Detail level for selected node in explain mode (0-3).
+    controls : bool
+        Show keyboard controls footer (explain mode).
+    log_lines : dict, optional
+        Per-node live log lines from LiveFrameEmitter.  Keys are rule
+        names; values are lists of already-formatted strings to render
+        below the matching node.
 
     Returns
     -------
     str
-        Formatted visual output with ANSI colors
+        Formatted visual output with ANSI colors.
     """
-    # check without verbose: silent on success
-    if residue.command == "check" and not verbose:
-        return ""
+    # Explain mode has its own rendering path (unchanged)
+    if cursor is not None:
+        return _render_explain_mode(
+            residue, cursor=cursor, aperture=aperture, controls=controls,
+        )
 
-    lines = []
+    # -- Motif rendering for check / run / status ----------------------------
+    parts: list[str] = []
 
-    # Explain mode uses wider box and shows cursor/aperture
-    is_explain = cursor is not None
-    box_width = 40 if is_explain else 32
-    separator = "─" * box_width
+    # 1. Logo header with right-column metadata
+    parts.append(_render_logo_header(residue))
 
-    # Beta 100: Bounded CSE block format
+    # 2. Blank line + stage header
+    stage = STAGE_MAP.get(residue.command, residue.command)
+    parts.append("")
+    parts.append(f"  {BOLD}{stage}{RESET}")
+
+    # 3. Separator
+    parts.append(f"  {DIM}{'\u2500' * (R - 2)}{RESET}")
+
+    # 4. Node tree
+    tree = _render_motif_tree(
+        residue.nodes, verbose=verbose, log_lines=log_lines,
+    )
+    parts.extend(tree)
+
+    # 5. Separator
+    parts.append(f"  {DIM}{'\u2500' * (R - 2)}{RESET}")
+
+    # 6. Footer
+    parts.append(_render_footer(residue))
+
+    return "\n".join(parts)
+
+
+# -- Logo header --------------------------------------------------------------
+
+def _render_logo_header(residue: CliResidue) -> str:
+    """Build morphing diamond banner with left-aligned summary (5 rows).
+
+    Same format as ``husks status`` summary:
+      name:  {name}
+      state: {state}
+      husk:  sha256:{hash}
+      root:  sha256:{hash}
+      site:  {path}
+    """
+    # Map residue to diamond stage
+    if residue.status == "dry" or residue.command == "check":
+        stage = "dry"
+    elif residue.status == "hydrating":
+        stage = "hydrating"
+    else:
+        stage = "sealed"
+
     status_display = _map_visual_status(residue.status, residue.command)
 
-    # CSE path and root
+    # Color the state value
+    state_colors = {
+        "checked": DIM,
+        "sealed": CYAN,
+        "failed": RED,
+        "hydrating": YELLOW,
+    }
+    sc = state_colors.get(status_display, DIM)
+    state_str = f"{sc}{status_display}{RESET}"
+
+    right = [
+        f"{BOLD}name{RESET}:  {residue.design_name}",
+        f"{BOLD}state{RESET}: {state_str}",
+        f"{BOLD}husk{RESET}:  sha256:{residue.husk_hash}" if residue.husk_hash else "",
+        f"{BOLD}root{RESET}:  sha256:{residue.root}" if residue.root else "",
+        f"{BOLD}site{RESET}:  {residue.site}" if residue.site else "",
+    ]
+
+    return render_banner(stage, right)
+
+
+# -- Motif tree ---------------------------------------------------------------
+
+def _render_motif_tree(
+    nodes: list[CliNode],
+    *,
+    verbose: bool = False,
+    log_lines: dict[str, list[str]] | None = None,
+) -> list[str]:
+    """Render target-rooted tree with right-aligned metadata."""
+    if not nodes:
+        return []
+
+    nodes_by_name = {n.name: n for n in nodes}
+    target = nodes[0]
+
+    lines: list[str] = []
+    _render_motif_node(
+        target, nodes_by_name, lines, prefix="",
+        verbose=verbose, log_lines=log_lines, is_last=True,
+    )
+    return lines
+
+
+def _render_motif_node(
+    node: CliNode,
+    nodes_by_name: dict[str, CliNode],
+    lines: list[str],
+    prefix: str,
+    *,
+    verbose: bool,
+    log_lines: dict[str, list[str]] | None,
+    is_last: bool,
+) -> None:
+    """Recursively render a node and its children in motif style."""
+    glyph = STATE_GLYPHS.get(node.state, "\u25a1")
+    color = STATE_COLORS.get(node.state, RESET)
+
+    connector = ""
+    if prefix:
+        connector = "\u2514\u2500 " if is_last else "\u251c\u2500 "
+
+    full_prefix = prefix + connector
+
+    # Left side: glyph + name + kind
+    left = f"    {full_prefix}{color}{glyph}{RESET} {node.name}"
+    kind_str = f"{DIM}{node.kind}{RESET}"
+
+    # Visible length of left + gap + kind
+    left_vis = 4 + len(full_prefix) + 1 + 1 + len(node.name)
+    kind_gap = max(1, 22 - left_vis)
+    left_with_kind = f"{left}{' ' * kind_gap}{kind_str}"
+    left_vis_total = left_vis + kind_gap + len(node.kind)
+
+    # Right side: metadata (time, cost, fuel budget)
+    right_parts = _node_right_parts(node)
+    right_str = "  ".join(right_parts)
+
+    if right_str:
+        right_vis = _visible_len(right_str)
+        gap = max(1, R - left_vis_total - right_vis)
+        lines.append(f"{left_with_kind}{' ' * gap}{right_str}")
+    else:
+        lines.append(left_with_kind.rstrip())
+
+    # Verbose detail lines (aperture 3 for all nodes in verbose mode)
+    if verbose:
+        detail_indent = "        " + ("   " if prefix else "")
+        _render_aperture_details(node, lines, detail_indent, aperture=3)
+
+    # Live log lines (from LiveFrameEmitter during hydration)
+    if log_lines and node.name in log_lines:
+        # Align with first character of node name (after glyph + space)
+        # Node line format: "    {prefix}{glyph} {name}..."
+        # So log lines align at: 4 + len(prefix) + 2 (glyph + space)
+        log_indent = " " * (4 + len(full_prefix) + 2)
+
+        # Max visible width for log content (enforce right bound at R)
+        max_log_width = R - len(log_indent)
+
+        for ll in log_lines[node.name]:
+            # Truncate from left if exceeds max_log_width
+            ll_vis = _visible_len(ll)
+            if ll_vis > max_log_width:
+                # Truncate from left, prepend ".."
+                # Approximate: remove chars from start until we fit
+                # Simple heuristic: truncate string, not perfect for ANSI
+                excess = ll_vis - max_log_width + 2  # +2 for ".."
+                ll = ".." + ll[excess:]
+            lines.append(f"{log_indent}{ll}")
+
+    # Children
+    children_names = getattr(node, 'children', [])
+    children = [nodes_by_name[name] for name in children_names if name in nodes_by_name]
+
+    if children:
+        continuation = "   " if is_last else "\u2502  "
+        child_prefix = prefix + continuation
+        for i, child in enumerate(children):
+            _render_motif_node(
+                child, nodes_by_name, lines, child_prefix,
+                verbose=verbose, log_lines=log_lines,
+                is_last=(i == len(children) - 1),
+            )
+
+
+def _node_right_parts(node: CliNode) -> list[str]:
+    """Build right-side metadata parts for a node line."""
+    parts: list[str] = []
+
+    # Cached label
+    if node.cache:
+        parts.append("cached")
+
+    # Duration
+    if node.duration is not None and node.duration > 0:
+        parts.append(f"{node.duration:.2f}s")
+
+    # Fuel / cost
+    if node.cache:
+        parts.append("\u26a10")
+        parts.append("$0.0000")
+    else:
+        if node.fuel is not None:
+            parts.append(f"\u26a1{node.fuel}")
+        if node.cost is not None and node.cost > 0:
+            parts.append(f"${node.cost:.4f}")
+        if node.fuel_budget is not None and node.state == "unrealized":
+            parts.append(f"\u26a1{node.fuel_budget}")
+
+    return parts
+
+
+def _render_aperture_details(
+    node: CliNode,
+    lines: list[str],
+    indent: str,
+    aperture: int,
+) -> None:
+    """Render aperture-based detail lines for a node (verbose / explain)."""
+    if aperture >= 1 and node.outputs:
+        outputs_to_show = node.outputs[:1] if aperture == 1 else node.outputs
+        for out in outputs_to_show:
+            h = out.sha256[:6] if out.sha256 else "??????"
+            lines.append(f"{indent}out:{out.path}@{h}")
+
+    if aperture >= 2:
+        if node.seal_digest or node.recipe_digest:
+            lines.append(f"{indent}seal:")
+            if node.seal_digest:
+                lines.append(f"{indent}  digest: {node.seal_digest[:6]}")
+            if node.recipe_digest:
+                lines.append(f"{indent}  recipe: {node.recipe_digest[:6]}")
+            if node.input_hashes:
+                lines.append(f"{indent}  inputs: {len(node.input_hashes)}")
+            if node.output_hashes:
+                lines.append(f"{indent}  outputs: {len(node.output_hashes)}")
+        if node.trace and node.trace.cache_source:
+            lines.append(f"{indent}cache: {node.trace.cache_source}")
+
+    if aperture >= 3:
+        if node.trace:
+            t = node.trace
+            lines.append(f"{indent}trace:")
+            if t.backend:
+                lines.append(f"{indent}  backend: {t.backend}")
+            if t.model:
+                lines.append(f"{indent}  model: {t.model}")
+            if t.config_hash:
+                lines.append(f"{indent}  config: sha256:{t.config_hash[:6]}")
+            if t.prompt_hash:
+                lines.append(f"{indent}  prompt: sha256:{t.prompt_hash[:6]}")
+            if t.input_tokens and t.input_tokens > 0:
+                lines.append(f"{indent}  input_tokens: {t.input_tokens}")
+            if t.output_tokens and t.output_tokens > 0:
+                lines.append(f"{indent}  output_tokens: {t.output_tokens}")
+            if t.elapsed_s is not None:
+                lines.append(f"{indent}  elapsed: {t.elapsed_s:.2f}s")
+            if t.cost_usd and t.cost_usd > 0:
+                lines.append(f"{indent}  cost: ${t.cost_usd:.4f}")
+            if t.stdout:
+                lines.append(f"{indent}stdout:")
+                for sl in t.stdout.split('\n')[:5]:
+                    lines.append(f"{indent}  {sl}")
+            if t.stderr:
+                lines.append(f"{indent}stderr:")
+                for sl in t.stderr.split('\n')[:5]:
+                    lines.append(f"{indent}  {sl}")
+        if node.stale_reason:
+            lines.append(f"{indent}stale: {node.stale_reason}")
+        if node.diagnosis:
+            lines.append(f"{indent}error: {node.diagnosis}")
+
+
+# -- Footer -------------------------------------------------------------------
+
+def _render_footer(residue: CliResidue) -> str:
+    """Render footer: passes/fails left, elapsed right, right-aligned to R."""
+    has_fails = (
+        residue.fails and len(residue.fails) > 0
+        if isinstance(residue.fails, list)
+        else residue.fails > 0
+    )
+
+    if has_fails:
+        fail_items = residue.fails if isinstance(residue.fails, list) else []
+        left = f"failures in {', '.join(fail_items)}" if fail_items else "failed"
+    else:
+        pass_items = residue.passes if isinstance(residue.passes, list) else []
+        left = f"passes: {', '.join(pass_items)}" if pass_items else "passed"
+
+    # Elapsed time (for run commands)
+    right = ""
+    # Total elapsed could be computed from node durations
+    total_elapsed = sum(
+        n.duration for n in residue.nodes
+        if n.duration is not None and n.duration > 0
+    )
+    if total_elapsed > 0:
+        right = f"{total_elapsed:.2f}s elapsed"
+
+    return _rpad(f"  {left}", right, R)
+
+
+# -- Explain mode (unchanged) -------------------------------------------------
+
+def _render_explain_mode(
+    residue: CliResidue,
+    *,
+    cursor: str,
+    aperture: int = 1,
+    controls: bool = False,
+) -> str:
+    """Render explain mode with cursor/aperture navigation."""
+    lines: list[str] = []
+
+    box_width = 40
+    separator = "\u2500" * box_width
+
+    status_display = _map_visual_status(residue.status, residue.command)
     cse_display = residue.cse_path if residue.cse_path else "none"
     root_display = f"root:{residue.root[:7]}" if residue.root else ""
-
-    # Site
     site_display = residue.site if residue.site else "none"
 
-    # Fuel - shows budget only for dry check, used/budget for runs
-    # Beta 100: For sealed runs, use oracle_calls if available
-    if residue.fuel_budget > 0:
-        if residue.status == "committed" and hasattr(residue, 'oracle_calls') and residue.oracle_calls > 0:
-            # Sealed run with oracle_calls data: show oracle calls
-            fuel_display = f"⚡{residue.oracle_calls}/{residue.fuel_budget}"
-        elif residue.fuel_used > 0 or residue.command != "check":
-            # Hydrated run: show used/budget
-            fuel_display = f"⚡{residue.fuel_used}/{residue.fuel_budget}"
-        else:
-            # Dry check: show just budget
-            fuel_display = f"⚡{residue.fuel_budget}"
-    else:
-        fuel_display = ""
-
-    # Header section
     lines.append(separator)
 
-    if is_explain:
-        # Explain mode header: CSE.husk + root on line 1, site + cursor on line 2, aperture on line 3
-        line1 = f" {cse_display}"
-        if root_display:
-            padding1 = max(2, box_width - len(line1) - len(root_display) - 1)
-            line1 += f"{' ' * padding1}{root_display}"
-        lines.append(line1)
+    line1 = f" {cse_display}"
+    if root_display:
+        pad = max(2, box_width - len(line1) - len(root_display) - 1)
+        line1 += f"{' ' * pad}{root_display}"
+    lines.append(line1)
 
-        cursor_display = f"cursor:{cursor}" if cursor else ""
-        line2 = f" site:{site_display}"
-        if cursor_display:
-            padding2 = max(2, box_width - len(line2) - len(cursor_display) - 1)
-            line2 += f"{' ' * padding2}{cursor_display}"
-        lines.append(line2)
+    cursor_display = f"cursor:{cursor}" if cursor else ""
+    line2 = f" site:{site_display}"
+    if cursor_display:
+        pad = max(2, box_width - len(line2) - len(cursor_display) - 1)
+        line2 += f"{' ' * pad}{cursor_display}"
+    lines.append(line2)
 
-        lines.append(f" aperture:{aperture}")
-    else:
-        # Status/run/check mode header: name + status + fuel on line 1
-        line1_base = f" {residue.design_name}"
-        padding1 = max(1, 22 - len(line1_base))
-        line1 = f"{line1_base}{' ' * padding1}{status_display}"
-        if fuel_display:
-            padding2 = max(1, box_width - len(line1) - len(fuel_display))
-            line1 += f"{' ' * padding2}{fuel_display}"
-        lines.append(line1)
-
-        # Line 2+: cse/root/site
-        if root_display:
-            # Sealed run: line 2 = cse + root, line 3 = site
-            lines.append(f" cse:{cse_display} {root_display}")
-            lines.append(f" site:{site_display}")
-        else:
-            # Dry/hydrating: line 2 = cse + site on same line
-            cse_part = f" cse:{cse_display}"
-            site_part = f"site:{site_display}"
-            # Pad between cse and site to reach ~column 22
-            padding = max(2, 22 - len(cse_part))
-            lines.append(f"{cse_part}{' ' * padding}{site_part}")
-
+    lines.append(f" aperture:{aperture}")
     lines.append(separator)
 
-    # Tree: target-rooted (between separators)
-    tree_lines = _render_tree(residue.nodes, verbose, cursor, aperture)
-    lines.extend(tree_lines)
+    # Tree
+    tree = _render_explain_tree(residue.nodes, cursor, aperture)
+    lines.extend(tree)
     lines.append(separator)
 
-    # Footer: conformance status or controls
+    # Footer
     if controls:
-        footer = " ↑↓ move   ←→ aperture   q quit"
+        lines.append(" \u2191\u2193 move   \u2190\u2192 aperture   q quit")
     else:
-        footer = _render_footer_status(residue)
-    lines.append(footer)
+        lines.append(_render_footer_legacy(residue))
 
     return "\n".join(lines)
 
+
+def _render_explain_tree(
+    nodes: list[CliNode],
+    cursor: str,
+    aperture: int,
+) -> list[str]:
+    """Render tree for explain mode (old bounded-box style)."""
+    if not nodes:
+        return []
+
+    nodes_by_name = {n.name: n for n in nodes}
+    target = nodes[0]
+
+    lines: list[str] = []
+    _render_explain_node(target, nodes_by_name, lines, "", cursor, aperture, is_last=True)
+    return lines
+
+
+def _render_explain_node(
+    node: CliNode,
+    nodes_by_name: dict,
+    lines: list,
+    prefix: str,
+    cursor: str,
+    aperture: int,
+    is_last: bool,
+) -> None:
+    """Render a node in explain mode (preserves old rendering for explain)."""
+    glyph = STATE_GLYPHS.get(node.state, "\u25a1")
+    color = STATE_COLORS.get(node.state, RESET)
+    is_selected = (cursor == node.name)
+
+    connector = ""
+    if prefix:
+        connector = "\u2514\u2500 " if is_last else "\u251c\u2500 "
+
+    cursor_mark = "\u25b6" if is_selected else ""
+    full_prefix = prefix + connector
+    name_field = f"{cursor_mark}{color}{glyph}{RESET} {node.name}"
+
+    cursor_len = 1 if is_selected else 0
+    visible_len = len(full_prefix) + cursor_len + 1 + 1 + len(node.name)
+    padding = max(1, 22 - visible_len)
+
+    node_line = f" {full_prefix}{name_field}{' ' * padding}{node.kind}"
+    lines.append(node_line.rstrip())
+
+    # Aperture details
+    node_aperture = aperture if is_selected else 1
+    detail_indent = "      " if prefix else "    "
+
+    if node_aperture >= 1 and node.outputs:
+        outputs_to_show = node.outputs[:1] if node_aperture == 1 else node.outputs
+        for out in outputs_to_show:
+            h = out.sha256[:6] if out.sha256 else "??????"
+            lines.append(f"{detail_indent}out:{out.path}@{h}")
+
+    if node_aperture >= 2:
+        if node.seal_digest or node.recipe_digest:
+            lines.append(f"{detail_indent}seal:")
+            if node.seal_digest:
+                lines.append(f"{detail_indent}  digest: {node.seal_digest[:6]}")
+            if node.recipe_digest:
+                lines.append(f"{detail_indent}  recipe: {node.recipe_digest[:6]}")
+            if node.input_hashes:
+                lines.append(f"{detail_indent}  inputs: {len(node.input_hashes)}")
+            if node.output_hashes:
+                lines.append(f"{detail_indent}  outputs: {len(node.output_hashes)}")
+        if node.trace and node.trace.cache_source:
+            lines.append(f"{detail_indent}cache: {node.trace.cache_source}")
+
+    if node_aperture >= 3:
+        if node.trace:
+            t = node.trace
+            lines.append(f"{detail_indent}trace:")
+            if t.backend:
+                lines.append(f"{detail_indent}  backend: {t.backend}")
+            if t.model:
+                lines.append(f"{detail_indent}  model: {t.model}")
+            if t.config_hash:
+                lines.append(f"{detail_indent}  config: sha256:{t.config_hash[:6]}")
+            if t.prompt_hash:
+                lines.append(f"{detail_indent}  prompt: sha256:{t.prompt_hash[:6]}")
+            if t.input_tokens and t.input_tokens > 0:
+                lines.append(f"{detail_indent}  input_tokens: {t.input_tokens}")
+            if t.output_tokens and t.output_tokens > 0:
+                lines.append(f"{detail_indent}  output_tokens: {t.output_tokens}")
+            if t.elapsed_s is not None:
+                lines.append(f"{detail_indent}  elapsed: {t.elapsed_s:.2f}s")
+            if t.cost_usd and t.cost_usd > 0:
+                lines.append(f"{detail_indent}  cost: ${t.cost_usd:.4f}")
+            if t.stdout:
+                lines.append(f"{detail_indent}stdout:")
+                for sl in t.stdout.split('\n')[:5]:
+                    lines.append(f"{detail_indent}  {sl}")
+            if t.stderr:
+                lines.append(f"{detail_indent}stderr:")
+                for sl in t.stderr.split('\n')[:5]:
+                    lines.append(f"{detail_indent}  {sl}")
+        if node.stale_reason:
+            lines.append(f"{detail_indent}stale: {node.stale_reason}")
+        if node.diagnosis:
+            lines.append(f"{detail_indent}error: {node.diagnosis}")
+
+    # Children
+    children_names = getattr(node, 'children', [])
+    children = [nodes_by_name[name] for name in children_names if name in nodes_by_name]
+    if children:
+        continuation = "   " if is_last else "\u2502  "
+        child_prefix = prefix + continuation
+        for i, child in enumerate(children):
+            _render_explain_node(
+                child, nodes_by_name, lines, child_prefix,
+                cursor, aperture, is_last=(i == len(children) - 1),
+            )
+
+
+# -- Helpers ------------------------------------------------------------------
 
 def _map_visual_status(status: str, command: str) -> str:
     """Map residue status to visual display status."""
@@ -174,238 +574,28 @@ def _map_visual_status(status: str, command: str) -> str:
     return status
 
 
-def _render_tree(
-    nodes: list[CliNode],
-    verbose: bool,
-    cursor: str = None,
-    aperture: int = 1
-) -> list[str]:
-    """Render target-rooted dependency tree."""
-    if not nodes:
-        return []
+def _rpad(left: str, right: str, width: int) -> str:
+    """Pad between *left* and *right* so the combined visible width = *width*.
 
-    # Build dependency map
-    nodes_by_name = {n.name: n for n in nodes}
-
-    # Target is first in list (already reordered by collectors)
-    target = nodes[0]
-
-    # Render tree recursively from target
-    lines = []
-    _render_node_tree(target, nodes_by_name, lines, "", verbose, cursor, aperture, is_last=True)
-    return lines
+    Both may contain ANSI codes; only visible characters count toward width.
+    """
+    if not right:
+        return left
+    lv = _visible_len(left)
+    rv = _visible_len(right)
+    gap = max(1, width - lv - rv)
+    return f"{left}{' ' * gap}{right}"
 
 
-def _render_node_tree(
-    node: CliNode,
-    nodes_by_name: dict,
-    lines: list,
-    prefix: str,
-    verbose: bool,
-    cursor: str = None,
-    aperture: int = 1,
-    is_last: bool = True
-):
-    """Recursively render node and children."""
-    glyph = STATE_GLYPHS.get(node.state, "□")
-    color = STATE_COLORS.get(node.state, RESET)
-
-    # Phase 4: Check if this node is selected
-    is_selected = (cursor == node.name)
-
-    # Node line: glyph + name + kind + metadata (table-aligned)
-    metadata_parts = []
-
-    # For cached nodes, show "cached" label
-    if node.cache:
-        metadata_parts.append("cached")
-
-    # Add time/fuel/cost
-    if node.duration is not None and node.duration > 0:
-        metadata_parts.append(f"{node.duration:.2f}s")
-
-    # For cached nodes, show explicit zero fuel and cost
-    if node.cache:
-        metadata_parts.append("⚡0")
-        metadata_parts.append("$0.0000")
-    else:
-        # Non-cached nodes: show actual fuel and cost
-        if node.fuel is not None:
-            metadata_parts.append(f"⚡{node.fuel}")
-
-        if node.cost is not None and node.cost > 0:
-            metadata_parts.append(f"${node.cost:.4f}")
-
-        # Show fuel budget for unrealized nodes
-        if node.fuel_budget is not None and node.state == "unrealized":
-            metadata_parts.append(f"⚡{node.fuel_budget}")
-
-    metadata = "     ".join(metadata_parts) if metadata_parts else ""
-
-    # Table alignment: fixed-width columns matching header
-    # Column 1: prefix + glyph + name (25 chars total)
-    # Column 2: kind (15 chars)
-    # Column 3: metadata (variable, aligned with header fuel)
-
-    # Add tree connector for non-root nodes
-    connector = ""
-    if prefix:  # Non-root nodes get connectors
-        connector = "└─ " if is_last else "├─ "
-
-    # Phase 4: Add cursor marker for selected node
-    cursor_mark = "▶" if is_selected else ""
-
-    # Build name field with padding to reach column 2
-    full_prefix = prefix + connector
-    name_field = f"{cursor_mark}{color}{glyph}{RESET} {node.name}"
-
-    # Get children for later rendering
-    children_names = getattr(node, 'children', [])
-
-    # Calculate visible length (excluding ANSI codes and cursor marker)
-    cursor_len = 1 if is_selected else 0
-    visible_len = len(full_prefix) + cursor_len + 1 + 1 + len(node.name)  # prefix + cursor + glyph + space + name
-    padding = max(1, 22 - visible_len)  # At least 1 space
-
-    # Build node line with leading space for bounded box formatting
-    metadata_str = f"     {metadata}" if metadata else ""
-    node_line = f" {full_prefix}{name_field}{' ' * padding}{node.kind}{metadata_str}"
-    lines.append(node_line.rstrip())
-
-    # Phase 4: Aperture-aware detail rendering
-    # Selected node expands to its aperture level, non-selected stay minimal
-
-    # Determine effective aperture for this node
-    if is_selected:
-        node_aperture = aperture
-    elif verbose:
-        node_aperture = 3  # Verbose mode shows full details for all nodes
-    else:
-        node_aperture = 1  # Non-selected nodes show primary output only
-
-    # Detail indent (no tree connectors in detail lines)
-    if prefix:
-        detail_indent = "      "  # Child node: 1 leading + 5 to align under node name
-    else:
-        detail_indent = "    "  # Root node: 1 leading + 3 to align under node name
-
-    # Aperture 0: Node only (no details)
-    if node_aperture == 0:
-        pass  # No details rendered
-
-    # Aperture 1+: Outputs
-    elif node_aperture >= 1:
-        if node.outputs:
-            # Primary output only for aperture 1
-            outputs_to_show = node.outputs[:1] if node_aperture == 1 else node.outputs
-            for output in outputs_to_show:
-                hash_short = output.sha256[:6] if output.sha256 else "??????"
-                lines.append(f"{detail_indent}out:{output.path}@{hash_short}")
-
-        # Aperture 2+: Seal and cache
-        if node_aperture >= 2:
-            # Seal section
-            if node.seal_digest or node.recipe_digest:
-                lines.append(f"{detail_indent}seal:")
-                if node.seal_digest:
-                    lines.append(f"{detail_indent}  digest: {node.seal_digest[:6]}")
-                if node.recipe_digest:
-                    lines.append(f"{detail_indent}  recipe: {node.recipe_digest[:6]}")
-                if node.input_hashes:
-                    lines.append(f"{detail_indent}  inputs: {len(node.input_hashes)}")
-                if node.output_hashes:
-                    lines.append(f"{detail_indent}  outputs: {len(node.output_hashes)}")
-
-            # Cache section
-            if node.trace and node.trace.cache_source:
-                lines.append(f"{detail_indent}cache: {node.trace.cache_source}")
-
-        # Aperture 3: Trace, log, error
-        if node_aperture >= 3:
-            # Trace section
-            if node.trace:
-                trace = node.trace
-                lines.append(f"{detail_indent}trace:")
-                if trace.backend:
-                    lines.append(f"{detail_indent}  backend: {trace.backend}")
-                if trace.model:
-                    lines.append(f"{detail_indent}  model: {trace.model}")
-                if trace.config_hash:
-                    lines.append(f"{detail_indent}  config: sha256:{trace.config_hash[:6]}")
-                if trace.prompt_hash:
-                    lines.append(f"{detail_indent}  prompt: sha256:{trace.prompt_hash[:6]}")
-                if trace.input_tokens is not None and trace.input_tokens > 0:
-                    lines.append(f"{detail_indent}  input_tokens: {trace.input_tokens}")
-                if trace.output_tokens is not None and trace.output_tokens > 0:
-                    lines.append(f"{detail_indent}  output_tokens: {trace.output_tokens}")
-                if trace.elapsed_s is not None:
-                    lines.append(f"{detail_indent}  elapsed: {trace.elapsed_s:.2f}s")
-                if trace.cost_usd is not None and trace.cost_usd > 0:
-                    lines.append(f"{detail_indent}  cost: ${trace.cost_usd:.4f}")
-
-            # Log section
-            if node.trace:
-                if node.trace.stdout:
-                    lines.append(f"{detail_indent}stdout:")
-                    stdout_lines = node.trace.stdout.split('\n')[:5]  # First 5 lines
-                    for log_line in stdout_lines:
-                        lines.append(f"{detail_indent}  {log_line}")
-                if node.trace.stderr:
-                    lines.append(f"{detail_indent}stderr:")
-                    stderr_lines = node.trace.stderr.split('\n')[:5]  # First 5 lines
-                    for log_line in stderr_lines:
-                        lines.append(f"{detail_indent}  {log_line}")
-
-            # Error section
-            if node.stale_reason:
-                lines.append(f"{detail_indent}stale: {node.stale_reason}")
-            if node.diagnosis:
-                lines.append(f"{detail_indent}error: {node.diagnosis}")
-
-    # Render children (children_names already fetched above for leaf detection)
-    children = [nodes_by_name[name] for name in children_names if name in nodes_by_name]
-
-    # Children get an extended prefix with continuation character
-    if children:
-        # Extend prefix: add continuation from this level (not the connector)
-        continuation = "   " if is_last else "│  "
-        child_prefix = prefix + continuation
-
-        for i, child in enumerate(children):
-            is_last_child = (i == len(children) - 1)
-            _render_node_tree(
-                child,
-                nodes_by_name,
-                lines,
-                child_prefix,
-                verbose,
-                cursor,
-                aperture,
-                is_last=is_last_child
-            )
-
-
-def _render_footer_status(residue: CliResidue) -> str:
-    """Render footer with pass/fail status (Beta 100 format)."""
-    # Beta 100: Simple pass/fail footer
-    has_fails = residue.fails and len(residue.fails) > 0 if isinstance(residue.fails, list) else residue.fails > 0
-
+def _render_footer_legacy(residue: CliResidue) -> str:
+    """Legacy footer for explain mode."""
+    has_fails = (
+        residue.fails and len(residue.fails) > 0
+        if isinstance(residue.fails, list)
+        else residue.fails > 0
+    )
     if has_fails:
-        # Build failure message
         fail_items = residue.fails if isinstance(residue.fails, list) else []
-        if fail_items:
-            message = f"failures in {', '.join(fail_items)}"
-        else:
-            message = "failed"
-        return f" {message}"
-    else:
-        # Build success message
-        pass_items = residue.passes if isinstance(residue.passes, list) else []
-        if pass_items:
-            message = f"passes: {', '.join(pass_items)}"
-        else:
-            message = "passed"
-        return f" {message}"
-
-
-# Unused legacy functions removed for Beta 100
+        return f" failures in {', '.join(fail_items)}" if fail_items else " failed"
+    pass_items = residue.passes if isinstance(residue.passes, list) else []
+    return f" passes: {', '.join(pass_items)}" if pass_items else " passed"

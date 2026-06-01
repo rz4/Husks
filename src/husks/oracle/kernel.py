@@ -478,9 +478,32 @@ def live_oracle(
 
     # Compute deltas from the local tracker
     snap = tracker.snapshot()
+
+    # Compute provenance hashes for config and prompt
+    import hashlib
+    import json as jsonlib
+
+    # Config: model + temperature/max_tokens (sorted for determinism)
+    config = {
+        "model": _oracle_model,
+        "temperature": 1.0,  # litellm default
+        "max_tokens": 4096,  # typical default
+    }
+    if tool_names:
+        config["tools"] = sorted(tool_names)
+    config_json = jsonlib.dumps(config, sort_keys=True, separators=(",", ":"))
+    config_hash = hashlib.sha256(config_json.encode("utf-8")).hexdigest()
+
+    # Prompt hash (user prompt only, not system prompt which varies by outputs)
+    prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
     return {
         "tokens_in": snap["input_tokens"],
         "tokens_out": snap["output_tokens"],
         "cost_usd": snap["cost_usd"],
         "fuel_steps": result.get("fuel_steps", 0),
+        "backend": "litellm",
+        "model": _oracle_model,
+        "config_hash": config_hash,
+        "prompt_hash": prompt_hash,
     }

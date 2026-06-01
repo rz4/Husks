@@ -8,15 +8,196 @@ from husks.designs.ir import from_json
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, resolve_design
 from husks.cli.cmd import (
     _cmd_check, _cmd_run, _cmd_run_hy, _cmd_status,
-    _cmd_explain, _cmd_history, _cmd_doctor, _cmd_compare, _cmd_compare_runs,
+    _cmd_explain, _cmd_history, _cmd_doctor, _cmd_compare,
     _cmd_cache_export, _cmd_cache_import,
 )
 
 
+def _get_version() -> str:
+    try:
+        from importlib.metadata import version as pkg_version
+        return pkg_version("husks")
+    except Exception:
+        return "0.1.0"
+
+
+# -- Styled help rendering ---------------------------------------------------
+
+_NO_VALUE_ACTIONS = (
+    argparse._StoreTrueAction,
+    argparse._StoreFalseAction,
+    argparse._StoreConstAction,
+    argparse._CountAction,
+)
+
+
+def _flag_str(action):
+    """Build the left-column display string for an argparse action."""
+    if not action.option_strings:
+        return action.metavar or action.dest
+    parts = sorted(action.option_strings, key=len)
+    s = ", ".join(parts)
+    if isinstance(action, _NO_VALUE_ACTIONS):
+        return s
+    if action.metavar:
+        meta = action.metavar
+    elif action.choices:
+        meta = "{" + ",".join(str(c) for c in action.choices) + "}"
+    else:
+        meta = action.dest.upper()
+    return f"{s} {meta}"
+
+
+class _StyledHelpAction(argparse.Action):
+    """Custom -h/--help action that renders our branded subcommand help."""
+
+    def __init__(self, option_strings, dest=argparse.SUPPRESS,
+                 default=argparse.SUPPRESS, help=None):
+        super().__init__(option_strings=option_strings, dest=dest,
+                         default=default, nargs=0, help=help)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        _print_subcommand_help(parser)
+        parser.exit()
+
+
+def _print_subcommand_help(parser):
+    """Render branded help for a subcommand parser."""
+    from husks.utils.console import BOLD, DIM, RESET
+
+    desc = parser.description or ""
+
+    positionals = []
+    optionals = []
+    subcommands = []
+
+    for action in parser._actions:
+        if action.help == argparse.SUPPRESS:
+            continue
+        if isinstance(action, _StyledHelpAction):
+            continue
+        if isinstance(action, argparse._SubParsersAction):
+            for ca in action._choices_actions:
+                subcommands.append((ca.metavar, ca.help or ""))
+            continue
+        if action.option_strings:
+            optionals.append(action)
+        else:
+            positionals.append(action)
+
+    # Compute column width from all left-column entries
+    all_lefts = [_flag_str(a) for a in positionals + optionals]
+    all_lefts += [name for name, _ in subcommands]
+    col = max((len(s) for s in all_lefts), default=14) + 2
+    col = max(col, 18)
+
+    lines = [
+        f"  {BOLD}{parser.prog}{RESET}",
+        f"  {DIM}{desc}{RESET}",
+    ]
+
+    if positionals:
+        lines.append(f"\n  {BOLD}arguments{RESET}")
+        for action in positionals:
+            fs = _flag_str(action)
+            lines.append(f"    {fs:<{col}}{DIM}{action.help or ''}{RESET}")
+
+    if optionals:
+        lines.append(f"\n  {BOLD}options{RESET}")
+        for action in optionals:
+            fs = _flag_str(action)
+            lines.append(f"    {fs:<{col}}{DIM}{action.help or ''}{RESET}")
+
+    if subcommands:
+        lines.append(f"\n  {BOLD}commands{RESET}")
+        for name, help_text in subcommands:
+            lines.append(f"    {name:<{col}}{DIM}{help_text}{RESET}")
+
+    # Build usage line
+    usage_parts = [parser.prog]
+    if subcommands:
+        usage_parts.append("<command>")
+    if optionals:
+        usage_parts.append("[options]")
+    for action in positionals:
+        name = action.metavar or action.dest
+        if action.nargs in ("?", "*"):
+            usage_parts.append(f"[{name}]")
+        elif action.nargs == "+":
+            usage_parts.append(f"<{name}> [...]")
+        else:
+            usage_parts.append(f"<{name}>")
+
+    lines.append("")
+    lines.append(f"  {DIM}{'─' * 45}{RESET}")
+    lines.append(f"  {DIM}{' '.join(usage_parts)}{RESET}")
+
+    print("\n".join(lines))
+
+
+def _sub_parser(sub, name, **kwargs):
+    """Create a subparser with styled help instead of stock argparse help."""
+    kwargs.setdefault("description", kwargs.get("help", ""))
+    kwargs["add_help"] = False
+    p = sub.add_parser(name, **kwargs)
+    p.add_argument("-h", "--help", action=_StyledHelpAction, help=argparse.SUPPRESS)
+    return p
+
+
+def _print_help() -> None:
+    from husks.utils.console import BOLD, DIM, CYAN, RESET, render_banner
+
+    ver = _get_version()
+
+    logo = render_banner("hydrating", [
+        f"{BOLD}husks{RESET} {DIM}{ver}{RESET}",
+        f"{DIM}A small build system for nondeterministic work.{RESET}",
+        "",
+        "",
+        "",
+    ])
+
+    def _group(name: str) -> str:
+        return f"\n  {BOLD}{name}{RESET}"
+
+    def _cmd(name: str, desc: str) -> str:
+        return f"    {name:<18s}{DIM}{desc}{RESET}"
+
+    lines = [
+        logo,
+        _group("design"),
+        _cmd("init", "Scaffold a new project"),
+        _cmd("check", "Validate a design"),
+        _group("build"),
+        _cmd("run", "Execute a design into a site"),
+        _cmd("status", "Inspect site state"),
+        _cmd("cache export", "Export site cache for transfer"),
+        _cmd("cache import", "Import cache into a site"),
+        _group("verify"),
+        _cmd("compare", "Equivalence across sites (three-machine proof with 3+)"),
+        _cmd("doctor", "Diagnose the local environment"),
+        _group("inspect"),
+        _cmd("explain", "Navigate the residue tree"),
+        _cmd("history", "Show convergence across runs"),
+        "",
+        f"  {DIM}{'─' * 45}{RESET}",
+        f"  {DIM}--color <mode>   auto · always · never{RESET}",
+        f"  {DIM}-q, --quiet      Suppress output{RESET}",
+        f"  {DIM}--version        Print version{RESET}",
+        "",
+        f"  {DIM}husks <command> --help for details{RESET}",
+    ]
+
+    print("\n".join(lines))
+
+
 def main():
-    p = argparse.ArgumentParser(prog="husks", description="Husks design CLI")
+    p = argparse.ArgumentParser(prog="husks", description="Husks design CLI",
+                                add_help=False)
 
     # Global options
+    p.add_argument("-h", "--help", action="store_true", default=False,
+                   help="Show help and exit")
     p.add_argument("--color", choices=["auto", "always", "never"], default="auto",
                    help="Color output mode")
     p.add_argument("--quiet", "-q", action="store_true",
@@ -27,7 +208,7 @@ def main():
     sub = p.add_subparsers(dest="cmd")
 
     # init
-    i = sub.add_parser("init", help="Create a runnable Husks project")
+    i = _sub_parser(sub, "init", help="Scaffold a new project")
     i.add_argument("target", nargs="?", default=".",
                    help="Target directory (default: .)")
     i.add_argument("template", nargs="?", default="core-bootstrap",
@@ -36,19 +217,20 @@ def main():
                    help="Also emit bootstrap.hy (Hy design equivalent)")
     i.add_argument("--force", action="store_true",
                    help="Overwrite existing files")
+    i.add_argument("--verbose", "-v", action="store_true",
+                   help="Show detailed scaffolding output")
 
     # check
-    c = sub.add_parser("check", help="Validate a design (exit 1 if errors)")
+    c = _sub_parser(sub, "check", help="Validate a design")
     c.add_argument("design", nargs="?", default=None,
                    help="Path to design file (.json or .hy). Defaults to design.json.")
-    c.add_argument("--site", help="Overlay site conformance states (Beta Gate 95)")
     c.add_argument("--verbose", "-v", action="store_true",
                    help="Show full design details after validation (replaces old 'show')")
     c.add_argument("--json", action="store_true", dest="json_output",
                    help="Output categorized check results as JSON")
 
     # run
-    r = sub.add_parser("run", help="Check, compile, and execute a design")
+    r = _sub_parser(sub, "run", help="Execute a design into a site")
     r.add_argument("design", nargs="?", default=None,
                    help="Path to design file (.json or .hy). Defaults to design.json.")
     r.add_argument("--site", help="Override site directory")
@@ -70,21 +252,19 @@ def main():
                    help="Write JSON report to file (sidecar; may be used with --verbose)")
 
     # status
-    st_cmd = sub.add_parser("status", help="Show freshness state of a built site")
-    st_cmd.add_argument("design", nargs="?", default=None,
-                        help="Path to design JSON file (optional)")
-    st_cmd.add_argument("--site", help="Site directory")
+    st_cmd = _sub_parser(sub, "status", help="Inspect site state")
+    st_cmd.add_argument("site", help="Site directory path")
+    st_cmd.add_argument("--verbose", action="store_true",
+                        help="Show detailed DAG with freshness states")
     st_cmd.add_argument("--json", action="store_true", dest="json_output",
                         help="Output as JSON")
     st_cmd.add_argument("--fail-if-dirty", action="store_true",
                         help="Exit 4 if any artifact is modified")
     st_cmd.add_argument("--fail-if-stale", action="store_true",
                         help="Exit 4 if any rule is stale")
-    st_cmd.add_argument("--verbose", "-v", action="store_true",
-                        help="Verbose output (full DAG visualization)")
 
     # explain
-    e = sub.add_parser("explain", help="Navigate site residue tree (--site mode) or legacy modes")
+    e = _sub_parser(sub, "explain", help="Navigate the residue tree")
     e.add_argument("subject", nargs="?", default=None,
                    help="Design file path (.json/.hy), or rule/artifact name")
     # Phase 5: Navigator mode flags
@@ -110,7 +290,7 @@ def main():
                    help="Output as JSON")
 
     # history
-    h = sub.add_parser("history", help="Show convergence history for rules")
+    h = _sub_parser(sub, "history", help="Show convergence across runs")
     h.add_argument("design", nargs="?", default=None,
                    help="Path to design file (.json or .hy). Defaults to design.json.")
     h.add_argument("rule", nargs="?", default=None,
@@ -120,7 +300,7 @@ def main():
                    help="Number of recent entries to show (default: 5)")
 
     # doctor
-    doc = sub.add_parser("doctor", help="Diagnose the local environment")
+    doc = _sub_parser(sub, "doctor", help="Diagnose the local environment")
     doc.add_argument("--json", action="store_true", dest="json_output",
                      help="Output as JSON")
     doc.add_argument("--selftest", action="store_true",
@@ -139,7 +319,7 @@ def main():
                      help="Verbose output")
 
     # compare (Beta Gate C6/C7)
-    cmp = sub.add_parser("compare", help="Compare artifact equivalence across sites")
+    cmp = _sub_parser(sub, "compare", help="Equivalence across sites (three-machine proof with 3+)")
     cmp.add_argument("sites", nargs="+",
                      help="Site directories to compare (2 or more)")
     cmp.add_argument("--json", action="store_true", dest="json_output",
@@ -149,27 +329,19 @@ def main():
     cmp.add_argument("--hashes-only", action="store_true",
                      help="Compare output hashes only (skip root checks)")
 
-    # compare-runs (Beta Gate C/F/G) - compare JSON reports from multiple runs
-    cmp_runs = sub.add_parser("compare-runs",
-                              help="Compare JSON reports from multiple runs (three-machine proof)")
-    cmp_runs.add_argument("reports", nargs="+",
-                          help="JSON report files from husks run --json (2 or more)")
-    cmp_runs.add_argument("--json", action="store_true", dest="json_output",
-                          help="Output comparison result as JSON")
-
     # cache (Beta Gate G1/D5) - nested subcommands
-    cache_parser = sub.add_parser("cache", help="Cache management commands")
+    cache_parser = _sub_parser(sub, "cache", help="Cache management commands")
     cache_sub = cache_parser.add_subparsers(dest="cache_cmd", required=True)
 
     # cache export
-    cache_exp = cache_sub.add_parser("export", help="Export cache to tarball for cross-machine transfer")
+    cache_exp = _sub_parser(cache_sub, "export", help="Pack site cache for transfer")
     cache_exp.add_argument("file", help="Path to write .tar.gz archive")
     cache_exp.add_argument("--site", required=True, help="Site directory containing cache")
     cache_exp.add_argument("--json", action="store_true", dest="json_output",
                            help="Output result as JSON")
 
     # cache import
-    cache_imp = cache_sub.add_parser("import", help="Import cache from tarball")
+    cache_imp = _sub_parser(cache_sub, "import", help="Unpack cache into a site")
     cache_imp.add_argument("file", help="Path to .tar.gz archive")
     cache_imp.add_argument("--site", required=True, help="Site directory to import into")
     cache_imp.add_argument("--no-merge", action="store_true",
@@ -179,17 +351,18 @@ def main():
 
     args = p.parse_args()
 
+    # --help / -h
+    if args.help:
+        _print_help()
+        sys.exit(EXIT_OK)
+
     # --version
     if args.version:
-        try:
-            from importlib.metadata import version as pkg_version
-            print(f"husks {pkg_version('husks')}")
-        except Exception:
-            print("husks (version unknown)")
+        print(f"husks {_get_version()}")
         sys.exit(EXIT_OK)
 
     if args.cmd is None:
-        p.print_help()
+        _print_help()
         sys.exit(EXIT_USAGE)
 
     # Validate mutually exclusive flags
@@ -204,7 +377,8 @@ def main():
     if args.cmd == "init":
         from husks.setup import init
         emit_hy = getattr(args, 'hy', False)
-        sys.exit(init(args.target, template=args.template, emit_hy=emit_hy, claude_code=True, force=args.force))
+        verbose = getattr(args, 'verbose', False)
+        sys.exit(init(args.target, template=args.template, emit_hy=emit_hy, claude_code=True, force=args.force, verbose=verbose))
 
     # ── status (may or may not need a design) ────────────────
     if args.cmd == "status":
@@ -224,11 +398,6 @@ def main():
     # ── compare (Beta Gate C6/C7) ────────────────────────────
     if args.cmd == "compare":
         _cmd_compare(args)
-        return
-
-    # ── compare-runs (Beta Gate C/F/G) ───────────────────────
-    if args.cmd == "compare-runs":
-        _cmd_compare_runs(args)
         return
 
     # ── cache commands (Beta Gate G1/D5) ──────────────────────────

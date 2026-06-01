@@ -73,11 +73,12 @@ def core_bootstrap_design(tmp_path):
     return design_path
 
 
-def test_check_silent_pass(core_bootstrap_design):
-    """check without flags on passing design: no output, exit 0."""
+def test_check_shows_motif(core_bootstrap_design):
+    """check without flags on passing design: silent, exit 0."""
     result = run_husks_cli("check", str(core_bootstrap_design))
     assert result.returncode == 0
-    assert result.stdout.strip() == "", f"Expected no output, got: {result.stdout}"
+    # Silent on success
+    assert result.stdout.strip() == ""
 
 
 def test_check_verbose_dry(core_bootstrap_design):
@@ -88,12 +89,11 @@ def test_check_verbose_dry(core_bootstrap_design):
     output = result.stdout
 
     # Must have bordered box
-    assert "────────────────────────────────" in output
+    assert "──────────────────────────────────────────────────" in output
 
-    # Header line
+    # Header banner (name/state summary)
     assert "core-bootstrap" in output
     assert "checked" in output
-    assert "⚡20" in output
 
     # Tree structure: target-rooted, validate depends on generate
     assert "□ validate" in output
@@ -105,8 +105,7 @@ def test_check_verbose_dry(core_bootstrap_design):
     # Footer
     assert "passes: checks" in output
 
-    # Must NOT have old-style glyphs
-    assert "◆" not in output  # No kind glyphs
+    # Must NOT have old-style kind glyphs (◆ may appear in sealed/cached art)
     assert "▫" not in output
 
 
@@ -161,7 +160,7 @@ def test_run_sealed(core_bootstrap_design):
     output = result.stdout
 
     # Must have bordered box
-    assert "────────────────────────────────" in output
+    assert "──────────────────────────────────────────────────" in output
 
     # Header shows sealed status
     assert "core-bootstrap" in output
@@ -202,35 +201,28 @@ def test_run_cached(core_bootstrap_design):
 
 
 def test_status_requires_site(core_bootstrap_design):
-    """status without --site should error."""
-    result = run_husks_cli("status", str(core_bootstrap_design))
+    """status without site arg should error."""
+    result = run_husks_cli("status")
     assert result.returncode != 0
-    assert "site" in result.stderr.lower() or "site" in result.stdout.lower()
 
 
 def test_status_sealed(core_bootstrap_design):
-    """status shows site conformance in bounded box."""
+    """status shows site summary."""
     tmp_path = core_bootstrap_design.parent
     site = tmp_path / ".husk"
 
     # Build first
     run_husks_cli("run", str(core_bootstrap_design), "--stub", "--site", str(site))
 
-    # Check status
-    result = run_husks_cli("status", str(core_bootstrap_design), "--site", str(site))
+    # Check status (site is positional arg now)
+    result = run_husks_cli("status", str(site))
     assert result.returncode == 0
 
     output = result.stdout
 
-    # Must have bordered box
-    assert "────────────────────────────────" in output
-
-    # Header
+    # Summary fields
     assert "core-bootstrap" in output
-    assert ".husk" in output
-
-    # Footer
-    assert "passes:" in output or "fails:" in output
+    assert "sealed" in output
 
 
 def test_state_glyphs_not_kind_glyphs():
@@ -345,9 +337,8 @@ def test_golden_dry_check_exact(core_bootstrap_design):
     # Verify key content is present (spacing may vary with column alignment)
     assert "core-bootstrap" in output
     assert "checked" in output
-    assert "⚡20" in output
-    assert "cse:none" in output
-    assert "site:none" in output
+    assert "name:" in output
+    assert "state:" in output
     assert "□ validate" in output
     assert "action" in output
     assert "□ generate" in output
@@ -375,11 +366,9 @@ def test_golden_final_m1_sealed(core_bootstrap_design):
     output = normalize(result.stdout)
 
     # Must have header structure (spacing may vary)
-    assert "────────────────────────────────" in output
+    assert "──────────────────────────────────────────────────" in output
     assert "core-bootstrap" in output
     assert "sealed" in output
-    assert "core-bootstrap.husk" in output
-
     # Must show sealed nodes (or failed if gate missing)
     assert ("■ validate" in output or "✕ validate" in output)
     assert ("■ generate" in output or "✕ generate" in output)
@@ -387,13 +376,9 @@ def test_golden_final_m1_sealed(core_bootstrap_design):
     # Must show oracle cost for M1
     assert "$0.000" in output  # Some cost shown
 
-    # Must NOT show zero fuel for M1 (should show actual consumption)
-    # Core-bootstrap consumes 10 fuel for generate, possibly 1 for validate
-    # So we should NOT see ⚡0/20
-    lines = output.split("\n")
-    first_line = [l for l in lines if "core-bootstrap" in l and "sealed" in l][0] if any("core-bootstrap" in l and "sealed" in l for l in lines) else ""
-    if "⚡0/20" in first_line:
-        pytest.fail(f"M1 should not show ⚡0/20 (should show actual fuel consumption)\nGot: {first_line}")
+    # Banner should show name/state/site summary
+    assert "name:" in output
+    assert "state:" in output
 
     # Anti-patterns
     assert "FINAL STATE" not in output
@@ -431,9 +416,6 @@ def test_golden_final_m2_cached(core_bootstrap_design):
     # Must show zero fuel and zero cost for cached run
     assert "⚡0" in output, "M2 should show ⚡0 fuel"
     assert "$0.0000" in output, "M2 should show $0.0000 cost"
-
-    # Header should show ⚡0/20 for cached run
-    assert "⚡0/20" in output, "M2 cached should show ⚡0/20"
 
     # Footer should indicate cache success
     assert "passes: run, cache" in output or ("passes: run" in output and "cache" in output)

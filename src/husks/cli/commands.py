@@ -25,7 +25,6 @@ from husks.cli.cmd import (
     _cmd_history as cmd_history,
     _cmd_doctor as cmd_doctor,
     _cmd_compare as cmd_compare,
-    _cmd_compare_runs as cmd_compare_runs,
     _cmd_cache_export as cmd_cache_export,
     _cmd_cache_import as cmd_cache_import,
 )
@@ -40,7 +39,6 @@ from husks.cli.cmd import (
     _cmd_history,
     _cmd_doctor,
     _cmd_compare,
-    _cmd_compare_runs,
     _cmd_cache_export,
     _cmd_cache_import,
 )
@@ -54,7 +52,6 @@ __all__ = [
     'cmd_history', '_cmd_history',
     'cmd_doctor', '_cmd_doctor',
     'cmd_compare', '_cmd_compare',
-    'cmd_compare_runs', '_cmd_compare_runs',
     'cmd_cache_export', '_cmd_cache_export',
     'cmd_cache_import', '_cmd_cache_import',
 ]

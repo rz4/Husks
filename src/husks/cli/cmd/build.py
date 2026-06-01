@@ -4,73 +4,171 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 from husks.designs.ir import check, check_categorized, show, run
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_MISSING_DEP
 from husks.cli.residue import CliResidue, CliNode
+from husks.utils.console import is_tty, cursor_up, CLEAR_DOWN
 
 
-# ── Verbose frame emitter (Blocker #6) ───────────────────────────────
+# ── Live frame emitter ──────────────────────────────────────────────
 
-class VerboseFrameEmitter:
-    """Live verbose frame emitter for run --verbose.
+class LiveFrameEmitter:
+    """Live animated frame emitter for ``run``.
 
-    Blocker #6: Emits sequential frames showing DAG hydration as nodes execute.
-    Shows ◉ running state during execution, then ■ sealed or ◆ cached on completion.
+    Subscribes to trace events and maintains a lightweight snapshot of the
+    DAG.  On each event the whole motif frame is re-rendered in-place (TTY)
+    or key frames are printed sequentially (pipe).
+
+    The emitter tracks per-node log lines (oracle prompt previews, token
+    counts, tool calls) that are passed to ``render_dag`` via the
+    ``log_lines`` parameter so they appear inline below the running node.
     """
 
-    def __init__(self, design: dict):
+    def __init__(self, design: dict, *, verbose: bool = False, site: str | None = None):
         self.design = design
         self.rules = {r["name"]: r for r in design.get("rules", [])}
-        # Track current state of each node: unrealized, running, sealed, cached, failed
-        self.node_states = {r["name"]: "unrealized" for r in design.get("rules", [])}
-        # Track which nodes have been seen
-        self.nodes_seen = set()
+        self.verbose = verbose
+        self.site = site
+
+        # Node tracking
+        self.node_states: dict[str, str] = {
+            r["name"]: "unrealized" for r in design.get("rules", [])
+        }
+        self.node_start_times: dict[str, float] = {}
+        self.node_elapsed: dict[str, float] = {}
+
+        # Per-node log lines shown below the running node
+        self.log_lines: dict[str, list[str]] = {}
+
+        # Oracle live tracking (for in-progress updates)
+        self.oracle_start_times: dict[str, float] = {}
+        self.oracle_tokens_in: dict[str, int] = {}
+        self.oracle_tokens_out: dict[str, int] = {}
+
+        # Build start time
+        self.build_t0: float | None = None
+
+        # Frame tracking for in-place overwrite
+        self._last_frame_lines = 0
+        self.is_tty = is_tty()
 
     def notify(self, event: dict) -> None:
-        """Handle trace events and emit frames (TraceListener protocol)."""
-        event_type = event.get("event")
+        """Dispatch trace events (TraceListener protocol)."""
+        etype = event.get("event")
 
-        if event_type == "rule_start":
-            rule_name = event.get("rule")
-            if rule_name and rule_name in self.node_states:
-                self.node_states[rule_name] = "running"
-                self.nodes_seen.add(rule_name)
+        if etype == "build_start":
+            self.build_t0 = time.time()
+            self._emit_frame()
+
+        elif etype == "rule_start":
+            name = event.get("rule")
+            if name and name in self.node_states:
+                self.node_states[name] = "running"
+                self.node_start_times[name] = time.time()
+                self.log_lines[name] = []
                 self._emit_frame()
 
-        elif event_type == "rule_done":
-            rule_name = event.get("rule")
-            if rule_name and rule_name in self.node_states:
-                self.node_states[rule_name] = "sealed"
+        elif etype == "oracle_start":
+            name = event.get("rule")
+            if name and name in self.log_lines:
+                # Track oracle start for live elapsed display
+                self.oracle_start_times[name] = time.time()
+                self.oracle_tokens_in[name] = 0
+                self.oracle_tokens_out[name] = 0
+
+                # Show prompt preview (truncated from right, not left)
+                prompt = event.get("prompt_preview", "")
+                if prompt:
+                    short = prompt.replace("\n", " ")
+                    if len(short) > 42:
+                        short = short[:40] + ".."
+                    self.log_lines[name].append(short)
+
                 self._emit_frame()
 
-        elif event_type == "rule_sealed":
-            rule_name = event.get("rule")
-            if rule_name and rule_name in self.node_states:
-                self.node_states[rule_name] = "cached"
+        elif etype == "oracle_done":
+            name = event.get("rule")
+            if name and name in self.log_lines:
+                ti = event.get("tokens_in", 0)
+                to = event.get("tokens_out", 0)
+                cost = event.get("cost_usd", 0.0)
+                elapsed = event.get("elapsed", 0.0)
+
+                # Update with final values
+                parts = []
+                if elapsed > 0:
+                    parts.append(f"{elapsed:.2f}s")
+                if ti or to:
+                    parts.append(f"{ti} in")
+                    parts.append(f"{to} out")
+                if cost > 0:
+                    parts.append(f"${cost:.4f}")
+                if parts:
+                    self.log_lines[name].append(" \u00b7 ".join(parts))
+
+                # Clean up tracking
+                self.oracle_start_times.pop(name, None)
+                self.oracle_tokens_in.pop(name, None)
+                self.oracle_tokens_out.pop(name, None)
+
                 self._emit_frame()
 
-        elif event_type == "rule_halted":
-            rule_name = event.get("rule")
-            if rule_name and rule_name in self.node_states:
-                self.node_states[rule_name] = "failed"
+        elif etype == "tool_call":
+            name = event.get("rule")
+            if name and name in self.log_lines:
+                tool = event.get("tool", "?")
+                # Show tool calls during oracle execution
+                self.log_lines[name].append(f"\u2192 {tool}")
                 self._emit_frame()
 
-    def _emit_frame(self) -> None:
-        """Emit a frame showing current DAG state."""
-        from husks.cli.view import render_dag
-        from husks.cli.residue import CliOutput
+        elif etype == "tool_result":
+            name = event.get("rule")
+            if name and name in self.log_lines:
+                preview = event.get("result_preview", "")
+                if preview and self.verbose:
+                    # Only show detailed results in verbose mode
+                    short = preview[:50]
+                    if len(preview) > 50:
+                        short += ".."
+                    self.log_lines[name].append(f"  {short}")
+                self._emit_frame()
 
-        # Build lightweight residue for current frame
-        nodes = []
+        elif etype == "rule_done":
+            name = event.get("rule")
+            if name and name in self.node_states:
+                self.node_states[name] = "sealed"
+                if name in self.node_start_times:
+                    self.node_elapsed[name] = time.time() - self.node_start_times[name]
+                self.log_lines.pop(name, None)
+                self._emit_frame()
+
+        elif etype == "rule_sealed":
+            name = event.get("rule")
+            if name and name in self.node_states:
+                self.node_states[name] = "cached"
+                self.log_lines.pop(name, None)
+                self._emit_frame()
+
+        elif etype == "rule_halted":
+            name = event.get("rule")
+            if name and name in self.node_states:
+                self.node_states[name] = "failed"
+                if name in self.node_start_times:
+                    self.node_elapsed[name] = time.time() - self.node_start_times[name]
+                self.log_lines.pop(name, None)
+                self._emit_frame()
+
+    # -- frame rendering --
+
+    def _build_residue(self) -> CliResidue:
+        """Build a lightweight CliResidue snapshot for the current state."""
+        nodes: list[CliNode] = []
         for rule_name, state in self.node_states.items():
             rule = self.rules.get(rule_name, {})
 
-            # Beta 100: Show all nodes from frame 1 for stable tree
-            # Unrealized nodes appear with "unrealized" state (dimmed glyph)
-
-            # Build dependency list
             rule_inputs = set(rule.get("inputs", []))
             children = []
             for other_name, other_rule in self.rules.items():
@@ -78,41 +176,79 @@ class VerboseFrameEmitter:
                 if rule_inputs & other_outputs:
                     children.append(other_name)
 
+            # Live elapsed for running nodes
+            duration = None
+            if state == "running" and rule_name in self.node_start_times:
+                duration = time.time() - self.node_start_times[rule_name]
+            elif rule_name in self.node_elapsed:
+                duration = self.node_elapsed[rule_name]
+
             node = CliNode(
                 name=rule_name,
                 kind=rule.get("kind", "action"),
                 state=state,
                 children=children,
                 fuel_budget=rule.get("fuel"),
+                duration=duration,
             )
             nodes.append(node)
 
         # Reorder: target first
         target_name = self.design.get("target") or self.design.get("targets", [None])[0]
         if target_name and nodes:
-            target_idx = next((i for i, n in enumerate(nodes) if n.name == target_name), 0)
-            if target_idx > 0:
-                nodes.insert(0, nodes.pop(target_idx))
+            idx = next((i for i, n in enumerate(nodes) if n.name == target_name), 0)
+            if idx > 0:
+                nodes.insert(0, nodes.pop(idx))
 
-        # Build minimal residue for frame
-        residue = CliResidue(
+        # Compute live fuel used (count sealed/running nodes that had fuel)
+        fuel_used = 0
+        for n in nodes:
+            if n.state in ("sealed", "running") and n.fuel_budget:
+                fuel_used += 1  # approximate
+
+        return CliResidue(
             command="run",
             design_name=self.design.get("name", "unknown"),
-            site="<executing>",
-            cse_path="<pending>",
+            site=self.site or "<executing>",
             status="hydrating",
             target=target_name,
             fuel_budget=self.design.get("fuel", 0),
+            fuel_used=fuel_used,
             nodes=nodes,
             passes=[],
             fails=[],
         )
 
-        # Render and print frame
-        frame = render_dag(residue, verbose=False)  # Concise during execution
-        # Clear previous frame and print new one
-        # Simple approach: just print with separators
-        print("\n" + frame)
+    def _emit_frame(self) -> None:
+        """Render and emit the current frame."""
+        from husks.cli.view import render_dag
+
+        # Add live elapsed time for running oracles to log_lines
+        for name, start_time in list(self.oracle_start_times.items()):
+            if name in self.log_lines:
+                elapsed = time.time() - start_time
+                # Update or append live progress line
+                progress = f"running {elapsed:.1f}s"
+                # Replace last line if it's a progress line, otherwise append
+                if self.log_lines[name] and self.log_lines[name][-1].startswith("running "):
+                    self.log_lines[name][-1] = progress
+                else:
+                    self.log_lines[name].append(progress)
+
+        residue = self._build_residue()
+        frame = render_dag(residue, verbose=False, log_lines=self.log_lines)
+
+        if self.is_tty:
+            # Overwrite previous frame in-place
+            if self._last_frame_lines > 0:
+                sys.stdout.write(cursor_up(self._last_frame_lines) + CLEAR_DOWN)
+            sys.stdout.write(frame + "\n")
+            sys.stdout.flush()
+            self._last_frame_lines = frame.count("\n") + 1
+        else:
+            # Pipe mode: only emit on significant state changes
+            # (build_start and build_end are handled; emit all for now)
+            pass  # suppress intermediate frames when piped
 
 
 # ── Residue collectors (Beta Gate 95) ────────────────────────────────
@@ -327,6 +463,17 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
     report_data = assemble(S, T, design)
     oracle_calls = report_data.get("oracle_calls", 0)
 
+    # Compute husk hash (SHA256 of the .husk file)
+    import hashlib
+    import os
+    husk_hash = None
+    site_path = S.get("site")
+    if site_path:
+        husk_file = os.path.join(site_path, f"{design_name}.husk")
+        if os.path.isfile(husk_file):
+            with open(husk_file, 'rb') as f:
+                husk_hash = hashlib.sha256(f.read()).hexdigest()
+
     return CliResidue(
         command="run",
         design_name=design_name,
@@ -334,6 +481,7 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
         cse_path=cse_path,
         status=S.get("status", "unknown"),
         root=S.get("root"),
+        husk_hash=husk_hash,
         target=target_name,
         fuel_budget=design.get("fuel", 0),
         fuel_used=fuel_used,
@@ -403,17 +551,16 @@ def _cmd_run_hy(args):
 # ── check ─────────────────────────────────────────────────────────
 
 def _cmd_check(args, design):
-    """Check command - validate design and optionally overlay site states.
+    """Check command - validate design transport only.
 
-    Beta Gate 95: Uses residue→surface→view architecture.
+    Silent on success unless --verbose or --json provided.
     """
     from husks.cli.surface import emit_residue
-    from husks.cli.residue import map_manifest_state
 
-    # Step 1: Validate design (keep existing validation logic)
+    # Step 1: Validate design
     result = check_categorized(design)
     if not result["ok"]:
-        # Validation failed - show errors in old format (not yet residue-based)
+        # Validation failed - show errors
         if args.json_output:
             print(json.dumps(result, indent=2))
         else:
@@ -424,53 +571,14 @@ def _cmd_check(args, design):
                     print(f"    {err}")
         sys.exit(EXIT_BUILD_FAIL)
 
-    # Step 2: Validation passed - collect dry residue
-    residue = collect_dry_residue(design)
+    # Step 2: Validation passed
+    if args.json_output or args.verbose:
+        # Emit residue when requested
+        residue = collect_dry_residue(design)
+        output = emit_residue(residue, json_mode=args.json_output, verbose=args.verbose)
+        print(output)
+    # Otherwise silent on success
 
-    # Step 3: If --site provided, overlay freshness states from manifest
-    site = getattr(args, 'site', None)
-    if site:
-        try:
-            from husks.manifest import read_manifest, compute_rule_states
-            manifest = read_manifest(site)
-            if manifest:
-                rule_states = compute_rule_states(site, manifest)
-                # Update residue nodes with manifest states
-                state_by_name = {rs["name"]: rs for rs in rule_states}
-                for node in residue.nodes:
-                    if node.name in state_by_name:
-                        rs = state_by_name[node.name]
-                        node.state = map_manifest_state(rs["state"])
-                        node.stale_reason = rs.get("reason")
-                # Update residue metadata
-                residue.site = site
-                residue.root = manifest.get("root")
-                residue.status = "committed" if manifest.get("root") else "dry"
-
-                # Blocker #9: Update summary with category lists, not counts
-                # If site is sealed, update cse_path to show the .husk file
-                if manifest.get("root"):
-                    residue.cse_path = f"{design.get('name', 'unknown')}.husk"
-
-                # Build category lists based on conformance
-                all_sealed = all(n.state == "sealed" for n in residue.nodes)
-                has_stale = any(n.state in ("stale", "failed") for n in residue.nodes)
-
-                residue.passes = ["checks"]  # Design validated
-                if all_sealed:
-                    residue.passes.append("site")  # All nodes fresh
-                residue.fails = []
-                if has_stale:
-                    residue.fails.append("site")  # Some nodes stale
-        except Exception:
-            # Site not built or manifest missing - keep dry states
-            pass
-
-    # Step 4: Emit via surface layer
-    output = emit_residue(residue, json_mode=args.json_output, verbose=args.verbose)
-    print(output)
-
-    # Exit with appropriate code
     sys.exit(EXIT_OK)
 
 
@@ -498,15 +606,16 @@ def _cmd_run(args, design):
             overrides["oracle_backend"] = live_oracle
         overrides["oracle_model"] = args.model
 
-    # Blocker #6: For verbose mode, attach live frame emitter
-    # For non-verbose, suppress console trace (we use residue→surface→view instead)
+    # Suppress old Console listener; attach LiveFrameEmitter for non-JSON runs
     from husks.utils import trace as T_pre
     T_pre.clear_listeners()
 
-    verbose_emitter = None
-    if args.verbose:
-        verbose_emitter = VerboseFrameEmitter(design)
-        T_pre.add_listener(verbose_emitter)
+    live_emitter = None
+    if not args.json_output and not getattr(args, 'quiet', False):
+        live_emitter = LiveFrameEmitter(
+            design, verbose=args.verbose, site=overrides.get("site"),
+        )
+        T_pre.add_listener(live_emitter)
 
     # Beta Gate F/G: Catch setup/validation failures and emit JSON errors when --json specified
     try:
@@ -565,35 +674,40 @@ def _cmd_run(args, design):
         report = assemble(S, T, design)
         report_json = render_json(report)
         try:
-            from pathlib import Path
             Path(report_json_path).write_text(report_json)
         except Exception as e:
             print(f"error: failed to write --report-json to {report_json_path}: {e}",
                   file=sys.stderr)
             sys.exit(EXIT_BUILD_FAIL)
 
+    # Always write report into site for compare to find
+    from husks.report import assemble, render_json
+    if report_json_path:
+        # Report already assembled above for sidecar; reuse it
+        site_report = report
+    else:
+        report = assemble(S, T, design)
+        site_report = report
+    site_report_path = Path(S["site"]) / ".traces" / "report.json"
+    site_report_path.parent.mkdir(parents=True, exist_ok=True)
+    site_report_path.write_text(render_json(site_report))
+
     # Determine primary output mode
     if args.json_output:
-        # JSON to stdout
-        from husks.report import assemble, render_json
-        report = assemble(S, T, design)
+        # JSON to stdout (reuse already-assembled report)
         report_json = render_json(report)
         print(report_json)
     else:
         # Visual output: use residue→surface→view
         from husks.cli.surface import emit_residue
-        residue = collect_hydrated_residue(S, T, design)
 
-        # Blocker #6: For verbose mode, frames were already emitted during execution
-        # Emit final summary frame with full details
-        if args.verbose:
-            # Emit final frame with verbose details (trace drawers, etc.)
-            output = emit_residue(residue, json_mode=False, verbose=True)
-            print(output)
-        else:
-            # Non-verbose: single frame with final state
-            output = emit_residue(residue, json_mode=False, verbose=False)
-            print(output)
+        # Overwrite live emitter's last frame with authoritative final frame
+        if live_emitter and live_emitter.is_tty and live_emitter._last_frame_lines > 0:
+            sys.stdout.write(cursor_up(live_emitter._last_frame_lines) + CLEAR_DOWN)
+
+        residue = collect_hydrated_residue(S, T, design)
+        output = emit_residue(residue, json_mode=False, verbose=args.verbose)
+        print(output)
 
     # Preserve exit code logic
     if S.get("status") == "halted" and not args.soft_fail:

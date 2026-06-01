@@ -292,29 +292,25 @@ def test_wheel_build_and_install():
             f"stderr: {m3_result.stderr}"
         )
 
-        m3_report_file = Path(tmpdir) / "m3.json"
-        m3_report_file.write_text(m3_result.stdout)
-
-        # Compare the three runs
+        # Compare the three sites (reads .traces/report.json automatically)
         compare_result = subprocess.run(
-            [str(venv_python), "-m", "husks.cli", "compare-runs",
-             str(m1_report_file), str(m2_report_file), str(m3_report_file), "--json"],
+            [str(venv_python), "-m", "husks.cli", "compare",
+             str(m1_site), str(m2_site), str(m3_site), "--json"],
             capture_output=True,
             text=True,
             timeout=30,
         )
 
         assert compare_result.returncode == 0, (
-            f"compare-runs failed:\n"
+            f"compare failed:\n"
             f"stdout: {compare_result.stdout}\n"
             f"stderr: {compare_result.stderr}"
         )
 
         comparison = json.loads(compare_result.stdout)
-        assert comparison["reports"] == 3, "Should compare 3 reports"
         assert comparison["equivalent"] is True, (
             f"Three-machine proof should pass\n"
-            f"Violations: {comparison.get('violations', [])}"
+            f"Proof: {comparison.get('proof', {})}"
         )
 
         # Test 4: Verify conformance vectors are included

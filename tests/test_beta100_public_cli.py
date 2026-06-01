@@ -24,7 +24,7 @@ def test_beta100_public_three_machine_from_init(tmp_path):
     4. M1 exports cache
     5. M2 imports cache, reuses at zero oracle cost
     6. M3 independently re-realizes with comparable expense
-    7. compare-runs proves equivalence
+    7. compare proves equivalence (three-machine proof with 3 sites)
 
     This test should fail until beta 100 is fully implemented.
     """
@@ -41,7 +41,7 @@ def test_beta100_public_three_machine_from_init(tmp_path):
     check_v = run_husks_cli("check", str(design), "--verbose", cwd=project)
     assert check_v.returncode == 0, f"check --verbose failed: {check_v.stderr}"
     assert "core-bootstrap" in check_v.stdout
-    assert "cse:none" in check_v.stdout or "cse:" in check_v.stdout
+    assert "checked" in check_v.stdout or "design" in check_v.stdout
     assert "□ validate" in check_v.stdout or "validate" in check_v.stdout
     assert "□ generate" in check_v.stdout or "generate" in check_v.stdout
 
@@ -61,7 +61,7 @@ def test_beta100_public_three_machine_from_init(tmp_path):
         cwd=project
     )
     assert r1.returncode == 0, f"M1 run failed: {r1.stderr}"
-    assert "cse:core-bootstrap.husk" in r1.stdout or "core-bootstrap.husk" in r1.stdout
+    assert "core-bootstrap" in r1.stdout
     assert "■ validate" in r1.stdout or "validate" in r1.stdout
     assert "■ generate" in r1.stdout or "◆ generate" in r1.stdout or "generate" in r1.stdout
 
@@ -120,25 +120,26 @@ def test_beta100_public_three_machine_from_init(tmp_path):
     # Step 9: Status shows realization state for each site
     for site_name, site_path in [("m1", m1), ("m2", m2), ("m3", m3)]:
         status_result = run_husks_cli(
-            "status", str(design), "--site", str(site_path), "--verbose",
+            "status", str(site_path), "--verbose",
             cwd=project
         )
         assert status_result.returncode == 0, f"status --verbose failed for {site_name}: {status_result.stderr}"
-        assert "cse:core-bootstrap.husk" in status_result.stdout or "core-bootstrap" in status_result.stdout
+        assert "core-bootstrap" in status_result.stdout
 
-    # Step 10: Compare runs to prove three-machine equivalence
+    # Step 10: Compare sites to prove three-machine equivalence
+    # (compare now reads .traces/report.json from each site automatically)
     cmp = run_husks_cli(
-        "compare-runs",
-        str(m1_json),
-        str(m2_json),
-        str(m3_json),
+        "compare",
+        str(m1),
+        str(m2),
+        str(m3),
         "--json",
         cwd=project
     )
-    assert cmp.returncode == 0, f"compare-runs failed: {cmp.stderr}"
+    assert cmp.returncode == 0, f"compare failed: {cmp.stderr}"
 
     cmp_data = json.loads(cmp.stdout)
-    assert cmp_data["equivalent"] is True, "Three-machine runs not equivalent"
+    assert cmp_data["equivalent"] is True, "Three-machine sites not equivalent"
 
     # Verify M2 reuse proof
     m2_data = json.loads(m2_json.read_text())
@@ -173,28 +174,31 @@ def test_beta100_status_command(tmp_path):
     )
     assert run_result.returncode == 0
 
-    # Status should work without --verbose (minimal output)
-    status_quiet = run_husks_cli("status", str(design), "--site", str(site), cwd=project)
+    # Status should work without --verbose (summary output)
+    status_quiet = run_husks_cli("status", str(site), cwd=project)
     assert status_quiet.returncode == 0
+    assert "core-bootstrap" in status_quiet.stdout
+    assert "sealed" in status_quiet.stdout
 
     # Status with --verbose shows full view
     status_v = run_husks_cli(
-        "status", str(design), "--site", str(site), "--verbose",
+        "status", str(site), "--verbose",
         cwd=project
     )
     assert status_v.returncode == 0
-    assert "cse:core-bootstrap.husk" in status_v.stdout or "core-bootstrap" in status_v.stdout
-    assert "site:" in status_v.stdout or str(site.name) in status_v.stdout
+    assert "core-bootstrap" in status_v.stdout
 
     # Status with --json
     status_j = run_husks_cli(
-        "status", str(design), "--site", str(site), "--json",
+        "status", str(site), "--json",
         cwd=project
     )
     assert status_j.returncode == 0
     status_data = json.loads(status_j.stdout)
-    assert status_data["command"] == "status"
-    assert "nodes" in status_data
+    assert status_data["name"] == "core-bootstrap"
+    assert status_data["state"] == "sealed"
+    assert "root" in status_data
+    assert "husk" in status_data
 
 
 @pytest.mark.beta
@@ -206,11 +210,10 @@ def test_beta100_check_silent_on_pass(tmp_path):
     run_husks_cli("init", str(project))
     design = project / "core-bootstrap.json"
 
-    # Check without flags should be silent (or minimal) on success
+    # Check without flags should be silent
     check_result = run_husks_cli("check", str(design), cwd=project)
     assert check_result.returncode == 0
-    # Should be very minimal output or completely silent
-    # This is the contract - no verbose output by default
+    assert check_result.stdout.strip() == "", "check should be silent on success"
 
     # With --verbose, should show DAG
     check_v = run_husks_cli("check", str(design), "--verbose", cwd=project)

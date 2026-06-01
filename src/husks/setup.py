@@ -336,18 +336,20 @@ _CORE_BOOTSTRAP_HY = textwrap.dedent("""\
     """)
 
 
-def _write_if(path: Path, content: str, force: bool) -> bool:
+def _write_if(path: Path, content: str, force: bool, verbose: bool = False) -> bool:
     """Write content to path if it doesn't exist or force is set. Returns True if written."""
     if path.exists() and not force:
-        print(f"        {path.name} exists (use --force to overwrite)")
+        if verbose:
+            print(f"        {path.name} exists (use --force to overwrite)")
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
-    print(f"        wrote {path.relative_to(path.parent.parent) if path.parent.parent != path.parent else path.name}")
+    if verbose:
+        print(f"        wrote {path.relative_to(path.parent.parent) if path.parent.parent != path.parent else path.name}")
     return True
 
 
-def _copy_spec_files(target: Path) -> bool:
+def _copy_spec_files(target: Path, verbose: bool = False) -> bool:
     """Copy CSE spec files from the package to the target spec/ directory."""
     # Find the spec files - they should be in the repo or bundled with the package
     pkg_root = Path(__file__).resolve().parent
@@ -365,12 +367,14 @@ def _copy_spec_files(target: Path) -> bool:
             break
 
     if spec_dir is None:
-        print("  warning: could not find CSE spec files, creating placeholders", file=sys.stderr)
+        if verbose:
+            print("  warning: could not find CSE spec files, creating placeholders", file=sys.stderr)
         # Create minimal placeholders
         (target / "spec").mkdir(parents=True, exist_ok=True)
         (target / "spec" / "CSE-v1.md").write_text("# CSE v1 specification\n\n(Placeholder - install husks with spec files)\n")
         (target / "spec" / "CSE-v2.md").write_text("# CSE v2 clarifications\n\n(Placeholder - install husks with spec files)\n")
-        print("        created spec/ directory with placeholders")
+        if verbose:
+            print("        created spec/ directory with placeholders")
         return True
 
     # Copy the actual spec files
@@ -380,24 +384,26 @@ def _copy_spec_files(target: Path) -> bool:
         src = spec_dir / fname
         dst = target / "spec" / fname
         if dst.exists():
-            print(f"        spec/{fname} exists")
+            if verbose:
+                print(f"        spec/{fname} exists")
         else:
             shutil.copy2(src, dst)
-            print(f"        copied spec/{fname}")
+            if verbose:
+                print(f"        copied spec/{fname}")
     return True
 
 
-def _scaffold_core_bootstrap(target: Path, force: bool, emit_hy: bool) -> bool:
+def _scaffold_core_bootstrap(target: Path, force: bool, emit_hy: bool, verbose: bool = False) -> bool:
     """Scaffold the core-bootstrap beta seed project."""
     # 1. Create core-bootstrap.json
     _write_if(
         target / "core-bootstrap.json",
         json.dumps(_CORE_BOOTSTRAP_DESIGN, indent=2) + "\n",
-        force
+        force, verbose=verbose,
     )
 
     # 2. Copy spec files
-    _copy_spec_files(target)
+    _copy_spec_files(target, verbose=verbose)
 
     # 3. Create .gitignore
     gitignore_content = textwrap.dedent("""\
@@ -420,23 +426,23 @@ def _scaffold_core_bootstrap(target: Path, force: bool, emit_hy: bool) -> bool:
         __pycache__/
         *.pyc
         """)
-    _write_if(target / ".gitignore", gitignore_content, force)
+    _write_if(target / ".gitignore", gitignore_content, force, verbose=verbose)
 
     # 4. Optionally create bootstrap.hy
     if emit_hy:
-        _write_if(target / "bootstrap.hy", _CORE_BOOTSTRAP_HY, force)
+        _write_if(target / "bootstrap.hy", _CORE_BOOTSTRAP_HY, force, verbose=verbose)
 
     return True
 
 
-def _scaffold_template(target: Path, template: str, force: bool, emit_hy: bool = False) -> bool:
+def _scaffold_template(target: Path, template: str, force: bool, emit_hy: bool = False, verbose: bool = False) -> bool:
     """Scaffold project files for the given template. Returns True on success."""
     if template == "core-bootstrap":
-        return _scaffold_core_bootstrap(target, force, emit_hy)
+        return _scaffold_core_bootstrap(target, force, emit_hy, verbose=verbose)
     elif template == "demo":
         _write_if(target / "design.json",
-                  json.dumps(_DEMO_DESIGN, indent=2) + "\n", force)
-        _write_if(target / "check-greeting.py", _DEMO_CHECK_GREETING, force)
+                  json.dumps(_DEMO_DESIGN, indent=2) + "\n", force, verbose=verbose)
+        _write_if(target / "check-greeting.py", _DEMO_CHECK_GREETING, force, verbose=verbose)
         # Also write a gitignore for build artifacts
         gitignore_content = textwrap.dedent("""\
             # Husks build artifacts
@@ -445,7 +451,7 @@ def _scaffold_template(target: Path, template: str, force: bool, emit_hy: bool =
             validation-report.txt
             VERIFIED
             """)
-        _write_if(target / ".gitignore", gitignore_content, force)
+        _write_if(target / ".gitignore", gitignore_content, force, verbose=verbose)
         return True
     else:
         print(f"  error: unknown template '{template}'", file=sys.stderr)
@@ -461,47 +467,67 @@ def _ensure_gitignored(target: Path, entry: str):
             f.write(("" if not lines or lines[-1] == "" else "\n") + entry + "\n")
 
 
-def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True, force=False):
-    """Scaffold a Husks project and wire it to Claude Code."""
+def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True, force=False, verbose=False):
+    """Scaffold a Husks project and wire it to Claude Code.
+
+    Default: silent on success (prints nothing except errors).
+    With --verbose: shows diamond banner and step-by-step detail.
+    """
+    from husks.utils.console import BOLD, DIM, CYAN, RESET, render_banner
+
     target = Path(target).resolve()
     target.mkdir(parents=True, exist_ok=True)
-    print(f"  husks init → {target}\n")
+
+    # Determine design name from template
+    design_file = "core-bootstrap.json" if template == "core-bootstrap" else "design.json"
+    design_name = template
+
+    # ── verbose: banner ──────────────────────────────────────────────
+    if verbose:
+        banner = render_banner("dry", [
+            f"{BOLD}name{RESET}:  {design_name}",
+            f"{BOLD}state{RESET}: {DIM}init{RESET}",
+            "",
+            "",
+            f"{BOLD}site{RESET}:  {target}",
+        ])
+        print(banner)
+        print()
 
     # 1. scaffold template files
-    print(f"  [1/5] scaffolding '{template}' template")
-    if not _scaffold_template(target, template, force, emit_hy):
+    if verbose:
+        print(f"  {BOLD}scaffold{RESET}")
+        print(f"  {DIM}{'─' * 58}{RESET}")
+    if not _scaffold_template(target, template, force, emit_hy, verbose=verbose):
         return 1
-    print()
 
-    # 2. soundness gate — refuse to wire up an engine that doesn't verify
-    print("  [2/5] verifying engine soundness")
+    # 2. soundness gate
+    if verbose:
+        print(f"  {DIM}selftest{RESET}", end="", flush=True)
     if not selftest(verbose=False):
-        print("\n  aborted: engine selftest failed. Fix conformance before wiring up.",
-              file=sys.stderr)
+        print("\n  error: engine selftest failed", file=sys.stderr)
         return 1
-    print("        engine soundness verified ✓")
-    print()
+    if verbose:
+        print(f"  {CYAN}ok{RESET}")
 
     # 3. API key
-    print("  [3/5] checking ANTHROPIC_API_KEY")
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        print("        present in environment ✓")
-    else:
+    has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    if not has_key:
         env = target / ".env"
         if not env.exists():
             env.write_text("ANTHROPIC_API_KEY=\n")
         _ensure_gitignored(target, ".env")
-        print("        not set. Wrote .env placeholder (gitignored).")
-        print("        Fill it in, then:  set -a && source .env")
-        print("        (needed only for live runs, not --stub)")
-    print()
+    if verbose:
+        if has_key:
+            print(f"  {DIM}api key{RESET}  {CYAN}ok{RESET}")
+        else:
+            print(f"  {DIM}api key{RESET}  not set (fill .env for live runs)")
 
     # 4. Claude Code skill hookup
-    print("  [4/5] wiring the husks skill into Claude Code")
     if claude_code:
         skill_src = _skill_dir()
         if not (skill_src / "SKILL.md").exists():
-            print(f"        error: skill not found at {skill_src}", file=sys.stderr)
+            print(f"  error: skill not found at {skill_src}", file=sys.stderr)
             return 1
         skills_dir = target / ".claude" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
@@ -514,41 +540,34 @@ def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True,
                     import shutil
                     shutil.rmtree(link)
             else:
-                print(f"        {link} exists (use --force to replace)")
                 link = None
         if link is not None:
             import shutil
             if skill_is_packaged():
-                # wheel install: copy out of site-packages (don't symlink into it)
                 shutil.copytree(skill_src, link)
-                print(f"        copied skill → .claude/skills/husks")
             else:
                 try:
                     link.symlink_to(skill_src, target_is_directory=True)
-                    print(f"        symlinked .claude/skills/husks → {skill_src}")
                 except OSError:
                     shutil.copytree(skill_src, link)
-                    print(f"        copied skill → .claude/skills/husks (symlink unavailable)")
-    else:
-        print("        skipped (--no-claude-code)")
-    print()
+        if verbose:
+            print(f"  {DIM}skill{RESET}    {CYAN}ok{RESET}")
 
     # 5. CLAUDE.md
-    print("  [5/5] emitting CLAUDE.md (canonical stance)")
     claude_md = target / "CLAUDE.md"
-    if claude_md.exists() and not force:
-        print(f"        {claude_md} exists (use --force to overwrite)")
-    else:
+    if not claude_md.exists() or force:
         claude_md.write_text(CLAUDE_MD)
-        print("        wrote CLAUDE.md")
-    print()
+    if verbose:
+        print(f"  {DIM}CLAUDE.md{RESET} {CYAN}ok{RESET}")
 
-    # Success message - show appropriate commands for the template
+    # ── footer ───────────────────────────────────────────────────────
+    if verbose:
+        print(f"  {DIM}{'─' * 58}{RESET}")
+
     rel = os.path.relpath(target)
-    design_file = "core-bootstrap.json" if template == "core-bootstrap" else "design.json"
-
-    print("  done. Next:")
-    print(f"    cd {rel}")
-    print(f"    husks check {design_file} --verbose")
-    print(f"    husks run {design_file} --site m1 --stub --verbose")
+    print()
+    print(f"  {DIM}cd {rel}{RESET}")
+    print(f"  {DIM}husks check {design_file} --verbose{RESET}")
+    print(f"  {DIM}husks run {design_file} --site m1 --stub{RESET}")
+    print()
     return 0

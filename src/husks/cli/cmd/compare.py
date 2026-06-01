@@ -1,198 +1,75 @@
-"""All _cmd_* command functions."""
+"""Compare command: pairwise artifact equivalence + three-machine proof."""
 
 from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE
+from husks.utils.console import (
+    BOLD, DIM, RESET, GREEN, RED, CYAN, W,
+    render_banner, _visible_len,
+)
 
 
-def _cmd_compare(args):
-    """Compare artifact equivalence across sites (Beta Gate C6/C7).
+def _load_site_reports(sites, *, json_output: bool):
+    """Load .traces/report.json from each site directory.
 
-    Compares build roots, output hashes, and seal validity across
-    multiple sites to verify cross-machine equivalence.
-    """
-    from husks.manifest import compare_artifacts
-
-    if len(args.sites) < 2:
-        print("error: compare requires at least 2 sites", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    # Determine comparison modes
-    check_roots = not args.hashes_only
-    check_hashes = not args.roots_only
-
-    # Pairwise comparison of all sites
-    sites = args.sites
-    comparisons = []
-    all_equivalent = True
-
-    for i in range(len(sites)):
-        for j in range(i + 1, len(sites)):
-            site_a = sites[i]
-            site_b = sites[j]
-
-            result = compare_artifacts(
-                site_a, site_b,
-                check_roots=check_roots,
-                check_hashes=check_hashes,
-            )
-
-            comparisons.append({
-                "site_a": site_a,
-                "site_b": site_b,
-                "equivalent": result["equivalent"],
-                "differences": result["differences"],
-                "details": result["details"],
-            })
-
-            if not result["equivalent"]:
-                all_equivalent = False
-
-    # Output results
-    if args.json_output:
-        # Beta Gate C7: Machine-readable JSON only, no console noise
-        output = {
-            "equivalent": all_equivalent,
-            "comparisons": comparisons,
-        }
-        print(json.dumps(output, indent=2))
-    else:
-        # Human-readable output
-        print()
-        print(f"Comparing {len(sites)} sites:")
-        for site in sites:
-            print(f"  • {site}")
-        print()
-
-        for cmp in comparisons:
-            site_a_short = cmp["site_a"].split("/")[-1] or cmp["site_a"]
-            site_b_short = cmp["site_b"].split("/")[-1] or cmp["site_b"]
-
-            if cmp["equivalent"]:
-                print(f"  ✓ {site_a_short} ≡ {site_b_short}")
-            else:
-                print(f"  ✗ {site_a_short} ≠ {site_b_short}")
-                for diff in cmp["differences"]:
-                    print(f"      - {diff}")
-        print()
-
-        if all_equivalent:
-            print("  All sites are equivalent ✓")
-        else:
-            print("  Sites differ ✗")
-        print()
-
-    sys.exit(EXIT_OK if all_equivalent else EXIT_BUILD_FAIL)
-
-
-def _cmd_compare_runs(args):
-    """Compare JSON reports from multiple runs (Beta Gate C/F/G).
-
-    Validates the three-machine proof:
-    - M1: paid_cost > 0, oracle_calls > 0
-    - M2: paid_cost = 0, oracle_calls = 0, cache_hits > 0, cached_nodes nonempty
-    - M3: paid_cost comparable to M1, oracle_calls comparable to M1
-    - All: same build root (artifact equivalence)
-
-    Task 1/2/3: Hardened to require explicit cache reuse evidence in M2
-    (cached=true flag), not just zero cost. Reports must pass schema validation.
-
-    Task 4/7 (New): Does NOT rely on cost.reused_estimate/projected_estimate fields
-    (non-authoritative estimates). Uses authoritative fields: paid_cost, oracle_calls,
-    cache_hits, cached_nodes.
+    Returns a list of {"path": ..., "data": ...} dicts for sites that have
+    reports.  Sites missing reports are returned in a separate skip list.
     """
     from husks.report import validate_report_schema
 
-    if len(args.reports) < 2:
-        print("error: compare-runs requires at least 2 report files", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    # Load all reports
     reports = []
-    for path in args.reports:
+    skipped = []
+
+    for site in sites:
+        report_path = Path(site) / ".traces" / "report.json"
+        if not report_path.exists():
+            skipped.append(site)
+            continue
         try:
-            with open(path, 'r') as f:
-                report = json.load(f)
+            data = json.loads(report_path.read_text())
+            valid, errors = validate_report_schema(data)
+            if not valid:
+                skipped.append(site)
+                if not json_output:
+                    print(f"  warning: {site}/.traces/report.json failed schema validation, skipping proof",
+                          file=sys.stderr)
+                continue
+            reports.append({"path": str(report_path), "data": data})
+        except (json.JSONDecodeError, OSError):
+            skipped.append(site)
 
-                # Task 2: Validate report schema before processing
-                valid, errors = validate_report_schema(report)
-                if not valid:
-                    if args.json_output:
-                        # Output JSON error for failed schema validation
-                        error_output = {
-                            "reports": 0,
-                            "equivalent": False,
-                            "violations": [f"Report {path} failed schema validation"] + errors,
-                            "error": "schema_validation_failed"
-                        }
-                        print(json.dumps(error_output, indent=2))
-                    else:
-                        print(f"error: report {path} failed schema validation:", file=sys.stderr)
-                        for e in errors:
-                            print(f"  - {e}", file=sys.stderr)
-                    sys.exit(EXIT_USAGE)
+    return reports, skipped
 
-                reports.append({"path": path, "data": report})
-        except FileNotFoundError:
-            if args.json_output:
-                error_output = {
-                    "reports": 0,
-                    "equivalent": False,
-                    "violations": [f"Report file not found: {path}"],
-                    "error": "file_not_found"
-                }
-                print(json.dumps(error_output, indent=2))
-            else:
-                print(f"error: report file not found: {path}", file=sys.stderr)
-            sys.exit(EXIT_USAGE)
-        except json.JSONDecodeError as e:
-            if args.json_output:
-                error_output = {
-                    "reports": 0,
-                    "equivalent": False,
-                    "violations": [f"Invalid JSON in {path}: {e}"],
-                    "error": "json_decode_error"
-                }
-                print(json.dumps(error_output, indent=2))
-            else:
-                print(f"error: invalid JSON in {path}: {e}", file=sys.stderr)
-            sys.exit(EXIT_USAGE)
 
-    # Task 1 (New Task): Validate all reports have status == "committed"
-    # CRITICAL: compare-runs should reject halted/error runs
-    for i, r in enumerate(reports):
-        status = r["data"].get("status")
-        if status != "committed":
-            if args.json_output:
-                error_output = {
-                    "reports": len(reports),
-                    "equivalent": False,
-                    "violations": [
-                        f"Report {i+1} ({r['path']}) has status '{status}', expected 'committed'"
-                    ],
-                    "error": "non_committed_status"
-                }
-                print(json.dumps(error_output, indent=2))
-            else:
-                print(
-                    f"error: report {i+1} ({r['path']}) has status '{status}', expected 'committed'",
-                    file=sys.stderr
-                )
-            sys.exit(EXIT_BUILD_FAIL)
+def _three_machine_proof(reports, *, json_output: bool):
+    """Run three-machine proof checks on loaded report dicts.
 
-    # Analyze reports
-    # Beta Readiness Task 1: Separate violations from warnings
+    Returns a comparison dict with equivalent, checks, violations, etc.
+    """
     comparison = {
         "reports": len(reports),
         "runs": [],
         "checks": {},
         "equivalent": True,
         "violations": [],
-        "warnings": [],  # Non-fatal issues
+        "warnings": [],
     }
+
+    # Validate all reports have status == "committed"
+    for i, r in enumerate(reports):
+        status = r["data"].get("status")
+        if status != "committed":
+            comparison["violations"].append(
+                f"Report {i+1} ({r['path']}) has status '{status}', expected 'committed'"
+            )
+            comparison["equivalent"] = False
+
+    if not comparison["equivalent"]:
+        return comparison
 
     # Extract key metrics from each report
     for i, r in enumerate(reports):
@@ -200,39 +77,30 @@ def _cmd_compare_runs(args):
         run_info = {
             "index": i,
             "path": r["path"],
-            "status": data.get("status"),  # Now guaranteed to be "committed"
+            "status": data.get("status"),
             "cost_paid": data.get("cost", {}).get("paid", 0.0),
-            # Task 7 (New): Support both old and new field names for backward compat
             "cost_reused": data.get("cost", {}).get("reused_estimate",
                                                       data.get("cost", {}).get("reused", 0.0)),
             "root": data.get("root"),
         }
 
-        # Task 3 (New): Use oracle evidence from report if available (schema v2+)
-        # Otherwise reconstruct from node-level data (backward compatibility)
         if "oracle_calls" in data and "cache_hits" in data and "cached_nodes" in data:
-            # Report provides oracle evidence directly (Task 3)
             oracle_calls = data["oracle_calls"]
             cache_hits = data["cache_hits"]
             cached_node_names = data["cached_nodes"]
         else:
-            # Fall back to reconstruction from node data (for old reports)
             oracle_calls = 0
             cache_hits = 0
             cached_node_names = []
 
             for node in data.get("nodes", []):
                 if node.get("kind") == "oracle":
-                    # Oracle fired in this run (paid cost)
                     if node.get("state") == "fired" and node.get("cost", {}).get("this_run", 0) > 0:
                         oracle_calls += 1
-                    # Task 4: Oracle reused from cache - require EXPLICIT cached=true
-                    # (state="sealed" alone doesn't prove cache reuse, could be local seal)
                     elif node.get("cached") is True:
                         cache_hits += 1
                         cached_node_names.append(node["name"])
 
-        # Collect oracle node names for reporting
         oracle_nodes = []
         for node in data.get("nodes", []):
             if node.get("kind") == "oracle":
@@ -241,7 +109,7 @@ def _cmd_compare_runs(args):
         run_info["oracle_calls"] = oracle_calls
         run_info["cache_hits"] = cache_hits
         run_info["oracle_nodes"] = oracle_nodes
-        run_info["cached_nodes"] = cached_node_names  # Task 3: Explicit evidence
+        run_info["cached_nodes"] = cached_node_names
 
         comparison["runs"].append(run_info)
 
@@ -249,37 +117,32 @@ def _cmd_compare_runs(args):
     if len(reports) == 3:
         m1, m2, m3 = comparison["runs"]
 
-        # Task 2 (New): M1 must have oracle evidence (oracle_calls > 0)
-        # Not just cost > 0, which could be mocked
+        # M1 must have oracle evidence
         if m1["oracle_calls"] == 0:
             comparison["violations"].append("M1 should have oracle_calls > 0 (must fire oracles)")
             comparison["equivalent"] = False
         else:
             comparison["checks"]["m1_oracle_evidence"] = True
 
-        # Check: M1 paid oracle cost
         if m1["cost_paid"] <= 0:
             comparison["violations"].append("M1 should have oracle cost > 0")
             comparison["equivalent"] = False
         else:
             comparison["checks"]["m1_paid_cost"] = True
 
-        # Task 1: M2 must have EVIDENCE of cache reuse, not just zero cost
-        # Check: M2 had zero oracle calls
+        # M2 must have cache reuse evidence
         if m2["oracle_calls"] > 0:
             comparison["violations"].append(f"M2 should have 0 oracle calls, got {m2['oracle_calls']}")
             comparison["equivalent"] = False
         else:
             comparison["checks"]["m2_zero_oracle_calls"] = True
 
-        # Check: M2 paid zero cost
         if m2["cost_paid"] != 0.0:
             comparison["violations"].append(f"M2 should have cost = 0, got {m2['cost_paid']}")
             comparison["equivalent"] = False
         else:
             comparison["checks"]["m2_zero_cost"] = True
 
-        # Task 1/3: Check M2 has explicit cache reuse evidence
         if m2["cache_hits"] == 0:
             comparison["violations"].append(
                 "M2 should have cache_hits > 0 (evidence of reuse), got 0"
@@ -288,7 +151,6 @@ def _cmd_compare_runs(args):
         else:
             comparison["checks"]["m2_has_cache_hits"] = True
 
-        # Task 1/3: Verify M2 actually has cached nodes with evidence
         if len(m2["cached_nodes"]) == 0:
             comparison["violations"].append(
                 "M2 should have cached oracle nodes (sealed or cached=True), found none"
@@ -297,30 +159,27 @@ def _cmd_compare_runs(args):
         else:
             comparison["checks"]["m2_cached_node_evidence"] = True
 
-        # Task 2 (New): M3 must have oracle evidence (oracle_calls > 0)
-        # Not just cost > 0, which could be mocked
+        # M3 must have oracle evidence
         if m3["oracle_calls"] == 0:
             comparison["violations"].append("M3 should have oracle_calls > 0 (must fire oracles)")
             comparison["equivalent"] = False
         else:
             comparison["checks"]["m3_oracle_evidence"] = True
 
-        # Check: M3 paid comparable cost to M1
         if m3["cost_paid"] <= 0:
             comparison["violations"].append("M3 should have oracle cost > 0")
             comparison["equivalent"] = False
         else:
             comparison["checks"]["m3_paid_cost"] = True
 
-        # Beta Hardening Task 3/4: Cross-check proof fields against actual nodes
-        # Don't allow empty nodes lists to pass (Task 4)
+        # Cross-check proof fields against actual nodes
         for i, run in enumerate([m1, m2, m3], 1):
             nodes = reports[i-1]["data"].get("nodes", [])
             if len(nodes) == 0:
                 comparison["violations"].append(f"M{i} has empty nodes list (invalid proof)")
                 comparison["equivalent"] = False
 
-        # Beta Hardening Task 3: M1 must have actual oracle nodes that fired
+        # M1 must have actual oracle nodes that fired
         m1_nodes = reports[0]["data"].get("nodes", [])
         m1_fired_oracles = [
             n for n in m1_nodes
@@ -337,7 +196,7 @@ def _cmd_compare_runs(args):
         else:
             comparison["checks"]["m1_node_level_oracle_evidence"] = True
 
-        # Beta Hardening Task 3: M3 must have actual oracle nodes that fired
+        # M3 must have actual oracle nodes that fired
         m3_nodes = reports[2]["data"].get("nodes", [])
         m3_fired_oracles = [
             n for n in m3_nodes
@@ -354,7 +213,7 @@ def _cmd_compare_runs(args):
         else:
             comparison["checks"]["m3_node_level_oracle_evidence"] = True
 
-        # Beta Hardening Task 3: M2 must have actual cached oracle nodes
+        # M2 must have actual cached oracle nodes
         m2_nodes = reports[1]["data"].get("nodes", [])
         m2_cached_oracles = [
             n for n in m2_nodes
@@ -368,7 +227,7 @@ def _cmd_compare_runs(args):
         else:
             comparison["checks"]["m2_node_level_cache_evidence"] = True
 
-        # Beta Hardening Task 3: Verify cached_nodes names real oracle nodes
+        # Verify cached_nodes names real oracle nodes
         m2_oracle_names = {n["name"] for n in m2_nodes if n.get("kind") == "oracle"}
         for cached_name in m2["cached_nodes"]:
             if cached_name not in m2_oracle_names:
@@ -379,8 +238,7 @@ def _cmd_compare_runs(args):
         if all(name in m2_oracle_names for name in m2["cached_nodes"]):
             comparison["checks"]["m2_cached_nodes_valid"] = True
 
-        # Beta 100: Three-machine relation with scoped equivalence
-        # Check 1: Cache path is deterministic (M1 root == M2 root exactly)
+        # Cache path determinism (M1 root == M2 root)
         m1_root = reports[0]["data"].get("root")
         m2_root = reports[1]["data"].get("root")
         if m1_root and m2_root:
@@ -392,11 +250,7 @@ def _cmd_compare_runs(args):
                 )
                 comparison["equivalent"] = False
 
-        # Check 2: M3 validator-bounded acceptance
-        # Build node->outputs map for M1 and M3 by path
-        m1_nodes = reports[0]["data"].get("nodes", [])
-        m3_nodes = reports[2]["data"].get("nodes", [])
-
+        # M3 validator-bounded acceptance
         m1_outputs_by_node = {}
         m3_outputs_by_node = {}
 
@@ -412,7 +266,6 @@ def _cmd_compare_runs(args):
             if name and outputs:
                 m3_outputs_by_node[name] = {out["path"]: out["hash"] for out in outputs}
 
-        # Compare acceptance outputs (exact) only, exclude free outputs
         acceptance_outputs = []
         free_outputs = []
         acceptance_match = True
@@ -428,7 +281,7 @@ def _cmd_compare_runs(args):
             m3_outs = m3_outputs_by_node[name]
 
             for path in m1_outs.keys():
-                relation = equivalence.get(path, "exact")  # Default to exact
+                relation = equivalence.get(path, "exact")
 
                 if relation == "free":
                     free_outputs.append(path)
@@ -436,7 +289,6 @@ def _cmd_compare_runs(args):
 
                 acceptance_outputs.append(path)
 
-                # Must match exactly
                 if m1_outs.get(path) != m3_outs.get(path):
                     comparison["violations"].append(
                         f"M3 acceptance divergence: {path} hash mismatch "
@@ -448,7 +300,7 @@ def _cmd_compare_runs(args):
         if acceptance_match and acceptance_outputs:
             comparison["checks"]["m3_declared_equivalence"] = True
 
-        # Check 3: Cost comparability with declared tolerance
+        # Cost comparability with declared tolerance
         cost_tolerance = reports[0]["data"].get("cost_tolerance", {"ratio": [0.5, 2.0]})
 
         c1 = m1["cost_paid"]
@@ -481,50 +333,242 @@ def _cmd_compare_runs(args):
         }
         comparison["convergence"] = convergence
 
-    # Beta Readiness Task 1: Enforce invariant - violations implies not equivalent
+    # Enforce invariant - violations implies not equivalent
     if len(comparison["violations"]) > 0:
         comparison["equivalent"] = False
 
-    # Output
-    if args.json_output:
-        print(json.dumps(comparison, indent=2))
+    return comparison
+
+
+def _rpad(left: str, right: str, width: int) -> str:
+    """Pad between *left* and *right* so the combined visible width = *width*."""
+    if not right:
+        return left
+    lv = _visible_len(left)
+    rv = _visible_len(right)
+    gap = max(1, width - lv - rv)
+    return f"{left}{' ' * gap}{right}"
+
+
+def _render_site_card(site_path: str, report_data: dict | None, show_cost: bool) -> str:
+    """Return a rendered diamond card for a single site."""
+    from husks.manifest import read_manifest
+
+    short_name = Path(site_path).name or site_path
+    manifest = read_manifest(site_path)
+
+    # Extract fields from manifest, fall back to report_data
+    if manifest:
+        name = manifest.get("name", short_name)
+        root = manifest.get("root")
+        husk_hash = manifest.get("husk_hash")
+        status = "committed"
+    elif report_data:
+        name = report_data.get("name", short_name)
+        root = report_data.get("root")
+        husk_hash = None
+        status = report_data.get("status", "unknown")
     else:
+        name = short_name
+        root = None
+        husk_hash = None
+        status = "unknown"
+
+    # Diamond stage
+    if status == "committed":
+        stage = "sealed"
+    else:
+        stage = "dry"
+
+    # State coloring
+    state_colors = {"sealed": CYAN, "committed": CYAN, "failed": RED}
+    status_display = "sealed" if status == "committed" else status
+    sc = state_colors.get(status_display, DIM)
+    state_str = f"{sc}{status_display}{RESET}"
+
+    # Build right-column lines
+    right = [
+        f"{BOLD}name{RESET}:  {name}",
+        f"{BOLD}state{RESET}: {state_str}",
+        f"{BOLD}root{RESET}:  sha256:{root[:6]}" if root else "",
+    ]
+
+    if show_cost and report_data:
+        cost = report_data.get("cost", {}).get("paid", 0.0)
+        right.append(f"{BOLD}cost{RESET}:  ${cost:.6f}")
+    elif husk_hash:
+        right.append(f"{BOLD}husk{RESET}:  sha256:{husk_hash[:6]}")
+    else:
+        right.append("")
+
+    right.append(f"{BOLD}site{RESET}:  {short_name}")
+
+    return render_banner(stage, right)
+
+
+def _cmd_compare(args):
+    """Compare equivalence across sites (three-machine proof with 3+).
+
+    Pairwise artifact comparison (roots + hashes) for any number of sites.
+    For 3+ sites: additionally reads .traces/report.json from each site
+    and runs the three-machine proof checks.
+    """
+    from husks.manifest import compare_artifacts
+
+    if len(args.sites) < 2:
+        print("error: compare requires at least 2 sites", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    # Determine comparison modes
+    check_roots = not getattr(args, 'hashes_only', False)
+    check_hashes = not getattr(args, 'roots_only', False)
+
+    # Pairwise comparison of all sites
+    sites = args.sites
+    comparisons = []
+    all_equivalent = True
+
+    for i in range(len(sites)):
+        for j in range(i + 1, len(sites)):
+            site_a = sites[i]
+            site_b = sites[j]
+
+            result = compare_artifacts(
+                site_a, site_b,
+                check_roots=check_roots,
+                check_hashes=check_hashes,
+            )
+
+            comparisons.append({
+                "site_a": site_a,
+                "site_b": site_b,
+                "equivalent": result["equivalent"],
+                "differences": result["differences"],
+                "details": result["details"],
+            })
+
+            if not result["equivalent"]:
+                all_equivalent = False
+
+    # Three-machine proof for 3+ sites
+    proof = None
+    proof_skipped = []
+    reports = []
+    json_output = getattr(args, 'json_output', False)
+
+    if len(sites) >= 3:
+        reports, proof_skipped = _load_site_reports(sites, json_output=json_output)
+        if len(reports) >= 3:
+            proof = _three_machine_proof(reports, json_output=json_output)
+            if proof["equivalent"]:
+                # Three-machine proof passed: proof is the authoritative
+                # equivalence check (handles scoped equivalence / free outputs).
+                # Pairwise differences are expected when oracle outputs differ.
+                all_equivalent = True
+            else:
+                all_equivalent = False
+        elif not json_output and proof_skipped:
+            for s in proof_skipped:
+                print(f"  warning: {s} has no .traces/report.json, skipping three-machine proof",
+                      file=sys.stderr)
+
+    # Output results
+    if json_output:
+        output = {
+            "equivalent": all_equivalent,
+            "comparisons": comparisons,
+        }
+        if proof is not None:
+            output["proof"] = proof
+        if proof_skipped:
+            output["proof_skipped"] = proof_skipped
+        print(json.dumps(output, indent=2))
+    else:
+        # -- Build report lookup for cards ------------------------------------
+        report_by_site: dict[str, dict] = {}
+        for r in reports:
+            site_dir = str(Path(r["path"]).parent.parent)
+            report_by_site[site_dir] = r["data"]
+
+        show_cost = proof is not None
+
+        # -- Site cards -------------------------------------------------------
         print()
-        print(f"Comparing {len(reports)} runs:")
-        for run in comparison["runs"]:
-            print(f"  [{run['index']}] {run['path']}")
-            print(f"      status: {run['status']}")
-            print(f"      cost: ${run['cost_paid']:.6f}")
-            print(f"      oracle calls: {run['oracle_calls']}, cache hits: {run['cache_hits']}")
-            # Task 3: Show explicit cache reuse evidence
-            if run['cached_nodes']:
-                print(f"      cached nodes: {', '.join(run['cached_nodes'])}")
-            print()
+        for idx, site in enumerate(sites):
+            rd = report_by_site.get(site)
+            print(_render_site_card(site, rd, show_cost))
+            if idx < len(sites) - 1:
+                print()
 
-        if comparison["checks"]:
-            print("Checks:")
-            for check, result in comparison["checks"].items():
-                sym = "✓" if result is True else ("⚠" if result == "warning" else "✗")
-                print(f"  {sym} {check}")
-            print()
+        # -- Verify section ---------------------------------------------------
+        sep = f"  {DIM}{'\u2500' * (W - 2)}{RESET}"
+        print()
+        print(f"  {BOLD}verify{RESET}")
+        print(sep)
 
-        if comparison["violations"]:
-            print("Violations:")
-            for v in comparison["violations"]:
-                print(f"  ✗ {v}")
-            print()
+        check_roots_flag = not getattr(args, 'hashes_only', False)
+        check_hashes_flag = not getattr(args, 'roots_only', False)
 
-        # Beta Readiness Task 1: Show warnings separately
-        if comparison.get("warnings"):
-            print("Warnings:")
-            for w in comparison["warnings"]:
-                print(f"  ⚠ {w}")
-            print()
+        for cmp in comparisons:
+            site_a_short = Path(cmp["site_a"]).name or cmp["site_a"]
+            site_b_short = Path(cmp["site_b"]).name or cmp["site_b"]
+            details = cmp["details"]
 
-        if comparison["equivalent"]:
-            print("  ✓ Three-machine proof validated")
-        else:
-            print("  ✗ Proof validation failed")
+            if check_roots_flag and "root_a" in details:
+                roots_match = details.get("root_a") == details.get("root_b")
+                if roots_match:
+                    left = f"  {GREEN}\u2713{RESET} {site_a_short} \u2261 {site_b_short}"
+                    reason = "roots match"
+                else:
+                    left = f"  {RED}\u2717{RESET} {site_a_short} \u2260 {site_b_short}"
+                    reason = "roots differ"
+                print(_rpad(left, reason, W))
+
+            if check_hashes_flag and "outputs_a" in details:
+                hashes_match = details.get("outputs_a") == details.get("outputs_b")
+                if hashes_match:
+                    left = f"  {GREEN}\u2713{RESET} {site_a_short} \u2261 {site_b_short}"
+                    reason = "hashes match"
+                else:
+                    left = f"  {RED}\u2717{RESET} {site_a_short} \u2260 {site_b_short}"
+                    reason = "hashes differ"
+                print(_rpad(left, reason, W))
+
+        print(sep)
+
+        # -- Three-machine proof section --------------------------------------
+        if proof is not None:
+            print()
+            print(f"  {BOLD}three-machine proof{RESET}")
+            print(sep)
+
+            # Two-column check layout
+            checks = list(proof["checks"].items())
+            if checks:
+                col_w = 30
+                rows = []
+                for ck, val in checks:
+                    sym = f"{GREEN}\u2713{RESET}" if val is True else f"{RED}\u2717{RESET}"
+                    rows.append(f"{sym} {ck}")
+
+                for i in range(0, len(rows), 2):
+                    left_cell = rows[i]
+                    right_cell = rows[i + 1] if i + 1 < len(rows) else ""
+                    if right_cell:
+                        pad = col_w - _visible_len(left_cell)
+                        print(f"  {left_cell}{' ' * max(1, pad)}{right_cell}")
+                    else:
+                        print(f"  {left_cell}")
+
+            # Violations
+            if proof["violations"]:
+                for v in proof["violations"]:
+                    print(f"  {RED}\u2717{RESET} {v}")
+
+            print(sep)
+
+        # -- Footer -----------------------------------------------------------
+        print(f"  {GREEN}equivalent{RESET}" if all_equivalent else f"  {RED}not equivalent{RESET}")
         print()
 
-    sys.exit(EXIT_OK if comparison["equivalent"] else EXIT_BUILD_FAIL)
+    sys.exit(EXIT_OK if all_equivalent else EXIT_BUILD_FAIL)

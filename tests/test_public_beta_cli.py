@@ -63,15 +63,15 @@ def test_public_beta_workflow():
         assert "nodes" in data, "JSON should have nodes"
         assert "status" in data, "JSON should have status"
 
-        # Step 7: husks status --site .husk
-        result = run_husks_cli("status", design_file, "--site", ".husk", cwd=tmpdir)
+        # Step 7: husks status .husk
+        result = run_husks_cli("status", ".husk", cwd=tmpdir)
         assert result.returncode == 0, f"status failed: {result.stderr}"
 
         # Step 8: husks status --json
-        result = run_husks_cli("status", design_file, "--site", ".husk", "--json", cwd=tmpdir)
+        result = run_husks_cli("status", ".husk", "--json", cwd=tmpdir)
         assert result.returncode == 0, f"status --json failed: {result.stderr}"
         data = json.loads(result.stdout)
-        assert data["command"] == "status", "JSON should have command=status"
+        assert data["name"] is not None, "JSON should have name"
 
 
 def test_json_purity():
@@ -92,7 +92,7 @@ def test_json_purity():
         json.loads(result.stdout)  # Should parse without error
 
         # Status --json
-        result = run_husks_cli("status", "design.json", "--site", ".husk", "--json", cwd=tmpdir)
+        result = run_husks_cli("status", ".husk", "--json", cwd=tmpdir)
         assert result.returncode == 0
         assert "\x1b[" not in result.stdout, "status --json contains ANSI codes"
         json.loads(result.stdout)  # Should parse without error
@@ -109,23 +109,26 @@ def test_shared_vocabulary():
         # Collect JSON outputs
         check_result = run_husks_cli("check", design_file, "--json", cwd=tmpdir)
         run_result = run_husks_cli("run", design_file, "--stub", "--site", ".husk", "--json", cwd=tmpdir)
-        status_result = run_husks_cli("status", design_file, "--site", ".husk", "--json", cwd=tmpdir)
-
+        # check and run share residue vocabulary
         check_data = json.loads(check_result.stdout)
         run_data = json.loads(run_result.stdout)
-        status_data = json.loads(status_result.stdout)
 
-        # All should have status and nodes fields
-        for name, data in [("check", check_data), ("run", run_data), ("status", status_data)]:
+        for name, data in [("check", check_data), ("run", run_data)]:
             assert "status" in data, f"{name} missing status"
             assert "nodes" in data, f"{name} missing nodes"
 
         # All nodes should have name, kind, state
-        for name, data in [("check", check_data), ("run", run_data), ("status", status_data)]:
+        for name, data in [("check", check_data), ("run", run_data)]:
             for node in data["nodes"]:
                 assert "name" in node, f"{name} node missing name"
                 assert "kind" in node, f"{name} node missing kind"
                 assert "state" in node, f"{name} node missing state"
+
+        # status has its own summary schema
+        status_result = run_husks_cli("status", ".husk", "--json", cwd=tmpdir)
+        status_data = json.loads(status_result.stdout)
+        assert "name" in status_data, "status missing name"
+        assert "state" in status_data, "status missing state"
 
 
 def test_cache_evidence():
