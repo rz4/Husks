@@ -43,9 +43,9 @@ def test_three_machine_cli_acceptance_stub():
             f"stdout: {init_result.stdout}\nstderr: {init_result.stderr}"
         )
 
-        # Verify init created expected files
-        design_path = project_dir / "design.json"
-        assert design_path.exists(), f"design.json not found: {design_path}"
+        # Verify init created expected files (core-bootstrap template)
+        design_path = project_dir / "core-bootstrap.json"
+        assert design_path.exists(), f"core-bootstrap.json not found: {design_path}"
 
         # Beta 100: core-bootstrap uses embedded prompts, no separate prompt.txt file
 

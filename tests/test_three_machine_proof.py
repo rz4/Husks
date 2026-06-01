@@ -66,13 +66,13 @@ def test_three_machine_proof(bootstrap_design):
     assert result_m1.returncode == 0, f"M1 failed: {result_m1.stderr}"
     m1_data = json.loads(result_m1.stdout)
     m1_root = m1_data.get("root")
-    m1_cost = m1_data.get("cost", 0.0)
+    m1_cost = m1_data["cost"]["paid"]
     m1_nodes = {n["name"]: n for n in m1_data["nodes"]}
 
-    # Verify M1 sealed outputs
+    # Verify M1 fired outputs (fresh run → state is "fired")
     assert m1_data["status"] == "committed", "M1 should commit successfully"
     assert m1_root is not None, "M1 should produce a build root"
-    assert m1_nodes["oracle1"]["state"] == "sealed", "M1 oracle should seal"
+    assert m1_nodes["oracle1"]["state"] == "fired", "M1 oracle should fire (fresh run)"
 
     # Machine 2: Rerun on site1 (should be fully cached)
     result_m2 = run_husks_cli(
@@ -83,10 +83,10 @@ def test_three_machine_proof(bootstrap_design):
     m2_root = m2_data.get("root")
     m2_nodes = {n["name"]: n for n in m2_data["nodes"]}
 
-    # Verify M2 reused from cache
+    # Verify M2 reused from cache (reused → report state "sealed")
     assert m2_root == m1_root, "M2 root should match M1 root"
-    assert m2_nodes["oracle1"]["state"] == "cached", "M2 oracle should be cached"
-    assert m2_nodes["oracle1"].get("cache") is True, "M2 should have cache=true flag"
+    assert m2_nodes["oracle1"]["state"] == "sealed", "M2 oracle should be sealed (cached)"
+    assert m2_nodes["oracle1"].get("cached") is True, "M2 should have cached=true flag"
 
     # Machine 3: Fresh run on site3 (independent site)
     site3 = tmp_path / "site3"
@@ -96,12 +96,12 @@ def test_three_machine_proof(bootstrap_design):
     assert result_m3.returncode == 0, f"M3 failed: {result_m3.stderr}"
     m3_data = json.loads(result_m3.stdout)
     m3_root = m3_data.get("root")
-    m3_cost = m3_data.get("cost", 0.0)
+    m3_cost = m3_data["cost"]["paid"]
     m3_nodes = {n["name"]: n for n in m3_data["nodes"]}
 
-    # Verify M3 sealed (fresh run)
+    # Verify M3 fired (fresh run)
     assert m3_root == m1_root, "M3 root should match M1 root"
-    assert m3_nodes["oracle1"]["state"] == "sealed", "M3 oracle should seal (not cached)"
+    assert m3_nodes["oracle1"]["state"] == "fired", "M3 oracle should fire (fresh run, not cached)"
     # Costs should be comparable (both fresh runs)
     assert abs(m3_cost - m1_cost) < 0.001, f"M3 cost {m3_cost} should match M1 cost {m1_cost}"
 
@@ -134,12 +134,12 @@ def test_cache_reuse_zero_cost():
         # First run
         result1 = run_husks_cli("run", str(design_path), "--stub", "--site", str(site), "--json")
         data1 = json.loads(result1.stdout)
-        cost1 = data1.get("cost", 0.0)
+        cost1 = data1["cost"]["paid"]
 
         # Second run (cached)
         result2 = run_husks_cli("run", str(design_path), "--stub", "--site", str(site), "--json")
         data2 = json.loads(result2.stdout)
-        cost2 = data2.get("cost", 0.0)
+        cost2 = data2["cost"]["paid"]
 
         # Second run should have zero cost (reused from cache)
         assert cost2 == 0.0, f"Cached run should have zero cost, got {cost2}"
@@ -174,13 +174,15 @@ def test_output_hash_consistency():
         site1 = Path(tmpdir) / "site1"
         result1 = run_husks_cli("run", str(design_path), "--stub", "--site", str(site1), "--json")
         data1 = json.loads(result1.stdout)
-        hash1 = data1["nodes"][0].get("output_hash")
+        hashes1 = data1["nodes"][0].get("output_hashes", [])
+        hash1 = hashes1[0] if hashes1 else None
 
         # Run on site2
         site2 = Path(tmpdir) / "site2"
         result2 = run_husks_cli("run", str(design_path), "--stub", "--site", str(site2), "--json")
         data2 = json.loads(result2.stdout)
-        hash2 = data2["nodes"][0].get("output_hash")
+        hashes2 = data2["nodes"][0].get("output_hashes", [])
+        hash2 = hashes2[0] if hashes2 else None
 
         # Output hashes should be identical (deterministic build)
         assert hash1 is not None, "Output hash should be captured"

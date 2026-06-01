@@ -58,7 +58,6 @@ def test_machine_1_and_3_independent_realization():
             "name": "beta-seed",
             "fuel": 20,
             "target": "validate",
-            "site_inputs": ["prompt.txt"],
             "rules": [
                 {
                     "name": "generate",
@@ -170,7 +169,6 @@ def test_three_machine_full_proof():
             "name": "beta-seed",
             "fuel": 20,
             "target": "validate",
-            "site_inputs": ["prompt.txt"],
             "rules": [
                 {
                     "name": "generate",
