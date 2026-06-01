@@ -119,10 +119,9 @@ def _on_build_end(e: dict[str, Any]) -> None:
         parts.append(f"{n_reused} reused")
     if n_failed:
         parts.append(f"{n_failed} failed")
-    print(
-        f"  {DIM}nodes{RESET}     "
-        f"{(f'{DIM} \u00b7 {RESET}'.join(parts)) if parts else '\u2013'}"
-    )
+    sep = f"{DIM} \u00b7 {RESET}"
+    node_summary = sep.join(parts) if parts else "\u2013"
+    print(f"  {DIM}nodes{RESET}     {node_summary}")
 
     # Artifacts
     artifacts = e.get("artifacts", {})

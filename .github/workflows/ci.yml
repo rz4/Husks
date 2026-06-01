@@ -60,7 +60,7 @@ jobs:
           pip install -e ".[llm]" pytest
       - name: Stub three-machine resolution (headline invariant)
         run: |
-          python -m pytest -m alpha \
+          python -m pytest \
             tests/test_three_machine_proof.py \
             tests/test_three_machine_cli_acceptance.py \
             tests/test_beta_three_machine.py \
