@@ -90,10 +90,12 @@ def test_machine_1_and_3_independent_realization():
         # Machine 1: Independent realization
         machine1_site = Path(tmpdir) / "machine1"
         machine1_site.mkdir()
-        (machine1_site / "prompt.txt").write_text("What is the capital of France?\n")
+        inputs1 = Path(tmpdir) / "inputs1"
+        inputs1.mkdir()
+        (inputs1 / "prompt.txt").write_text("What is the capital of France?\n")
 
         design1 = {**seed_design, "site": str(machine1_site),
-                    "site_inputs": {"prompt.txt": str(machine1_site / "prompt.txt")}}
+                    "site_inputs": {"prompt.txt": str(inputs1 / "prompt.txt")}}
         S1 = run(design1, oracle_backend=stub_oracle)
 
         # Assertions for Machine 1
@@ -109,10 +111,12 @@ def test_machine_1_and_3_independent_realization():
         # Machine 3: Independent re-realization (separate site, empty cache)
         machine3_site = Path(tmpdir) / "machine3"
         machine3_site.mkdir()
-        (machine3_site / "prompt.txt").write_text("What is the capital of France?\n")
+        inputs3 = Path(tmpdir) / "inputs3"
+        inputs3.mkdir()
+        (inputs3 / "prompt.txt").write_text("What is the capital of France?\n")
 
         design3 = {**seed_design, "site": str(machine3_site),
-                    "site_inputs": {"prompt.txt": str(machine3_site / "prompt.txt")}}
+                    "site_inputs": {"prompt.txt": str(inputs3 / "prompt.txt")}}
         S3 = run(design3, oracle_backend=stub_oracle)
 
         # Assertions for Machine 3
@@ -202,10 +206,12 @@ def test_three_machine_full_proof():
         # Machine 1: Original realization
         m1_site = Path(tmpdir) / "machine1"
         m1_site.mkdir()
-        (m1_site / "prompt.txt").write_text("What is the capital of France?\n")
+        m1_inputs = Path(tmpdir) / "m1_inputs"
+        m1_inputs.mkdir()
+        (m1_inputs / "prompt.txt").write_text("What is the capital of France?\n")
 
         design1 = {**seed_design, "site": str(m1_site),
-                    "site_inputs": {"prompt.txt": str(m1_site / "prompt.txt")}}
+                    "site_inputs": {"prompt.txt": str(m1_inputs / "prompt.txt")}}
         S1 = run(design1, oracle_backend=stub_oracle)
 
         assert S1["status"] == "committed"
@@ -220,7 +226,9 @@ def test_three_machine_full_proof():
         # Machine 2: Cache reuse
         m2_site = Path(tmpdir) / "machine2"
         m2_site.mkdir()
-        (m2_site / "prompt.txt").write_text("What is the capital of France?\n")
+        m2_inputs = Path(tmpdir) / "m2_inputs"
+        m2_inputs.mkdir()
+        (m2_inputs / "prompt.txt").write_text("What is the capital of France?\n")
 
         # Import cache to M2 site
         from husks.build import fresh_store
@@ -230,7 +238,7 @@ def test_three_machine_full_proof():
         # Build with cache-reuse-only mode
         # For now, skip reuse-only mode test and just verify cache is used
         design2 = {**seed_design, "site": str(m2_site),
-                    "site_inputs": {"prompt.txt": str(m2_site / "prompt.txt")}}
+                    "site_inputs": {"prompt.txt": str(m2_inputs / "prompt.txt")}}
         S2 = run(design2, oracle_backend=stub_oracle)
 
         assert S2["status"] == "committed"
@@ -241,10 +249,12 @@ def test_three_machine_full_proof():
         # Machine 3: Independent re-realization
         m3_site = Path(tmpdir) / "machine3"
         m3_site.mkdir()
-        (m3_site / "prompt.txt").write_text("What is the capital of France?\n")
+        m3_inputs = Path(tmpdir) / "m3_inputs"
+        m3_inputs.mkdir()
+        (m3_inputs / "prompt.txt").write_text("What is the capital of France?\n")
 
         design3 = {**seed_design, "site": str(m3_site),
-                    "site_inputs": {"prompt.txt": str(m3_site / "prompt.txt")}}
+                    "site_inputs": {"prompt.txt": str(m3_inputs / "prompt.txt")}}
         S3 = run(design3, oracle_backend=stub_oracle)
 
         assert S3["status"] == "committed"
