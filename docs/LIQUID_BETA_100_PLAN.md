@@ -153,6 +153,30 @@ Add an observational `convergence` block that never flips `equivalent`:
 
 Preserve the existing invariant: any entry in `violations` implies `equivalent == false`. Keep all current oracle-evidence and cache-evidence node-level checks unchanged. Exit `EXIT_OK` when equivalent, `EXIT_BUILD_FAIL` otherwise.
 
+## Task A5: commit-gate cache promotion (build-integrity fix)
+
+A killed or halted run currently leaves a servable, exportable cache entry for an oracle output that never passed its consuming gate. A rerun then serves that poisoned entry. By the system's stance a non-committed realization must leave no reusable residue.
+
+Root cause. In `src/husks/build/eval.py` (around line 353), `cache_put` fires inside the oracle rule's own block, right after `write_seal`, gated only on `recipe.type == "oracle"` and cache-not-disabled. It has no knowledge of the downstream gate or the build's final status. So the cache reflects "the oracle produced a nonempty file," not "the realization committed."
+
+Required semantics. Separate two promotions that are currently fused:
+
+1. Site promotion (unchanged): the oracle output is written into the live site per rule, so the consuming gate can read and test it. Keep this.
+2. Cache promotion (new): the oracle output becomes a servable, exportable cache entry only when the build reaches `committed`.
+
+Mechanism:
+
+- In the oracle rule block, replace the immediate `cache_put` with a staged write to a pending cache area (for example `.cache/_pending/<key>/`), recording everything `cache_put` needs (recipe, inputs, output contents, seal data).
+- At the commit branch in `eval.py` (where `S["status"]` is set to `"committed"`, around line 279), promote all pending entries for this run into the servable cache via the existing `cache_put` content path.
+- On `halt`, or if the run ends without reaching `committed`, discard the pending area. Do not promote.
+- `cache_get` and lookup read only the servable cache, never `_pending`. This is the kill-safety property: a SIGKILL mid-run leaves only an unpromoted pending area, which is never a hit.
+
+Export must refuse non-committed builds. In `src/husks/cli/cmd/cache.py`, `_cmd_cache_export` calls `cache_export(S, ...)` with no status check and printed `Exported 1 cache entries` against a halted M1 in the live run. Gate export on `S["status"] == "committed"` (or on the site manifest's committed root). Exporting from a non-committed build is a no-op that reports zero entries, not an error that breaks a harness, but it must not emit residue.
+
+Keep the existing `cache-write-failed` nonfatal behavior: a failure to promote at commit must not corrupt an already-sealed build, it logs to the trace as today.
+
+Note this also subsumes the warm-M1 confusion from earlier runs: with export gated on commit, a harness that runs export after a failed M1 gets nothing, rather than silently propagating stale or poisoned residue into M2.
+
 ## Task B: renderer corrections
 
 File: `src/husks/cli/view.py` (rewritten in beta 95; the regressions below are in that code).
@@ -187,6 +211,12 @@ Required cases:
 
 9. Live end-to-end (gated, requires `ANTHROPIC_API_KEY`; skip otherwise): run M1 and M3 with the live oracle and M2 from M1's cache, then `compare-runs`. Expect `equivalent: true` with divergent roots and matching `VERIFIED` digests. This is the actual Beta 100 live proof; keep it as a marked integration test so CI without a key still runs cases 1 to 8.
 
+10. Halted build leaves no servable cache (A5): run a design whose oracle produces a nonempty output that fails the downstream gate, so the build halts. Assert the servable cache has no entry for the oracle key afterward, and a second run does not get a cache hit on that oracle. Simulate the kill case by halting at the gate; the pending area must not be readable by `cache_get`.
+
+11. Export refuses non-committed (A5): after a halted build, `cache export` reports zero entries and writes no usable bundle. After a committed build, export reports the oracle entry as before.
+
+12. Commit promotes (A5, happy path regression): a committed stub build promotes the oracle output to the servable cache, and a second site importing that bundle gets a cache hit at zero cost. This guards against the fix over-correcting and suppressing legitimate caching.
+
 ## Task C: amend `docs/CLI_BETA_100.md` for the live claim
 
 Proving live contradicts two statements the doc currently makes, both of which are stub-only:
@@ -200,12 +230,13 @@ Add a live expected-result block alongside the existing stub one, showing diverg
 
 - A live three-machine run (M1 live oracle, M2 cache reuse, M3 live oracle) returns `equivalent: true`, exit 0, with divergent build roots and matching `VERIFIED` conformance digests.
 - Acceptance is behavioral: `VERIFIED` carries the conformance digest, and a reader that compiles but computes a wrong root fails the gate and never seals.
+- A non-committed realization leaves no servable or exportable cache residue. A halted or killed run promotes nothing; `cache export` against a non-committed build is a no-op.
 - `compare-runs` enforces: M1==M2 root, M3 validator-bounded acceptance on the conformance digest, cost within declared tolerance. It reports M1/M3 root convergence observationally only.
 - The seed design states the per-output equivalence form and the cost tolerance, satisfying white paper Section 5.
 - Build root is unchanged by the new metadata.
 - Renderer shows a stable tree from frame one, a correct oracle counter on paid runs, and no cross-site state in a single-site seal frame.
 - `docs/CLI_BETA_100.md` no longer claims same-root or bitwise-identical artifacts on the live path.
-- Full test suite green, including the nine cases above (case 9 gated on `ANTHROPIC_API_KEY`).
+- Full test suite green, including the twelve cases above (case 9 gated on `ANTHROPIC_API_KEY`).
 
 ## Out of scope
 

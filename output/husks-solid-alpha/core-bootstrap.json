@@ -1,0 +1,40 @@
+{
+  "name": "core-bootstrap",
+  "fuel": 20,
+  "target": "validate",
+  "site_inputs": {
+    "CSE-v1.md": "spec/CSE-v1.md",
+    "CSE-v2.md": "spec/CSE-v2.md"
+  },
+  "rules": [
+    {
+      "name": "generate",
+      "kind": "oracle",
+      "inputs": [
+        "CSE-v1.md",
+        "CSE-v2.md"
+      ],
+      "outputs": [
+        "readers/generated_reader.py"
+      ],
+      "prompt": "Read CSE-v1.md (the frozen spec) and CSE-v2.md (clarifications with worked examples). Implement a dependency-free CSE reader in a single Python file at readers/generated_reader.py. Constraints: use ONLY the Python standard library, and ONLY hashlib, sys, os. Do NOT use json, re, ast, pickle, or any parsing library. Write a byte-level netstring parser: read the decimal length prefix, then a colon, then exactly that many raw bytes. Reject leading zeros in a length (e.g. 05:hello is invalid). Reject an atom whose declared length exceeds the remaining bytes. Implement the seal preimage, recipe digest, output bindings, and Merkle node digest exactly as specified, using SHA-256 and lowercase hex. Critical: children of a rule are the CSE values at positions 5+ in the parsed rule list \u2014 recurse into them in positional order. Do NOT match children against input filenames. All intermediate digests (recipe-digest, seal, child digests) are 64-byte lowercase hex string atoms, not raw 32-byte hashes. Command-line contract: `python generated_reader.py <husk-file> <site-dir>` must print the lowercase-hex build-root to stdout and exit 0; on any CSE violation it must exit with a nonzero status. Write only readers/generated_reader.py.",
+      "tools": [
+        "read-file",
+        "write-file"
+      ],
+      "fuel": 10
+    },
+    {
+      "name": "validate",
+      "kind": "action",
+      "inputs": [
+        "readers/generated_reader.py"
+      ],
+      "outputs": [
+        "readers/gate-report.txt",
+        "readers/VERIFIED"
+      ],
+      "run": "python3 -m py_compile readers/generated_reader.py && echo 'PASS: reader compiles' > readers/gate-report.txt && touch readers/VERIFIED"
+    }
+  ]
+}

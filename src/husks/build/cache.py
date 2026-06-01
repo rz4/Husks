@@ -270,6 +270,152 @@ def cache_put(
     meta_file.write_text(json.dumps(meta, indent=2))
 
 
+def cache_put_pending(
+    S: Store,
+    recipe: Recipe,
+    inputs: list[str],
+    outputs: dict[str, str],
+    *,
+    seal_data: dict[str, Any] | None = None,
+) -> None:
+    """Stage cache entry in pending area for commit-time promotion.
+
+    Beta 100 Task A5: Oracle outputs are written to .cache/_pending/<key>/
+    during execution, then promoted to servable .cache/<key>/ only when the
+    build reaches committed status. Halted or killed runs leave no servable
+    residue.
+
+    Parameters
+    ----------
+    S : Store
+        Build store
+    recipe : Recipe
+        Recipe dict (must be oracle or trial)
+    inputs : list[str]
+        Input file paths relative to site
+    outputs : dict[str, str]
+        Output name -> content mapping
+    seal_data : dict | None
+        Optional seal data to store alongside outputs
+    """
+    # Only cache oracle/trial recipes
+    if recipe is None or recipe.get("type") not in ("oracle", "trial"):
+        return
+
+    # Compute cache key
+    recipe_form = recipe_to_cse(recipe)
+    recipe_rd = recipe_digest(recipe_form)
+    input_sigs = {
+        i: file_sig(site_path(S, i)).decode() for i in sorted(inputs)
+    }
+    key = cache_key(recipe_rd, input_sigs)
+
+    # Write to pending area instead of servable cache
+    pending_dir = site_path(S, f".cache/_pending/{key}")
+    ensure_dir(pending_dir)
+
+    # Write outputs
+    outputs_file = Path(pending_dir) / "outputs.json"
+    outputs_file.write_text(json.dumps(outputs, indent=2))
+
+    # Generate seal data if not provided
+    if seal_data is None:
+        output_hashes = {}
+        for name, content in outputs.items():
+            content_hash = hashlib.sha256(content.encode()).hexdigest()
+            output_hashes[name] = content_hash
+
+        seal_data = {
+            "cache_seal_version": "1.0",
+            "recipe_digest": recipe_rd,
+            "outputs": output_hashes,
+            "inputs": input_sigs,
+        }
+
+    # Write seal
+    seal_file = Path(pending_dir) / "seal.json"
+    seal_file.write_text(json.dumps(seal_data, indent=2))
+
+    # Write metadata
+    meta = {
+        "created_ts": time.time(),
+        "created_run_id": S["run-id"],
+        "reuse_count": 0,
+        "recipe_digest": recipe_rd,
+    }
+    meta_file = Path(pending_dir) / "meta.json"
+    meta_file.write_text(json.dumps(meta, indent=2))
+
+
+def cache_promote_pending(S: Store) -> int:
+    """Promote all pending cache entries to servable cache at commit.
+
+    Beta 100 Task A5: Called when build reaches committed status. Moves all
+    entries from .cache/_pending/ to .cache/. Returns the number of promoted
+    entries.
+
+    Parameters
+    ----------
+    S : Store
+        Build store
+
+    Returns
+    -------
+    int
+        Number of cache entries promoted
+    """
+    import shutil
+
+    pending_root = Path(site_path(S, ".cache/_pending"))
+    if not pending_root.exists():
+        return 0
+
+    promoted_count = 0
+    for pending_entry in pending_root.iterdir():
+        if not pending_entry.is_dir():
+            continue
+
+        key = pending_entry.name
+        servable_dir = Path(cache_dir(S, key))
+
+        # Move pending entry to servable cache
+        # If servable already exists (unlikely), overwrite it
+        if servable_dir.exists():
+            shutil.rmtree(servable_dir)
+
+        shutil.move(str(pending_entry), str(servable_dir))
+        promoted_count += 1
+
+    # Clean up pending root
+    try:
+        shutil.rmtree(str(pending_root))
+    except Exception:
+        pass  # Cleanup is best-effort
+
+    return promoted_count
+
+
+def cache_discard_pending(S: Store) -> None:
+    """Discard all pending cache entries on halt or error.
+
+    Beta 100 Task A5: Called when build halts without committing. Removes
+    .cache/_pending/ entirely, ensuring no servable residue from failed runs.
+
+    Parameters
+    ----------
+    S : Store
+        Build store
+    """
+    import shutil
+
+    pending_root = Path(site_path(S, ".cache/_pending"))
+    if pending_root.exists():
+        try:
+            shutil.rmtree(str(pending_root))
+        except Exception:
+            pass  # Cleanup is best-effort
+
+
 def cache_list(S: Store) -> list[dict[str, Any]]:
     """List all cache entries with metadata.
 
@@ -290,6 +436,10 @@ def cache_list(S: Store) -> list[dict[str, Any]]:
     entries = []
     for entry_dir in cache_root.iterdir():
         if not entry_dir.is_dir():
+            continue
+        # Beta 100 Task A5: Skip _pending and non-hex directories
+        key = entry_dir.name
+        if not (len(key) == 64 and all(c in "0123456789abcdef" for c in key)):
             continue
 
         meta_file = entry_dir / "meta.json"
@@ -349,12 +499,17 @@ def cache_export(S: Store, export_path: str) -> int:
     cache_root = Path(site_path(S, ".cache"))
 
     # Beta Gate D7: Collect entry metadata for manifest
+    # Beta 100 Task A5: Skip _pending and non-hex directories
     entries = []
     if cache_root.exists():
         for entry_dir in cache_root.iterdir():
             if not entry_dir.is_dir():
                 continue
-            entries.append(entry_dir.name)
+            key = entry_dir.name
+            # Only include valid cache keys (64-char hex)
+            if not (len(key) == 64 and all(c in "0123456789abcdef" for c in key)):
+                continue
+            entries.append(key)
 
     # Beta Gate D7: Create provenance manifest
     manifest = {
@@ -373,10 +528,13 @@ def cache_export(S: Store, export_path: str) -> int:
         manifest_info.size = len(manifest_json)
         tar.addfile(manifest_info, fileobj=io.BytesIO(manifest_json))
 
-        # Add cache entries
+        # Add cache entries (skip _pending and non-hex directories)
         if cache_root.exists():
             for entry_dir in cache_root.iterdir():
                 if not entry_dir.is_dir():
+                    continue
+                key = entry_dir.name
+                if not (len(key) == 64 and all(c in "0123456789abcdef" for c in key)):
                     continue
                 # Add entry directory with relative path for portability
                 tar.add(entry_dir, arcname=entry_dir.name)

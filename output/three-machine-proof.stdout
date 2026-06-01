@@ -1,0 +1,259 @@
+ .venv ❯ source three-machine-problem.sh
+    husks init → /private/tmp/husks30beta-live
+
+    [1/5] scaffolding 'core-bootstrap' template
+          wrote husks30beta-live/core-bootstrap.json
+          copied spec/CSE-v1.md
+          copied spec/CSE-v2.md
+          wrote husks30beta-live/.gitignore
+
+    [2/5] verifying engine soundness
+          engine soundness verified ✓
+
+    [3/5] checking ANTHROPIC_API_KEY
+          present in environment ✓
+
+    [4/5] wiring the husks skill into Claude Code
+          symlinked .claude/skills/husks → /Users/rzamora/Desktop/LBNL/AMSC/repos/Husks/skills/husks
+
+    [5/5] emitting CLAUDE.md (canonical stance)
+          wrote CLAUDE.md
+
+    done. Next:
+      cd ../../../../../../private/tmp/husks30beta-live
+      husks check core-bootstrap.json --verbose
+      husks run core-bootstrap.json --site m1 --stub --verbose
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   □ validate            action
+      └─ ◉ generate      oracle
+  ────────────────────────────────
+   passed
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   □ validate            action
+      └─ ■ generate      oracle
+  ────────────────────────────────
+   passed
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   ◉ validate            action
+      └─ ■ generate      oracle
+  ────────────────────────────────
+   passed
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   ■ validate            action
+      └─ ■ generate      oracle
+  ────────────────────────────────
+   passed
+  ────────────────────────────────
+   core-bootstrap       sealed ⚡1/20
+   cse:core-bootstrap.husk  site:m1
+  ────────────────────────────────
+   ■ validate            action     0.69s
+      out:readers/gate-report.txt@e6dc7b
+      out:readers/VERIFIED@b8b58b
+      └─ ■ generate      oracle     25.53s     $0.0330
+        out:readers/generated_reader.py@0181e8
+        trace:
+          elapsed: 25.53s
+          cost: $0.0330
+  ────────────────────────────────
+   passes: run
+  Exported 1 cache entries from m1 to cache.tgz
+  Merged 1 cache entries from cache.tgz into m2
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   □ validate            action
+      └─ ◉ generate      oracle
+  ────────────────────────────────
+   passed
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   □ validate            action
+      └─ ■ generate      oracle
+  ────────────────────────────────
+   passed
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   ◉ validate            action
+      └─ ■ generate      oracle
+  ────────────────────────────────
+   passed
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   ■ validate            action
+      └─ ■ generate      oracle
+  ────────────────────────────────
+   passed
+  ────────────────────────────────
+   core-bootstrap       sealed ⚡0/20
+   cse:core-bootstrap.husk  site:m2
+  ────────────────────────────────
+   ■ validate            action     0.56s
+      out:readers/gate-report.txt@e6dc7b
+      out:readers/VERIFIED@b8b58b
+      └─ ◆ generate      oracle     cached     0.01s     ⚡0     $0.0000
+        out:readers/generated_reader.py@0181e8
+        cache: local
+        trace:
+          elapsed: 0.01s
+  ────────────────────────────────
+   passes: run, cache
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   □ validate            action
+      └─ ◉ generate      oracle
+  ────────────────────────────────
+   passed
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   □ validate            action
+      └─ ■ generate      oracle
+  ────────────────────────────────
+   passed
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   ◉ validate            action
+      └─ ■ generate      oracle
+  ────────────────────────────────
+   passed
+
+  ────────────────────────────────
+   core-bootstrap       hydrating ⚡0/20
+   cse:<pending>        site:<executing>
+  ────────────────────────────────
+   ■ validate            action
+      └─ ■ generate      oracle
+  ────────────────────────────────
+   passed
+  ────────────────────────────────
+   core-bootstrap       sealed ⚡1/20
+   cse:core-bootstrap.husk  site:m3
+  ────────────────────────────────
+   ■ validate            action     0.57s
+      out:readers/gate-report.txt@e6dc7b
+      out:readers/VERIFIED@b8b58b
+      └─ ■ generate      oracle     22.56s     $0.0307
+        out:readers/generated_reader.py@2d8192
+        trace:
+          elapsed: 22.56s
+          cost: $0.0307
+  ────────────────────────────────
+   passes: run
+  {
+    "reports": 3,
+    "runs": [
+      {
+        "index": 0,
+        "path": "m1.json",
+        "status": "committed",
+        "cost_paid": 0.032996,
+        "cost_reused": 0.0,
+        "root": "7e32a9109740299fda78297a66cb030b25affe575fa611657d3baa5a9e5f3804",
+        "oracle_calls": 1,
+        "cache_hits": 0,
+        "oracle_nodes": [
+          "generate"
+        ],
+        "cached_nodes": []
+      },
+      {
+        "index": 1,
+        "path": "m2.json",
+        "status": "committed",
+        "cost_paid": 0.0,
+        "cost_reused": 0.0,
+        "root": "7e32a9109740299fda78297a66cb030b25affe575fa611657d3baa5a9e5f3804",
+        "oracle_calls": 0,
+        "cache_hits": 1,
+        "oracle_nodes": [
+          "generate"
+        ],
+        "cached_nodes": [
+          "generate"
+        ]
+      },
+      {
+        "index": 2,
+        "path": "m3.json",
+        "status": "committed",
+        "cost_paid": 0.030744,
+        "cost_reused": 0.0,
+        "root": "4d175e01a3376870a39f62d8cc26bc40c095484b8b2fb98e394980b06d8259ce",
+        "oracle_calls": 1,
+        "cache_hits": 0,
+        "oracle_nodes": [
+          "generate"
+        ],
+        "cached_nodes": []
+      }
+    ],
+    "checks": {
+      "m1_oracle_evidence": true,
+      "m1_paid_cost": true,
+      "m2_zero_oracle_calls": true,
+      "m2_zero_cost": true,
+      "m2_has_cache_hits": true,
+      "m2_cached_node_evidence": true,
+      "m3_oracle_evidence": true,
+      "m3_paid_cost": true,
+      "m1_node_level_oracle_evidence": true,
+      "m3_node_level_oracle_evidence": true,
+      "m2_node_level_cache_evidence": true,
+      "m2_cached_nodes_valid": true,
+      "m1_m2_root_identical": true,
+      "m3_declared_equivalence": true,
+      "m1_m3_comparable_cost": true
+    },
+    "equivalent": true,
+    "violations": [],
+    "warnings": [],
+    "convergence": {
+      "m1_m3_same_root": false,
+      "acceptance_outputs": [
+        "readers/VERIFIED"
+      ],
+      "acceptance_outputs_match": true,
+      "free_outputs": [
+        "readers/generated_reader.py",
+        "readers/gate-report.txt"
+      ]
+    }
+  }
+
+  /tmp/husks30beta-live 50s

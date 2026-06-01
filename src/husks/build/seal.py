@@ -51,6 +51,27 @@ def read_seal(S: Store, rule_name: str) -> dict | None:
         return None
 
 
+def clear_fired_seals(S: Store) -> int:
+    """Remove seal files for all rules that fired during this build.
+
+    Called on halt/error so that the next build re-evaluates those rules
+    from scratch instead of reusing outputs from a failed build.
+
+    Returns the number of seals removed.
+    """
+    removed = 0
+    for event in S.get("trace", []):
+        if event.get("event") == "fired":
+            rule_name = event.get("rule")
+            if rule_name:
+                sp = seal_file(S, rule_name)
+                p = Path(sp)
+                if p.exists():
+                    p.unlink()
+                    removed += 1
+    return removed
+
+
 def output_hashes(S: Store, outputs: list[str]) -> list[str]:
     """Compute content hashes of declared outputs as hex strings."""
     return [file_sig(site_path(S, o)).decode() for o in outputs]

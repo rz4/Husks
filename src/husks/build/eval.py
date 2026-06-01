@@ -278,10 +278,12 @@ def eval_node(S: Store, node: Node) -> None:
     elif kind == "commit":
         S["status"] = "committed"
         S["value"] = node["value"]
+        # Beta 100 Task A5: Promotion handled centrally in run.py after build
         raise Stop("commit", node["value"])
     elif kind == "halt":
         S["status"] = "halted"
         S["value"] = node["reason"]
+        # Beta 100 Task A5: Discard handled centrally in run.py after build
         raise Stop("halt", node["reason"])
     else:
         raise ValueError(f"unknown node type: {kind}")
@@ -347,21 +349,21 @@ def eval_rule(S: Store, node: Node) -> None:
         write_seal(S, name, inputs, recipe, outputs=outputs)
 
         # Beta Gate D2: Cache oracle outputs after promotion (if cache miss)
-        # Beta Gate B7: Make cache population nonfatal after seal publication.
-        # The build has succeeded (outputs promoted and sealed), so cache write
-        # failure should not corrupt the build state.
+        # Beta 100 Task A5: Stage cache entry in pending area (not servable yet).
+        # Promotion to servable cache happens at commit, not here.
+        # This prevents halted/killed runs from leaving reusable residue.
         if (recipe is not None and
             recipe.get("type") == "oracle" and
             not S.get("cache-disabled") and
             usage and not usage.get("cached")):
-            from husks.build.cache import cache_put
+            from husks.build.cache import cache_put_pending
             try:
                 output_contents = {o: read_text(site_path(S, o)) for o in outputs}
-                cache_put(S, recipe, inputs, output_contents)
+                cache_put_pending(S, recipe, inputs, output_contents)
             except Exception as e:
-                # Log cache write failure but don't fail the build
+                # Log cache staging failure but don't fail the build
                 S["trace"].append({
-                    "event": "cache-write-failed",
+                    "event": "cache-stage-failed",
                     "rule": name,
                     "error": str(e),
                 })

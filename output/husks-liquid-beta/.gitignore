@@ -1,0 +1,18 @@
+# Husks build artifacts
+*.husk
+.env
+
+# Site directories
+m1/
+m2/
+m3/
+site/
+
+# Generated outputs
+readers/
+cache.tar.gz
+*.json.report
+
+# Python
+__pycache__/
+*.pyc

@@ -176,6 +176,40 @@ def build(
                 "message": f"verification artifact write failed: {e}"
             })
 
+    # Beta 100 Task A5: Promote or discard pending cache based on final status
+    # Handles both explicit commit nodes and auto-commits
+    if S["status"] == "committed":
+        from husks.build.cache import cache_promote_pending
+        try:
+            promoted = cache_promote_pending(S)
+            if promoted > 0:
+                S["trace"].append({
+                    "event": "cache-promoted",
+                    "count": promoted,
+                })
+        except Exception as e:
+            # Log promotion failure but don't fail the committed build
+            S["trace"].append({
+                "event": "cache-promotion-failed",
+                "error": str(e),
+            })
+    else:
+        from husks.build.cache import cache_discard_pending
+        from husks.build.seal import clear_fired_seals
+        try:
+            cache_discard_pending(S)
+        except Exception:
+            pass  # Best-effort cleanup
+        try:
+            cleared = clear_fired_seals(S)
+            if cleared > 0:
+                S["trace"].append({
+                    "event": "seals-cleared",
+                    "count": cleared,
+                })
+        except Exception:
+            pass  # Best-effort cleanup
+
     S["trace"].append({"event": "build-end", "status": S["status"]})
     T.build_end(S["status"], S["fuel"], fuel)
     global _last_store

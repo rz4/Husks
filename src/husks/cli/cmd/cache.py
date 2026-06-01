@@ -9,7 +9,13 @@ from husks.cli.helpers import EXIT_OK
 
 
 def _cmd_cache_export(args):
-    """Export cache to tarball (Beta Gate G1)."""
+    """Export cache to tarball (Beta Gate G1).
+
+    Beta 100 Task A5: Non-committed builds have no servable cache entries
+    because cache entries are staged in _pending and only promoted to
+    servable on commit. cache_export skips _pending directories, so halted
+    builds naturally export 0 entries.
+    """
     from husks.build.site import fresh_store
     from husks.build.cache import cache_export
 
@@ -19,7 +25,7 @@ def _cmd_cache_export(args):
     # Create store to access cache
     S = fresh_store(site, fuel=1)
 
-    # Export cache
+    # Export cache (skips _pending directories per Beta 100 Task A5)
     count = cache_export(S, export_path)
 
     if args.json_output:
