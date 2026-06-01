@@ -6,112 +6,92 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      trials:
+        description: "Liquid Beta: number of live three-machine trials to run"
+        required: false
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   wheel-smoke:
-    name: Wheel Smoke Test (Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        python-version: ['3.10', '3.11', '3.12', '3.13']
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build pytest
-
-      - name: Run wheel smoke tests
-        run: |
-          python -m pytest tests/test_wheel_smoke.py -v
-
-      - name: Upload wheel artifact
-        if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheel-python-${{ matrix.python-version }}
-          path: /tmp/wheel-smoke-*/dist/*.whl
-          if-no-files-found: ignore
-
-  core-tests:
-    name: Core Tests (Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        python-version: ['3.10', '3.11', '3.12', '3.13']
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-
-      - name: Install package and test dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[llm]"
-          pip install pytest build
-
-      - name: Run core test suite
-        run: |
-          # Run all tests except live oracle tests (which require API key)
-          python -m pytest tests/ \
-            --ignore=tests/test_live_oracle_readiness.py \
-            -v \
-            --tb=short
-        env:
-          # Skip live tests by not setting HUSKS_ENABLE_LIVE_TESTS
-          HUSKS_ENABLE_LIVE_TESTS: ""
-
-  beta-acceptance:
-    name: Beta Acceptance Tests
+    name: Wheel Smoke
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+          pip install dist/*.whl pytest
+      - run: python -m pytest tests/test_wheel_smoke.py -v --tb=short
 
-      - name: Install package and test dependencies
+  solid-alpha:
+    name: Solid Alpha
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      HUSKS_ENABLE_LIVE_TESTS: ""   # ensure no live path can be entered
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[llm]"
-          pip install pytest build
-
-      - name: Run beta_seed three-machine proof (stub mode)
+          pip install -e ".[llm]" pytest
+      - name: Stub three-machine resolution (headline invariant)
         run: |
-          python -m pytest tests/test_beta_three_machine.py -v
-
-      - name: Run beta_seed validator tests
+          python -m pytest -m alpha \
+            tests/test_three_machine_proof.py \
+            tests/test_three_machine_cli_acceptance.py \
+            tests/test_beta_three_machine.py \
+            -v --tb=short
+      - name: Full deterministic suite
         run: |
-          python -m pytest tests/test_beta_seed_validator.py -v
+          python -m pytest tests/ -m "not beta" \
+            --ignore=tests/test_live_oracle_readiness.py \
+            -v --tb=short
 
-      - name: Run compare-runs tests
+  liquid-beta:
+    name: Liquid Beta (live three-machine)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: live-oracle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install (with live oracle extra)
         run: |
-          python -m pytest tests/test_compare_runs.py -v
-
-      - name: Run three-machine CLI acceptance
+          python -m pip install --upgrade pip
+          pip install -e ".[llm]" pytest
+      - name: Live three-machine demo
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HUSKS_ENABLE_LIVE_TESTS: "1"
+          HUSKS_LIVE_TRIALS: ${{ github.event.inputs.trials }}
         run: |
-          python -m pytest tests/test_three_machine_cli_acceptance.py -v
+          python -m pytest -m beta tests/test_live_oracle_readiness.py \
+            -v --tb=short
