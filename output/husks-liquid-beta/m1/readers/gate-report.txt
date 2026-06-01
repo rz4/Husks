@@ -1,0 +1,11 @@
+Conformance Gate Report
+========================================
+Reader: python3 readers/generated_reader.py
+Vectors: 3 positive, 3 negative
+
+Verified roots:
+  adversarial: 5382838c381fc9d0090cd84936da4e7b41ae32787ec25bab3a37036bbf5cb33a
+  demo: 9977239d5eb0131a0eeeeb0dca4320e212e197ced1c8f0c41a6269929ed6cc51
+  unsorted: 4f119edd838718ab42aba5cee25de2d0977384f0c6e31f8e50ff2e7e962748cd
+
+Conformance digest: 66e4db4334ae91b09ce7551abcea504eed97793744bc4e26ca34352bf0cd0f11
