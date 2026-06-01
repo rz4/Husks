@@ -30,16 +30,31 @@ from husks.cli.cmd import (
     _cmd_cache_import as cmd_cache_import,
 )
 
+# Also export with underscore prefix for backward compat
+from husks.cli.cmd import (
+    _cmd_check,
+    _cmd_run,
+    _cmd_run_hy,
+    _cmd_status,
+    _cmd_explain,
+    _cmd_history,
+    _cmd_doctor,
+    _cmd_compare,
+    _cmd_compare_runs,
+    _cmd_cache_export,
+    _cmd_cache_import,
+)
+
 __all__ = [
-    'cmd_check',
-    'cmd_run',
-    'cmd_run_hy',
-    'cmd_status',
-    'cmd_explain',
-    'cmd_history',
-    'cmd_doctor',
-    'cmd_compare',
-    'cmd_compare_runs',
-    'cmd_cache_export',
-    'cmd_cache_import',
+    'cmd_check', '_cmd_check',
+    'cmd_run', '_cmd_run',
+    'cmd_run_hy', '_cmd_run_hy',
+    'cmd_status', '_cmd_status',
+    'cmd_explain', '_cmd_explain',
+    'cmd_history', '_cmd_history',
+    'cmd_doctor', '_cmd_doctor',
+    'cmd_compare', '_cmd_compare',
+    'cmd_compare_runs', '_cmd_compare_runs',
+    'cmd_cache_export', '_cmd_cache_export',
+    'cmd_cache_import', '_cmd_cache_import',
 ]

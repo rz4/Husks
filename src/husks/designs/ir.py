@@ -262,6 +262,12 @@ def check(design: Design) -> list[str]:
                 produced.add(Path(p).name)
             else:
                 produced.add(p)
+    # Collect import namespace prefixes so inputs like "ref/data.csv" are recognized
+    import_prefixes: list[str] = []
+    imports_dict = design.get("imports")
+    if isinstance(imports_dict, dict):
+        for local_name in imports_dict:
+            import_prefixes.append(local_name + "/")
     predicates = design.get("predicates", {})
 
     # Track which rule produces each output (for better error messages)
@@ -357,8 +363,11 @@ def check(design: Design) -> list[str]:
                 if path_err:
                     errors.append(f"{tag}: input {path_err}")
                 if inp not in produced:
-                    # Check if this is a forward reference
-                    if inp in all_outputs:
+                    # Check if input is under an import namespace
+                    is_imported = any(inp.startswith(pfx) for pfx in import_prefixes)
+                    if is_imported:
+                        pass  # Imported paths are resolved at build time
+                    elif inp in all_outputs:
                         errors.append(
                             f"{tag}: input '{inp}' is a forward reference "
                             f"(produced by a later rule)"

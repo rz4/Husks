@@ -16,24 +16,30 @@ from husks.core import recompute_root
 
 
 def _make_site(tmpdir):
-    """Create a site directory with known input files."""
+    """Create a site directory and an inputs directory with known input files."""
     site = os.path.join(tmpdir, "site")
     os.makedirs(site, exist_ok=True)
-    with open(os.path.join(site, "greeting.txt"), "wb") as f:
+    inputs_dir = os.path.join(tmpdir, "inputs")
+    os.makedirs(inputs_dir, exist_ok=True)
+    with open(os.path.join(inputs_dir, "greeting.txt"), "wb") as f:
         f.write(b"Hello, world!\n")
-    with open(os.path.join(site, "config.txt"), "wb") as f:
+    with open(os.path.join(inputs_dir, "config.txt"), "wb") as f:
         f.write(b"mode=test\n")
     return site
 
 
 def _make_design(site):
     """Build a design with two rules: action (greet) -> oracle (combine)."""
+    inputs_dir = os.path.join(os.path.dirname(site), "inputs")
     return {
         "name": "phase1-test",
         "fuel": 20,
         "target": "combine",
         "site": site,
-        "site_inputs": ["greeting.txt", "config.txt"],
+        "site_inputs": {
+            "greeting.txt": os.path.join(inputs_dir, "greeting.txt"),
+            "config.txt": os.path.join(inputs_dir, "config.txt"),
+        },
         "rules": [
             {
                 "name": "greet",
@@ -168,9 +174,11 @@ def test_cond_file_nonempty_branching():
     try:
         site = os.path.join(tmpdir, "site")
         os.makedirs(site, exist_ok=True)
+        inputs_dir = os.path.join(tmpdir, "inputs")
+        os.makedirs(inputs_dir, exist_ok=True)
 
         # ── true branch: file exists and is non-empty ──
-        with open(os.path.join(site, "data.txt"), "w") as f:
+        with open(os.path.join(inputs_dir, "data.txt"), "w") as f:
             f.write("content\n")
 
         design = {
@@ -178,7 +186,7 @@ def test_cond_file_nonempty_branching():
             "fuel": 10,
             "target": "decide",
             "site": site,
-            "site_inputs": ["data.txt"],
+            "site_inputs": {"data.txt": os.path.join(inputs_dir, "data.txt")},
             "rules": [
                 {"name": "yes", "kind": "commit", "value": "present"},
                 {"name": "no", "kind": "halt", "reason": "missing"},
@@ -197,7 +205,7 @@ def test_cond_file_nonempty_branching():
         assert S["value"] == "present"
 
         # ── false branch: file exists but is empty ──
-        with open(os.path.join(site, "data.txt"), "w") as f:
+        with open(os.path.join(inputs_dir, "data.txt"), "w") as f:
             pass  # empty file
 
         # Wipe traces to force re-evaluation
@@ -228,8 +236,9 @@ def test_staleness_changes_root():
         assert S1["status"] == "committed"
         root1 = S1["build-root"]
 
-        # Modify an input file
-        with open(os.path.join(site, "config.txt"), "wb") as f:
+        # Modify an input file (in the inputs dir, which is symlinked into site)
+        inputs_dir = os.path.join(tmpdir, "inputs")
+        with open(os.path.join(inputs_dir, "config.txt"), "wb") as f:
             f.write(b"mode=changed\n")
 
         S2 = _run_build(design)
@@ -270,7 +279,6 @@ def test_imports_readable():
             "imports": {
                 "ref": ext_dir,
             },
-            "site_inputs": ["ref/data.csv"],
             "rules": [
                 {
                     "name": "use-ref",
@@ -433,8 +441,9 @@ def test_multi_target_engine_equals_reader_root():
     try:
         site = os.path.join(tmpdir, "site")
         os.makedirs(site)
-        # Create a site input for the action rule
-        with open(os.path.join(site, "input.txt"), "w") as f:
+        inputs_dir = os.path.join(tmpdir, "inputs")
+        os.makedirs(inputs_dir)
+        with open(os.path.join(inputs_dir, "input.txt"), "w") as f:
             f.write("data\n")
 
         design = {
@@ -442,7 +451,7 @@ def test_multi_target_engine_equals_reader_root():
             "fuel": 10,
             "targets": ["done-a", "done-b"],
             "site": site,
-            "site_inputs": ["input.txt"],
+            "site_inputs": {"input.txt": os.path.join(inputs_dir, "input.txt")},
             "rules": [
                 {
                     "name": "step",

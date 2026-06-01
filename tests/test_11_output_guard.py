@@ -94,7 +94,8 @@ def test_oracle_empty_output_halts():
     from pathlib import Path
     tmpdir = tempfile.mkdtemp(prefix="guard-oracle-empty-")
     try:
-        site = make_site(tmpdir)
+        site = os.path.join(tmpdir, "site")
+        os.makedirs(site, exist_ok=True)
 
         def _empty_oracle(S, rule_name, recipe, outputs):
             for o in outputs:
@@ -103,14 +104,17 @@ def test_oracle_empty_output_halts():
                 p.write_bytes(b"")
             return {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "fuel_steps": 1}
 
-        # Use absolute path for site_inputs (input.txt is created in site by make_site)
-        input_path = os.path.join(site, "input.txt")
+        inputs_dir = os.path.join(tmpdir, "inputs")
+        os.makedirs(inputs_dir, exist_ok=True)
+        input_path = os.path.join(inputs_dir, "input.txt")
+        with open(input_path, "wb") as f:
+            f.write(b"hello\n")
         design = {
             "name": "guard-oracle-empty",
             "fuel": 10,
             "target": "gen",
             "site": site,
-            "site_inputs": [input_path],  # Absolute path
+            "site_inputs": {"input.txt": input_path},
             "oracle_backend": _empty_oracle,
             "rules": [
                 {
@@ -140,13 +144,18 @@ def test_oracle_missing_output_halts():
     from husks.designs.ir import run
     tmpdir = tempfile.mkdtemp(prefix="guard-oracle-missing-")
     try:
-        site = make_site(tmpdir)
+        site = os.path.join(tmpdir, "site")
+        os.makedirs(site, exist_ok=True)
+        inputs_dir = os.path.join(tmpdir, "inputs")
+        os.makedirs(inputs_dir, exist_ok=True)
+        with open(os.path.join(inputs_dir, "input.txt"), "wb") as f:
+            f.write(b"hello\n")
         design = {
             "name": "guard-oracle-missing",
             "fuel": 10,
             "target": "gen",
             "site": site,
-            "site_inputs": ["input.txt"],
+            "site_inputs": {"input.txt": os.path.join(inputs_dir, "input.txt")},
             "oracle_backend": _noop_oracle,
             "rules": [
                 {

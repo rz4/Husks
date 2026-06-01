@@ -334,13 +334,13 @@ def _render_node_tree(
                     lines.append(f"{detail_indent}  config: sha256:{trace.config_hash[:6]}")
                 if trace.prompt_hash:
                     lines.append(f"{detail_indent}  prompt: sha256:{trace.prompt_hash[:6]}")
-                if trace.input_tokens > 0:
+                if trace.input_tokens is not None and trace.input_tokens > 0:
                     lines.append(f"{detail_indent}  input_tokens: {trace.input_tokens}")
-                if trace.output_tokens > 0:
+                if trace.output_tokens is not None and trace.output_tokens > 0:
                     lines.append(f"{detail_indent}  output_tokens: {trace.output_tokens}")
                 if trace.elapsed_s is not None:
                     lines.append(f"{detail_indent}  elapsed: {trace.elapsed_s:.2f}s")
-                if trace.cost_usd > 0:
+                if trace.cost_usd is not None and trace.cost_usd > 0:
                     lines.append(f"{detail_indent}  cost: ${trace.cost_usd:.4f}")
 
             # Log section

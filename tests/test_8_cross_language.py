@@ -142,7 +142,9 @@ class TestMultiTargetCrossLanguage:
 
         site = str(tmp_path / "site")
         os.makedirs(site)
-        with open(os.path.join(site, "input.txt"), "w") as f:
+        inputs_dir = tmp_path / "inputs"
+        inputs_dir.mkdir()
+        with open(str(inputs_dir / "input.txt"), "w") as f:
             f.write("data\n")
 
         design = {
@@ -150,7 +152,7 @@ class TestMultiTargetCrossLanguage:
             "fuel": 10,
             "targets": ["done-a", "done-b"],
             "site": site,
-            "site_inputs": ["input.txt"],
+            "site_inputs": {"input.txt": str(inputs_dir / "input.txt")},
             "rules": [
                 {
                     "name": "step",

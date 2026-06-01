@@ -121,17 +121,15 @@ def test_husks_init_check_command():
         # Run husks init
         run_husks_cli("init", str(tmpdir))
 
-        # Run husks check
-        design_path = Path(tmpdir) / "design.json"
+        # Run husks check (init creates core-bootstrap.json, not design.json)
+        design_path = Path(tmpdir) / "core-bootstrap.json"
         result = run_husks_cli("check", str(design_path), cwd=str(tmpdir))
 
         assert result.returncode == 0, (
             f"husks check should pass on generated project\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
-
-        # Should print "ok"
-        assert "ok" in result.stdout.lower() or "✓" in result.stdout
+        # check is silent on success (exit code 0 is the indicator)
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -154,8 +152,8 @@ def test_husks_init_run_stub_command():
         site = Path(tmpdir) / "site"
         site.mkdir()
 
-        # Run husks run --stub
-        design_path = Path(tmpdir) / "design.json"
+        # Run husks run --stub (init creates core-bootstrap.json)
+        design_path = Path(tmpdir) / "core-bootstrap.json"
         result = run_husks_cli(
             "run", str(design_path), "--stub", "--site", str(site), cwd=str(tmpdir)
         )
@@ -166,8 +164,8 @@ def test_husks_init_run_stub_command():
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
-        # Should show committed status
-        assert "committed" in result.stdout.lower()
+        # Should show sealed status in DAG view
+        assert "sealed" in result.stdout.lower()
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

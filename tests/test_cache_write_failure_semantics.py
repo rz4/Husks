@@ -42,8 +42,8 @@ def test_cache_write_failure_does_not_corrupt_build():
             recipe=oracle(prompt="test", fuel=5),
         )
 
-        # Mock cache_put to raise an exception
-        with patch("husks.build.cache.cache_put") as mock_cache_put:
+        # Mock cache_put_pending to raise an exception
+        with patch("husks.build.cache.cache_put_pending") as mock_cache_put:
             mock_cache_put.side_effect = IOError("Simulated cache write failure")
 
             # Build should still succeed
@@ -62,13 +62,13 @@ def test_cache_write_failure_does_not_corrupt_build():
             seal_path = site / ".traces" / "oracle-rule.seal"
             assert seal_path.exists(), "Seal should exist despite cache write failure"
 
-            # Trace should record the cache write failure
+            # Trace should record the cache staging failure
             cache_failures = [
                 e for e in S["trace"]
-                if e.get("event") == "cache-write-failed"
+                if e.get("event") == "cache-stage-failed"
             ]
             assert len(cache_failures) == 1, (
-                f"Should record one cache write failure, got {len(cache_failures)}"
+                f"Should record one cache stage failure, got {len(cache_failures)}"
             )
             assert "cache write failure" in cache_failures[0]["error"].lower()
 

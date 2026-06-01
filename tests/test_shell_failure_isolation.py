@@ -118,21 +118,27 @@ def test_bootstrap_core_with_stub_commits():
         design_path = Path(__file__).parent.parent / "examples" / "json_designs" / "bootstrap-core.json"
         design = from_json(design_path)
 
-        # Create temporary site with required inputs
+        # Create temporary site and a separate inputs directory
         site = Path(tmpdir) / "site"
         site.mkdir()
+        inputs_dir = Path(tmpdir) / "inputs"
+        inputs_dir.mkdir()
 
-        # Create stub input files
-        (site / "CSE-v1.md").write_text("# CSE v1 spec stub\n")
-        (site / "CSE-v2.md").write_text("# CSE v2 examples stub\n")
+        # Create stub input files outside the site directory
+        (inputs_dir / "CSE-v1.md").write_text("# CSE v1 spec stub\n")
+        (inputs_dir / "CSE-v2.md").write_text("# CSE v2 examples stub\n")
 
-        # Override site and oracle backend
+        # Override site, site_inputs (absolute paths), and oracle backend
         design["site"] = str(site)
+        design["site_inputs"] = {
+            "CSE-v1.md": str(inputs_dir / "CSE-v1.md"),
+            "CSE-v2.md": str(inputs_dir / "CSE-v2.md"),
+        }
 
         # Replace the gate rule's shell command with a simple one that will succeed
         # The original uses husks-gate which may not be available in all environments
         for rule in design["rules"]:
-            if rule["name"] == "gate":
+            if rule["name"] == "validate":
                 # Simple command that creates the expected outputs in nested paths
                 rule["run"] = (
                     "mkdir -p readers && "

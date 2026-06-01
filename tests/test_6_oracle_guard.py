@@ -41,13 +41,18 @@ def test_oracle_empty_output_halts():
     from husks.designs.ir import run
     tmpdir = tempfile.mkdtemp(prefix="oracle-empty-")
     try:
-        site = make_site(tmpdir)
+        site = os.path.join(tmpdir, "site")
+        os.makedirs(site, exist_ok=True)
+        inputs_dir = os.path.join(tmpdir, "inputs")
+        os.makedirs(inputs_dir, exist_ok=True)
+        with open(os.path.join(inputs_dir, "input.txt"), "wb") as f:
+            f.write(b"hello\n")
         design = {
             "name": "empty-oracle-test",
             "fuel": 10,
             "target": "write-thing",
             "site": site,
-            "site_inputs": ["input.txt"],
+            "site_inputs": {"input.txt": os.path.join(inputs_dir, "input.txt")},
             "oracle_backend": _empty_oracle_backend,
             "rules": [
                 {
@@ -80,13 +85,18 @@ def test_oracle_missing_output_halts():
     from husks.designs.ir import run
     tmpdir = tempfile.mkdtemp(prefix="oracle-missing-")
     try:
-        site = make_site(tmpdir)
+        site = os.path.join(tmpdir, "site")
+        os.makedirs(site, exist_ok=True)
+        inputs_dir = os.path.join(tmpdir, "inputs")
+        os.makedirs(inputs_dir, exist_ok=True)
+        with open(os.path.join(inputs_dir, "input.txt"), "wb") as f:
+            f.write(b"hello\n")
         design = {
             "name": "missing-oracle-test",
             "fuel": 10,
             "target": "write-thing",
             "site": site,
-            "site_inputs": ["input.txt"],
+            "site_inputs": {"input.txt": os.path.join(inputs_dir, "input.txt")},
             "oracle_backend": _missing_oracle_backend,
             "rules": [
                 {
@@ -116,13 +126,18 @@ def test_action_zero_byte_marker_commits():
     from husks.designs.ir import run
     tmpdir = tempfile.mkdtemp(prefix="action-marker-")
     try:
-        site = make_site(tmpdir)
+        site = os.path.join(tmpdir, "site")
+        os.makedirs(site, exist_ok=True)
+        inputs_dir = os.path.join(tmpdir, "inputs")
+        os.makedirs(inputs_dir, exist_ok=True)
+        with open(os.path.join(inputs_dir, "input.txt"), "wb") as f:
+            f.write(b"hello\n")
         design = {
             "name": "marker-test",
             "fuel": 10,
             "target": "finish",
             "site": site,
-            "site_inputs": ["input.txt"],
+            "site_inputs": {"input.txt": os.path.join(inputs_dir, "input.txt")},
             "rules": [
                 {
                     "name": "finish",

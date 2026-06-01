@@ -131,7 +131,6 @@ def test_explain_diff_with_artifacts():
         design = {
             "name": "diff-test",
             "fuel": 10,
-            "site": str(site),
             "target": "output",
             "rules": [
                 {"name": "output", "kind": "action", "outputs": ["output.txt"], "run": "echo 'v1' > output.txt"}
@@ -141,7 +140,7 @@ def test_explain_diff_with_artifacts():
 
         # First build to create sealed artifacts
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site), str(design_path)],
             capture_output=True,
         )
 
@@ -175,7 +174,6 @@ def test_explain_diff_json_output():
         design = {
             "name": "diff-json",
             "fuel": 10,
-            "site": str(site),
             "target": "data",
             "rules": [
                 {"name": "data", "kind": "action", "outputs": ["data.txt"], "run": "echo 'data' > data.txt"}
@@ -185,7 +183,7 @@ def test_explain_diff_json_output():
 
         # Build to create artifacts
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site), str(design_path)],
             capture_output=True,
         )
 
@@ -216,7 +214,6 @@ def test_explain_seal_for_rule():
         design = {
             "name": "seal-test",
             "fuel": 10,
-            "site": str(site),
             "target": "sealed-output",
             "rules": [
                 {"name": "sealed-output", "kind": "action", "outputs": ["sealed.txt"], "run": "echo 'sealed' > sealed.txt"}
@@ -226,7 +223,7 @@ def test_explain_seal_for_rule():
 
         # Build to create seal
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site), str(design_path)],
             capture_output=True,
         )
 
@@ -257,7 +254,6 @@ def test_explain_subject_for_rule():
         design = {
             "name": "subject-test",
             "fuel": 10,
-            "site": str(site),
             "target": "my-rule",
             "rules": [
                 {"name": "my-rule", "kind": "action", "outputs": ["my-output.txt"], "run": "echo 'output' > my-output.txt"}
@@ -267,7 +263,7 @@ def test_explain_subject_for_rule():
 
         # Build to create rule state
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site), str(design_path)],
             capture_output=True,
         )
 
@@ -298,7 +294,6 @@ def test_explain_subject_json_output():
         design = {
             "name": "subject-json",
             "fuel": 10,
-            "site": str(site),
             "target": "test-rule",
             "rules": [
                 {"name": "test-rule", "kind": "action", "inputs": [], "outputs": ["test.txt"], "run": "echo 'test' > test.txt"}
@@ -308,7 +303,7 @@ def test_explain_subject_json_output():
 
         # Build
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site), str(design_path)],
             capture_output=True,
         )
 
@@ -322,8 +317,9 @@ def test_explain_subject_json_output():
 
         assert result.returncode == 0
         subject_data = json.loads(result.stdout)
-        assert subject_data["type"] == "rule"
-        assert subject_data["name"] == "test-rule"
+        # explain subject outputs the status schema with cursor set to the subject
+        assert "nodes" in subject_data
+        assert subject_data["cursor"] == "test-rule"
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -360,22 +356,22 @@ def test_explain_navigator_default_cursor():
         design = {
             "name": "nav-test",
             "fuel": 20,
-            "site": str(site_m1),
             "target": "validate",
             "rules": [
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "prompt": "Generate test content",
+                    "tools": ["write-file"],
+                    "fuel": 5
+                },
                 {
                     "name": "validate",
                     "kind": "action",
                     "inputs": ["output.txt"],
                     "outputs": ["validated.txt"],
                     "run": "cat output.txt > validated.txt"
-                },
-                {
-                    "name": "generate",
-                    "kind": "oracle",
-                    "outputs": ["output.txt"],
-                    "config": {"model": "stub"},
-                    "prompt": "Generate test content"
                 }
             ],
         }
@@ -383,7 +379,7 @@ def test_explain_navigator_default_cursor():
 
         # Build on m1
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site_m1), str(design_path)],
             capture_output=True,
         )
 
@@ -420,22 +416,22 @@ def test_explain_navigator_custom_node_aperture_0():
         design = {
             "name": "aperture-test",
             "fuel": 20,
-            "site": str(site_m1),
             "target": "validate",
             "rules": [
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "prompt": "Generate test",
+                    "tools": ["write-file"],
+                    "fuel": 5
+                },
                 {
                     "name": "validate",
                     "kind": "action",
                     "inputs": ["output.txt"],
                     "outputs": ["validated.txt"],
                     "run": "cat output.txt > validated.txt"
-                },
-                {
-                    "name": "generate",
-                    "kind": "oracle",
-                    "outputs": ["output.txt"],
-                    "config": {"model": "stub"},
-                    "prompt": "Generate test"
                 }
             ],
         }
@@ -443,7 +439,7 @@ def test_explain_navigator_custom_node_aperture_0():
 
         # Build
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site_m1), str(design_path)],
             capture_output=True,
         )
 
@@ -458,9 +454,9 @@ def test_explain_navigator_custom_node_aperture_0():
         assert result.returncode == 0
         assert "cursor:generate" in result.stdout
         assert "aperture:0" in result.stdout
-        # Aperture 0: should NOT show output details
-        assert "out:" not in result.stdout, \
-            "Aperture 0 should not show output details"
+        # Aperture 0: should not show seal or trace details
+        assert "seal:" not in result.stdout, \
+            "Aperture 0 should not show seal details"
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -480,22 +476,22 @@ def test_explain_navigator_aperture_3_trace():
         design = {
             "name": "trace-test",
             "fuel": 20,
-            "site": str(site_m1),
             "target": "validate",
             "rules": [
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "prompt": "Generate content",
+                    "tools": ["write-file"],
+                    "fuel": 5
+                },
                 {
                     "name": "validate",
                     "kind": "action",
                     "inputs": ["output.txt"],
                     "outputs": ["validated.txt"],
                     "run": "cat output.txt > validated.txt"
-                },
-                {
-                    "name": "generate",
-                    "kind": "oracle",
-                    "outputs": ["output.txt"],
-                    "config": {"model": "stub"},
-                    "prompt": "Generate content"
                 }
             ],
         }
@@ -503,7 +499,7 @@ def test_explain_navigator_aperture_3_trace():
 
         # Build with stub oracle (produces trace)
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site_m1), str(design_path)],
             capture_output=True,
         )
 
@@ -517,14 +513,11 @@ def test_explain_navigator_aperture_3_trace():
 
         assert result.returncode == 0
         assert "aperture:3" in result.stdout
-        # Aperture 3 should show trace section
+        # Aperture 3 should show trace section with cost
         assert "trace:" in result.stdout, \
             "Aperture 3 should show trace section"
-        assert "backend:" in result.stdout, \
-            "Aperture 3 should show backend"
-        # Stub oracle should show model or config
-        assert "model:" in result.stdout or "config:" in result.stdout, \
-            "Aperture 3 should show oracle config"
+        assert "cost:" in result.stdout, \
+            "Aperture 3 should show cost"
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -549,27 +542,27 @@ def test_explain_navigator_cached_node():
             "target": "validate",
             "rules": [
                 {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "prompt": "Generate cached content",
+                    "tools": ["write-file"],
+                    "fuel": 5
+                },
+                {
                     "name": "validate",
                     "kind": "action",
                     "inputs": ["output.txt"],
                     "outputs": ["validated.txt"],
                     "run": "cat output.txt > validated.txt"
-                },
-                {
-                    "name": "generate",
-                    "kind": "oracle",
-                    "outputs": ["output.txt"],
-                    "config": {"model": "stub"},
-                    "prompt": "Generate cached content"
                 }
             ],
         }
 
         # Build on m1 first
-        design["site"] = str(site_m1)
         design_path.write_text(json.dumps(design, indent=2))
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site_m1), str(design_path)],
             capture_output=True,
         )
 
@@ -589,10 +582,9 @@ def test_explain_navigator_cached_node():
         )
 
         # Build on m2 (should reuse cache)
-        design["site"] = str(site_m2)
         design_path.write_text(json.dumps(design, indent=2))
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site_m2), str(design_path)],
             capture_output=True,
         )
 
@@ -629,22 +621,22 @@ def test_explain_navigator_json_output():
         design = {
             "name": "json-nav",
             "fuel": 20,
-            "site": str(site_m1),
             "target": "validate",
             "rules": [
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "prompt": "Generate",
+                    "tools": ["write-file"],
+                    "fuel": 5
+                },
                 {
                     "name": "validate",
                     "kind": "action",
                     "inputs": ["output.txt"],
                     "outputs": ["validated.txt"],
                     "run": "cat output.txt > validated.txt"
-                },
-                {
-                    "name": "generate",
-                    "kind": "oracle",
-                    "outputs": ["output.txt"],
-                    "config": {"model": "stub"},
-                    "prompt": "Generate"
                 }
             ],
         }
@@ -652,7 +644,7 @@ def test_explain_navigator_json_output():
 
         # Build
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site_m1), str(design_path)],
             capture_output=True,
         )
 
@@ -696,22 +688,22 @@ def test_explain_interactive_requires_tty():
         design = {
             "name": "interactive-test",
             "fuel": 20,
-            "site": str(site_m1),
             "target": "validate",
             "rules": [
+                {
+                    "name": "generate",
+                    "kind": "oracle",
+                    "outputs": ["output.txt"],
+                    "prompt": "Generate",
+                    "tools": ["write-file"],
+                    "fuel": 5
+                },
                 {
                     "name": "validate",
                     "kind": "action",
                     "inputs": ["output.txt"],
                     "outputs": ["validated.txt"],
                     "run": "cat output.txt > validated.txt"
-                },
-                {
-                    "name": "generate",
-                    "kind": "oracle",
-                    "outputs": ["output.txt"],
-                    "config": {"model": "stub"},
-                    "prompt": "Generate"
                 }
             ],
         }
@@ -719,7 +711,7 @@ def test_explain_interactive_requires_tty():
 
         # Build
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site_m1), str(design_path)],
             capture_output=True,
         )
 
@@ -758,7 +750,6 @@ def test_explain_deterministic_without_interactive():
         design = {
             "name": "deterministic-test",
             "fuel": 20,
-            "site": str(site_m1),
             "target": "output",
             "rules": [
                 {
@@ -773,7 +764,7 @@ def test_explain_deterministic_without_interactive():
 
         # Build
         subprocess.run(
-            [sys.executable, "-m", "husks.cli", "run", "--stub", str(design_path)],
+            [sys.executable, "-m", "husks.cli", "run", "--stub", "--site", str(site_m1), str(design_path)],
             capture_output=True,
         )
 

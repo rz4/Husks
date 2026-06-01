@@ -29,9 +29,9 @@ def _run_and_compare(input_order):
         site = os.path.join(tmp, "site")
         os.makedirs(site, exist_ok=True)
 
-        # Create input files
+        # Create input files in tmpdir (next to design JSON for _source_path resolution)
         for name in ("a_in.txt", "b_in.txt", "c_in.txt"):
-            with open(os.path.join(site, name), "w") as f:
+            with open(os.path.join(tmp, name), "w") as f:
                 f.write(name.upper() + "\n")
 
         inputs = list(input_order)
