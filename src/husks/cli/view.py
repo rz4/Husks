@@ -110,7 +110,8 @@ def render_dag(
     parts.append(f"  {BOLD}{stage}{RESET}")
 
     # 3. Separator
-    parts.append(f"  {DIM}{'\u2500' * (R - 2)}{RESET}")
+    hline = '\u2500' * (R - 2)
+    parts.append(f"  {DIM}{hline}{RESET}")
 
     # 4. Node tree
     tree = _render_motif_tree(
@@ -119,7 +120,8 @@ def render_dag(
     parts.extend(tree)
 
     # 5. Separator
-    parts.append(f"  {DIM}{'\u2500' * (R - 2)}{RESET}")
+    hline = '\u2500' * (R - 2)
+    parts.append(f"  {DIM}{hline}{RESET}")
 
     # 6. Footer
     parts.append(_render_footer(residue))
