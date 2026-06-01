@@ -348,11 +348,11 @@ def cache_put_pending(
 
 
 def cache_promote_pending(S: Store) -> int:
-    """Promote all pending cache entries to servable cache at commit.
+    """Promote pending cache entries to servable cache at commit.
 
-    Beta 100 Task A5: Called when build reaches committed status. Moves all
-    entries from .cache/_pending/ to .cache/. Returns the number of promoted
-    entries.
+    Beta 100 Task A5: Called when build reaches committed status. Promotes
+    only entries whose ``created_run_id`` matches the current run. Foreign
+    orphans (from killed prior runs) are discarded as best-effort GC.
 
     Parameters
     ----------
@@ -370,16 +370,35 @@ def cache_promote_pending(S: Store) -> int:
     if not pending_root.exists():
         return 0
 
+    current_run_id = S.get("run-id")
     promoted_count = 0
+
     for pending_entry in pending_root.iterdir():
         if not pending_entry.is_dir():
+            continue
+
+        # Check run-id ownership
+        meta_file = pending_entry / "meta.json"
+        entry_run_id = None
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text())
+                entry_run_id = meta.get("created_run_id")
+            except Exception:
+                pass
+
+        if entry_run_id != current_run_id:
+            # Foreign orphan from a killed prior run — GC it
+            try:
+                shutil.rmtree(str(pending_entry))
+            except Exception:
+                pass
             continue
 
         key = pending_entry.name
         servable_dir = Path(cache_dir(S, key))
 
         # Move pending entry to servable cache
-        # If servable already exists (unlikely), overwrite it
         if servable_dir.exists():
             shutil.rmtree(servable_dir)
 

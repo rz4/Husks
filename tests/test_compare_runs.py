@@ -878,8 +878,9 @@ def test_compare_runs_rejects_cost_drift():
         comparison = json.loads(compare_result.stdout)
         assert comparison["equivalent"] is False, "Should not be equivalent"
         assert len(comparison["violations"]) > 0, "Should have violations"
-        assert any("cost" in v.lower() and "comparable" in v.lower() for v in comparison["violations"]), (
-            f"Should have cost comparability violation, got: {comparison['violations']}"
+        assert any("cost" in v.lower() and ("comparable" in v.lower() or "tolerance" in v.lower())
+                    for v in comparison["violations"]), (
+            f"Should have cost violation, got: {comparison['violations']}"
         )
 
         print("\n✓ Beta Readiness Task 3: compare-runs rejects cost drift (0.0008 vs 999.0)")

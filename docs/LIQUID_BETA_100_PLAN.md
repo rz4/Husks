@@ -167,11 +167,15 @@ Required semantics. Separate two promotions that are currently fused:
 Mechanism:
 
 - In the oracle rule block, replace the immediate `cache_put` with a staged write to a pending cache area (for example `.cache/_pending/<key>/`), recording everything `cache_put` needs (recipe, inputs, output contents, seal data).
-- At the commit branch in `eval.py` (where `S["status"]` is set to `"committed"`, around line 279), promote all pending entries for this run into the servable cache via the existing `cache_put` content path.
-- On `halt`, or if the run ends without reaching `committed`, discard the pending area. Do not promote.
+- At build end in `src/husks/build/run.py`, promote pending entries into the servable cache only when `S["status"] == "committed"` (via `cache_promote_pending`).
+- On `halt`, or if the run ends without reaching `committed`, discard the pending area (`cache_discard_pending`). Do not promote.
 - `cache_get` and lookup read only the servable cache, never `_pending`. This is the kill-safety property: a SIGKILL mid-run leaves only an unpromoted pending area, which is never a hit.
 
-Export must refuse non-committed builds. In `src/husks/cli/cmd/cache.py`, `_cmd_cache_export` calls `cache_export(S, ...)` with no status check and printed `Exported 1 cache entries` against a halted M1 in the live run. Gate export on `S["status"] == "committed"` (or on the site manifest's committed root). Exporting from a non-committed build is a no-op that reports zero entries, not an error that breaks a harness, but it must not emit residue.
+Status (shipped in `a143da7`): `cache_put_pending`, `cache_promote_pending`, and `cache_discard_pending` exist in `src/husks/build/cache.py`; eval stages oracle outputs to `_pending` (eval.py ~359); run promotes on committed and discards on halt (run.py ~181, ~197); export skips `_pending`. The mechanism is wired. One defect remains, below.
+
+Remaining defect: promotion does not filter by run. `cache_promote_pending` iterates the whole `_pending` directory and promotes every entry, regardless of which run created it. A SIGKILL cannot run the discard branch, so a killed run leaves its pending entry on disk. A later build that commits in the same site then promotes that orphan as a side effect. The same-design rerun case self-heals, because the key is identical and the next run overwrites the pending entry before promoting; the unhealed case is a killed run for design X leaving `_pending/keyX`, then a different design committing in the same site and promoting `keyX`. The fix: pending entries already record `created_run_id` in `meta.json`, so `cache_promote_pending` must promote only entries whose `created_run_id == S["run-id"]`, and best-effort GC foreign orphans. Until this lands, the A5 invariant "a killed run leaves no servable residue" is false across designs in a shared site.
+
+Export must refuse non-committed builds (shipped): `_cmd_cache_export` skips `_pending`, so a halted build exports zero entries. Keep this. Exporting from a non-committed build is a no-op that reports zero entries, not an error that breaks a harness.
 
 Keep the existing `cache-write-failed` nonfatal behavior: a failure to promote at commit must not corrupt an already-sealed build, it logs to the trace as today.
 
@@ -217,6 +221,8 @@ Required cases:
 
 12. Commit promotes (A5, happy path regression): a committed stub build promotes the oracle output to the servable cache, and a second site importing that bundle gets a cache hit at zero cost. This guards against the fix over-correcting and suppressing legitimate caching.
 
+13. Orphan pending is not promoted (A5 run-id filter): simulate a killed run by staging a pending entry for design X with a foreign `created_run_id` and no discard, then run a committed build of a different design Y in the same site. Assert only Y's entry is promoted to the servable cache and design X's orphan is not, and that a later lookup for design X gets no cache hit. Test 10 inspects only the immediate halted run and does not cover this; this case is what makes the kill-safety invariant true across designs in a shared site.
+
 ## Task C: amend `docs/CLI_BETA_100.md` for the live claim
 
 Proving live contradicts two statements the doc currently makes, both of which are stub-only:
@@ -236,7 +242,7 @@ Add a live expected-result block alongside the existing stub one, showing diverg
 - Build root is unchanged by the new metadata.
 - Renderer shows a stable tree from frame one, a correct oracle counter on paid runs, and no cross-site state in a single-site seal frame.
 - `docs/CLI_BETA_100.md` no longer claims same-root or bitwise-identical artifacts on the live path.
-- Full test suite green, including the twelve cases above (case 9 gated on `ANTHROPIC_API_KEY`).
+- Full test suite green, including the thirteen cases above (case 9 gated on `ANTHROPIC_API_KEY`).
 
 ## Out of scope
 

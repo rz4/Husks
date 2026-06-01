@@ -5,7 +5,7 @@
 
 ## Overview
 
-Beta 100 marks the first public-ready release of Husks, a deterministic build system for nondeterministic (LLM-powered) work. This release demonstrates **computational state equivalence** through a three-machine proof: independent realizations of the same design produce verifiably identical build artifacts.
+Beta 100 marks the first public-ready release of Husks, a deterministic build system for nondeterministic (LLM-powered) work. This release demonstrates **computational state equivalence** through a three-machine proof: independent realizations of the same design produce verifiably equivalent build artifacts under the design's declared acceptance relation.
 
 ## Quick Start
 
@@ -54,7 +54,7 @@ husks explain --site m2 --node generate --aperture 3  # M2: cached reuse
 husks explain --site m3 --node generate --aperture 3  # M3: independent realization
 ```
 
-**Expected result:**
+**Expected result (stub path — deterministic identity):**
 ```
 ✓ Three-machine proof validated
 
@@ -62,7 +62,23 @@ M1: oracle_calls=1, cost=$0.000800 (paid oracle cost)
 M2: oracle_calls=0, cost=$0.000000, cache_hits=1 (zero-cost reuse)
 M3: oracle_calls=1, cost=$0.000800 (independent re-realization)
 
-All three: same root (computational state equivalence)
+All three: same root (deterministic identity via stub oracle)
+```
+
+**Expected result (live path — validator-bounded acceptance):**
+```
+✓ Three-machine proof validated
+
+M1: oracle_calls=1, cost=$0.0330, root=7e32a9...
+M2: oracle_calls=0, cost=$0.0000, cache_hits=1, root=7e32a9... (same as M1)
+M3: oracle_calls=1, cost=$0.0307, root=4d175e... (differs from M1)
+
+M1/M2: root identical (cache determinism)
+M3: VERIFIED digest matches M1 (behavioral acceptance)
+     generated_reader.py differs (free output, expected)
+     cost ratio 0.93 within tolerance [0.5, 2.0]
+
+equivalent: true
 ```
 
 ## Core Commands
@@ -209,8 +225,10 @@ husks compare-runs m1.json m2.json m3.json
 **Checks:**
 - M1: `oracle_calls > 0`, `cost > 0`
 - M2: `oracle_calls = 0`, `cost = 0`, `cache_hits > 0`
-- M3: `oracle_calls > 0`, comparable cost to M1
-- All: Same `root` (build equivalence)
+- M3: `oracle_calls > 0`, comparable cost to M1 (within declared `cost_tolerance`)
+- M1/M2: Same `root` (cache determinism)
+- M3: Validator-bounded acceptance — `exact` outputs (conformance digest) match M1; `free` outputs (generated source, gate report) may differ
+- Cost: M3/M1 ratio within seed-declared tolerance (default `[0.5, 2.0]`)
 
 ### `husks explain --site <dir>`
 
@@ -514,7 +532,10 @@ The JSON report follows the beta-1 schema for compare-runs compatibility:
 - `cache_hits` - Number of cache reuses
 - `cached_nodes` - Names of nodes reused from cache
 - `cost.paid` - Actual USD cost paid this run
-- `root` - Build root hash (must match across machines)
+- `cost_tolerance` - Declared cost comparability bounds (from seed design)
+- `root` - Build root hash (M1/M2 must match; M3 may differ on live path)
+- `nodes[].outputs` - Named output hashes (path + hash for per-output comparison)
+- `nodes[].equivalence` - Per-output equivalence relation (`exact` or `free`)
 
 **Node-level evidence:**
 - `nodes[].cached` - Explicit cache reuse flag
@@ -669,11 +690,11 @@ Husks uses a unified state model across all commands (check, run, status):
 
 Actions are **not cached** in beta 100. Only oracle outputs are cached. The validate action runs on M2, but the generate oracle is cached, so M2 pays zero oracle cost.
 
-### Why do M1 and M3 have the same root despite independent runs?
+### Why do M1 and M3 have the same root in stub mode but different roots in live mode?
 
-The stub oracle is **deterministic**: same inputs → same outputs. M1 and M3 both use stub mode with identical inputs, so they produce byte-identical outputs, resulting in the same build root hash.
+The stub oracle is **deterministic**: same inputs → same outputs. M1 and M3 both use stub mode with identical inputs, so they produce byte-identical outputs, resulting in the same build root hash. This proves **deterministic identity**.
 
-With live oracles (non-stub), M1 and M3 may produce different outputs (non-deterministic), resulting in different roots. Use `--json` and check `output_hashes` to verify equivalence.
+With live oracles, M1 and M3 produce different generated source code (non-deterministic), resulting in different roots. This is expected and correct — Section 4 of the white paper states the seed/cache split prevents "independent re-realization from being mistaken for deterministic identity." Equivalence on the live path is proved via **validator-bounded acceptance**: both readers pass the conformance gate and produce identical `VERIFIED` digests, proving behavioral equivalence without requiring identical source.
 
 ### Can I run beta 100 without an API key?
 
@@ -686,12 +707,12 @@ This uses a deterministic stub oracle with zero API cost.
 
 ### How do I verify computational equivalence with live oracles?
 
-Live oracles are non-deterministic, so M1 and M3 will likely have different `root` hashes. To verify equivalence:
+Live oracles are non-deterministic, so M1 and M3 will have different `root` hashes. Equivalence is proved via **validator-bounded acceptance**, not root identity:
 
-1. Use compare-runs to check oracle evidence and costs
-2. Inspect node-level `output_hashes` for similarity
-3. Use provenance hashes (`config_hash`, `prompt_hash`) to verify identical configurations
-4. Check `fuel_consumed` and `tokens` for comparable complexity
+1. The seed design declares per-output equivalence: `exact` (must match) or `free` (may differ)
+2. The conformance gate (`husks.gate`) stamps `VERIFIED` with a behavioral digest — a SHA-256 of the reader's correct outputs on frozen vectors
+3. `compare-runs` enforces: M1/M2 root identity (cache determinism), M3 `exact` outputs match M1 (acceptance), cost within declared tolerance
+4. The `convergence` block reports M1/M3 root divergence observationally — it never fails the proof
 
 ### What's the difference between --stub and live oracles?
 
