@@ -501,7 +501,8 @@ def _cmd_compare(args):
                 print()
 
         # -- Verify section ---------------------------------------------------
-        sep = f"  {DIM}{'\u2500' * (W - 2)}{RESET}"
+        hline = '\u2500' * (W - 2)
+        sep = f"  {DIM}{hline}{RESET}"
         print()
         print(f"  {BOLD}verify{RESET}")
         print(sep)
