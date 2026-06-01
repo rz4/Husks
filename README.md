@@ -305,39 +305,77 @@ cd my-project
 This creates:
 ```
 my-project/
-  design.json       # Build specification (transport)
-  prompt.txt        # Example input
-  README.md         # Project documentation
+  core-bootstrap.json  # Build specification (transport)
+  spec/CSE-v1.md       # Frozen CSE spec (site input)
+  spec/CSE-v2.md       # CSE v2 spec (site input)
+  CLAUDE.md            # Project conventions
+  .gitignore
 ```
 
 ### Run the Build
 
 ```bash
+# Validate the design (silent on success, exit 0)
+husks check core-bootstrap.json --verbose
+
 # With stub oracle (no API calls, for testing)
-husks run design.json --stub
+husks run core-bootstrap.json --site m1 --stub --verbose
 
 # With live LLM oracle
 export ANTHROPIC_API_KEY=sk-...
-husks run design.json --model anthropic/claude-haiku-4-5-20251001
+husks run core-bootstrap.json --site m1 --model anthropic/claude-haiku-4-5-20251001
 ```
 
 ### Inspect Results
 
 ```bash
-# Show build status
-husks status design.json
+# Show site conformance
+husks status core-bootstrap.json --site m1
 
 # Explain dependency graph
-husks explain design.json --graph --format mermaid
+husks explain core-bootstrap.json --graph --format mermaid
 
 # View convergence history
-husks history design.json
+husks history core-bootstrap.json
 
 # Check environment
 husks doctor --live
 ```
 
-## The Beta Test: Three-Machine Proof
+## CI: Solid Alpha (Dry Run Locally)
+
+The CI has three jobs. **Solid Alpha** is the deterministic gate — no API keys, no network, pure stub oracles. You can run it locally to verify everything works before pushing.
+
+### Run Solid Alpha
+
+```bash
+git clone https://github.com/rz4/Husks.git
+cd Husks
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[llm]" pytest
+
+# Step 1: Stub three-machine resolution (headline invariant)
+pytest tests/test_three_machine_proof.py \
+       tests/test_three_machine_cli_acceptance.py \
+       tests/test_beta_three_machine.py \
+       -v --tb=short
+
+# Step 2: Full deterministic suite
+pytest tests/ -v --tb=short \
+       --ignore=tests/test_live_oracle_readiness.py
+```
+
+Step 1 runs the three-machine proof with stub oracles: M1 pays, M2 reuses from cache at zero cost, M3 rebuilds independently, all three roots match. Step 2 runs the full suite (~600 tests) covering seals, CSE wire format, caching, CLI contracts, and conformance vectors.
+
+### CI Jobs
+
+| Job | Gate | Trigger | What it proves |
+|-----|------|---------|----------------|
+| **Wheel Smoke** | Install | push, PR | Wheel builds and imports on Python 3.10–3.13 |
+| **Solid Alpha** | Deterministic | push, PR | Full test suite passes with stub oracles |
+| **Liquid Beta** | Live | manual dispatch | Three-machine proof with live LLM oracle |
+
+## The Three-Machine Proof
 
 The **Husks beta** is validated by a **three-machine proof** that demonstrates:
 
@@ -346,23 +384,9 @@ The **Husks beta** is validated by a **three-machine proof** that demonstrates:
 3. **Builds are equivalent**: M3's independent rebuild produces same root hash
 4. **Verification is automated**: `compare-runs` validates the proof from JSON reports
 
-### Running the Beta Test
-
-```bash
-# Clone the repo
-git clone https://github.com/rz4/Husks.git
-cd Husks
-
-# Install with test dependencies
-pip install -e ".[llm,hy]"
-
-# Run the full acceptance test
-pytest tests/test_three_machine_cli_acceptance.py -v
-```
-
 **What the test does:**
 
-1. **Machine 1**: Builds `examples/beta_seed` with stub oracle
+1. **Machine 1**: Builds with stub oracle
    - Pays oracle cost: $0.0008
    - Exports cache to `cache.tar.gz`
    - Root: `9977239d...`
@@ -378,29 +402,10 @@ pytest tests/test_three_machine_cli_acceptance.py -v
    - Root: `9977239d...` (identical to M1 and M2)
 
 4. **Validation**: `compare-runs` verifies all checks pass
-   - ✓ M1 paid cost
-   - ✓ M2 zero oracle calls
-   - ✓ M2 zero cost
-   - ✓ M3 paid cost
-   - ✓ Same root hash across all three
-
-### Beta Acceptance Criteria (12 Gates)
-
-All gates must pass for beta seal:
-
-- **Gate A**: Site input resolution (no manual copying)
-- **Gate B**: CSE wire format (canonical S-expressions)
-- **Gate C**: Equivalence validation (compare-runs)
-- **Gate D**: Cache validation (seal.json verification)
-- **Gate E**: Beta seed example (runnable proof)
-- **Gate F**: JSON contracts (structured error output)
-- **Gate G**: Three-machine CLI proof (end-to-end acceptance)
-- **Gate H**: Code consolidation (no bloat)
-
-Run all gates:
-```bash
-pytest tests/ -v
-```
+   - M1 paid cost
+   - M2 zero oracle calls, zero cost
+   - M3 paid cost
+   - Same root hash across all three
 
 ## Conformance and Permanence
 
@@ -449,23 +454,25 @@ husks doctor --conformance --reader "python readers/generated_reader.py"
 ## Commands Reference
 
 ```bash
-husks init [dir]                     # Create new project
-husks check design.json              # Validate design
-husks run design.json                # Execute build
-husks run design.json --reuse-only   # Use cache only (no oracle calls)
-husks status design.json             # Show build freshness
-husks explain design.json --graph    # Visualize dependencies
-husks history design.json [rule]     # Show convergence history
-husks compare site1 site2 site3      # Compare output equivalence
-husks compare-runs m1.json m2.json   # Validate three-machine proof
-husks cache export cache.tar.gz      # Export cache for sharing
-husks cache import cache.tar.gz      # Import cache from file
-husks doctor --live                  # Check environment readiness
-husks doctor --selftest              # Run frozen conformance vectors
-husks doctor --conformance           # Run external reader conformance
+husks init [dir]                                  # Create new project
+husks check design.json                           # Validate design (silent on success)
+husks check design.json --verbose                 # Show bounded DAG box
+husks run design.json --site ./s1                 # Execute build
+husks run design.json --site ./s1 --stub          # Execute with stub oracle (no API)
+husks run design.json --site ./s1 --reuse-only    # Use cache only (no oracle calls)
+husks status design.json --site ./s1              # Show site conformance
+husks explain design.json --graph                 # Visualize dependencies
+husks history design.json [rule]                  # Show convergence history
+husks compare site1 site2 site3                   # Compare output equivalence
+husks compare-runs m1.json m2.json                # Validate three-machine proof
+husks cache export cache.tar.gz --site ./s1       # Export cache for sharing
+husks cache import cache.tar.gz --site ./s2       # Import cache from file
+husks doctor --live                               # Check environment readiness
+husks doctor --selftest                           # Run frozen conformance vectors
+husks doctor --conformance                        # Run external reader conformance
 ```
 
-Add `--json` to most commands for machine-readable output.
+Add `--json` to most commands for machine-readable output. Add `--verbose` for expanded DAG view.
 
 ## Architecture Summary
 
