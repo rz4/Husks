@@ -8,6 +8,21 @@ You are working with **Husks**, a fuel-bounded build calculus that produces **pe
 
 **The design is a Husk.** The build graph you write is elaborated into a canonical s-expression (CSE), sealed with content-addressed hashes, and verified by an independent reader. The .husk file outlives the engine that produced it.
 
+## Working Structure
+
+Three nondeterministic processes coordinate through deterministic gates:
+
+- **User** — sets the acceptance condition. The user is the only source of what "correct" means. When the task lacks an acceptance condition, ask for it; do not infer one.
+- **Assistant** — writes the design. You translate the user's acceptance condition into a build graph whose deterministic gates cover as much of "correct" as possible.
+- **Oracle** — produces output. An oracle is nondeterministic; its output cannot be trusted by inspection.
+
+None of the three can verify another by looking inside it. They coordinate only through **deterministic gates**: action rules whose pass/fail does not depend on who produced the input.
+
+**Consequences:**
+
+1. Move acceptance into deterministic gates. Every part of the user's intent that can be expressed as a deterministic check must become an action rule with a `run` command.
+2. Every oracle must have a downstream action validator. An oracle whose output nothing deterministically checks is an incomplete design. The validator must depend on what the oracle produced. Never let an oracle validate another oracle's output.
+
 ## Two Forms — Start Here
 
 You need exactly two recipe forms:
@@ -21,7 +36,7 @@ That's it. `action` and `oracle` cover every decomposition. Actions verify; orac
 
 Your first tool call must be writing `design.json`. No exploring, no reading files, no running commands first.
 
-1. Read the user's task description. Do NOT explore the codebase, read files, search, or run commands. Work only from what the user told you. If you need more information, ask — do not go looking.
+1. Read the user's task description. Do NOT explore the codebase, read files, search, or run commands. Work only from what the user told you. If you need more information, ask — do not go looking. If the task does not state what would count as correct, the missing thing is the acceptance condition. Ask for it before writing the design.
 
 2. Write `design.json` immediately. This is your first and only action before check.
 
@@ -33,7 +48,7 @@ Your first tool call must be writing `design.json`. No exploring, no reading fil
 
    If `check` fails, repair `design.json` and re-check. Only show a passing design.
 
-4. Ask for approval. Do not run unless the user explicitly approves or explicitly requested automatic execution in the same turn.
+4. Ask for approval. Do not run unless the user explicitly approves or explicitly requested automatic execution in the same turn. When showing a design, state which of the user's requirements are covered by deterministic gates and which rest on the user's judgment.
 
 5. Run the design:
 
@@ -83,6 +98,12 @@ To iterate:
 3. If a rule's output should be pinned, leave it alone — its seal protects it.
 
 Watch for the **prompt-loading signature**: if the oracle's fuel is exhausted but outputs are wrong, the prompt needs refinement, not more fuel.
+
+## Budget
+
+- Allocate effort and fuel per oracle rule rather than uniformly. Rules whose validators are strict need more fuel headroom; rules with lenient gates need less.
+- On re-run, read the report's per-rule realized cost and latency. Tighten fuel where there was slack; raise it where the gate failed under budget.
+- When an oracle's output has been stable across runs, propose replacing it with a deterministic action.
 
 ## Design IR Format
 
@@ -159,6 +180,8 @@ The .husk file is the residue. It can be verified by any reader that implements 
 * Total oracle fuel must not exceed the build fuel budget.
 * A rule may run only after its declared inputs are available.
 * Validation must be a deterministic action (`run`), not an oracle. Oracles produce; actions verify.
+* Every oracle rule must have a downstream action that validates its output (see Working Structure).
+* A validator must gate on content derived from the oracle's output, not on a constant or output-independent check. If the validator passes regardless of what the oracle wrote, it is not a gate.
 * The build should fail rather than invent undeclared inputs, outputs, or tools.
 * The target rule should depend on all required deliverables. "Done" is explicit, not implicit.
 

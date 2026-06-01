@@ -26,6 +26,15 @@ generation, scaffolding, content, multi-step builds. Do not run as an unbounded
 agent loop. Use the `husks` skill — decompose the task into a `design.json` build
 graph, then check, show, and run it.
 
+## Working structure
+Three processes that cannot inspect each other: the user (sets the acceptance
+condition), you (writes the design), and the oracle (produces output). None can
+verify another by looking inside it. They coordinate only through deterministic
+gates: action rules whose pass/fail does not depend on who produced the input.
+Your job is to move as much of "correct" as possible into deterministic gates.
+You do not decide what "done" means; the user does. You do not trust the oracle;
+a deterministic action must check it.
+
 ## Workflow
 - Write `design.json` first. No exploring or running commands before that.
 - `check` then `show` the design. **Wait for approval before `run`.**
