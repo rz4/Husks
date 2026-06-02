@@ -714,3 +714,54 @@ def _cmd_run(args, design):
     # Preserve exit code logic
     if S.get("status") == "halted" and not args.soft_fail:
         sys.exit(EXIT_BUILD_FAIL)
+
+
+# ── verify ─────────────────────────────────────────────────────────
+
+def _cmd_verify(args):
+    """Verify a .husk artifact in a site by recomputing its root hash."""
+    from husks.core import recompute_root
+
+    site = Path(args.site)
+    if not site.is_dir():
+        print(f"error: site directory not found: {site}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    # Auto-detect .husk file or use --name
+    name = getattr(args, "name", None)
+    if name:
+        husk_path = site / f"{name}.husk"
+    else:
+        husks = list(site.glob("*.husk"))
+        if len(husks) == 0:
+            print(f"error: no .husk files found in {site}", file=sys.stderr)
+            sys.exit(EXIT_BUILD_FAIL)
+        if len(husks) > 1 and not name:
+            names = ", ".join(h.stem for h in husks)
+            print(f"error: multiple .husk files found ({names}); use --name to select one",
+                  file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+        husk_path = husks[0]
+
+    if not husk_path.is_file():
+        print(f"error: husk file not found: {husk_path}", file=sys.stderr)
+        sys.exit(EXIT_BUILD_FAIL)
+
+    husk_bytes = husk_path.read_bytes()
+    root = recompute_root(husk_bytes, str(site))
+
+    json_mode = getattr(args, "json_output", False)
+    if json_mode:
+        result = {
+            "status": "verified",
+            "husk": str(husk_path),
+            "site": str(site),
+            "root": root,
+        }
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"verified: {husk_path.name}")
+        print(f"  root: {root}")
+        print(f"  site: {site}")
+
+    sys.exit(EXIT_OK)

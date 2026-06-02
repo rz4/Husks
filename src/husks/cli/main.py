@@ -5,20 +5,25 @@ import sys
 
 from husks.designs.ir import from_json
 
-from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, resolve_design
+from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_INTERNAL, resolve_design
 from husks.cli.cmd import (
-    _cmd_check, _cmd_run, _cmd_run_hy, _cmd_status,
+    _cmd_check, _cmd_run, _cmd_run_hy, _cmd_verify, _cmd_status,
     _cmd_explain, _cmd_history, _cmd_doctor, _cmd_compare,
     _cmd_cache_export, _cmd_cache_import,
 )
 
 
 def _get_version() -> str:
+    """Get package version.
+
+    C39: Raises exception instead of silent fallback to help diagnose broken installs.
+    """
     try:
         from importlib.metadata import version as pkg_version
         return pkg_version("husks")
-    except Exception:
-        return "0.1.0"
+    except Exception as e:
+        # C39: Non-silent failure - let caller handle
+        raise RuntimeError(f"failed to get package version: {e}") from e
 
 
 # -- Styled help rendering ---------------------------------------------------
@@ -174,6 +179,7 @@ def _print_help() -> None:
         _cmd("cache export", "Export site cache for transfer"),
         _cmd("cache import", "Import cache into a site"),
         _group("verify"),
+        _cmd("verify", "Recompute .husk root hash in a site"),
         _cmd("compare", "Equivalence across sites (three-machine proof with 3+)"),
         _cmd("doctor", "Diagnose the local environment"),
         _group("inspect"),
@@ -186,6 +192,14 @@ def _print_help() -> None:
         f"  {DIM}--version        Print version{RESET}",
         "",
         f"  {DIM}husks <command> --help for details{RESET}",
+        "",
+        f"  {BOLD}Exit codes{RESET}",
+        f"    {DIM}0  Success - build committed or command succeeded{RESET}",
+        f"    {DIM}1  Build failed - halted, missing deps, or error{RESET}",
+        f"    {DIM}2  Usage error - invalid arguments or options{RESET}",
+        f"    {DIM}3  Missing dependency - LLM backend unavailable{RESET}",
+        f"    {DIM}4  Status check - artifacts are dirty or stale{RESET}",
+        f"    {DIM}5  Internal error - unexpected failure{RESET}",
     ]
 
     print("\n".join(lines))
@@ -204,6 +218,8 @@ def main():
                    help="Suppress non-essential output")
     p.add_argument("--version", action="store_true",
                    help="Print version and exit")
+    p.add_argument("--version-json", action="store_true",
+                   help="Print version info as JSON and exit")
 
     sub = p.add_subparsers(dest="cmd")
 
@@ -224,16 +240,18 @@ def main():
     c = _sub_parser(sub, "check", help="Validate a design")
     c.add_argument("design", nargs="?", default=None,
                    help="Path to design file (.json or .hy). Defaults to design.json.")
-    c.add_argument("--verbose", "-v", action="store_true",
-                   help="Show full design details after validation (replaces old 'show')")
-    c.add_argument("--json", action="store_true", dest="json_output",
-                   help="Output categorized check results as JSON")
+    # C25: Use mutually exclusive group for --verbose and --json
+    c_output = c.add_mutually_exclusive_group()
+    c_output.add_argument("--verbose", "-v", action="store_true",
+                          help="Show full design details after validation (replaces old 'show')")
+    c_output.add_argument("--json", action="store_true", dest="json_output",
+                          help="Output categorized check results as JSON")
 
     # run
     r = _sub_parser(sub, "run", help="Execute a design into a site")
     r.add_argument("design", nargs="?", default=None,
                    help="Path to design file (.json or .hy). Defaults to design.json.")
-    r.add_argument("--site", help="Override site directory")
+    r.add_argument("--site", help="Site directory (default: /tmp/husks-<design-name>)")
     r.add_argument("--model", help="LLM model for oracle rules",
                    default="anthropic/claude-haiku-4-5-20251001")
     r.add_argument("--stub", action="store_true",
@@ -244,12 +262,14 @@ def main():
                    help="Only use cached results, never call oracle (Beta Gate D5)")
     r.add_argument("--hy", action="store_true",
                    help="Use original Hy kernel backend instead of Python")
-    r.add_argument("--json", action="store_true", dest="json_output",
-                   help="Output full Report as JSON instead of text")
     r.add_argument("--soft-fail", action="store_true",
                    help="Exit 0 even when the build halts")
-    r.add_argument("--verbose", "-v", action="store_true",
-                   help="Verbose output (full trace + detailed report)")
+    # C25: Use mutually exclusive group for --verbose and --json
+    r_output = r.add_mutually_exclusive_group()
+    r_output.add_argument("--verbose", "-v", action="store_true",
+                          help="Verbose output (full trace + detailed report)")
+    r_output.add_argument("--json", action="store_true", dest="json_output",
+                          help="Output full Report as JSON instead of text")
     r.add_argument("--report-json", metavar="PATH",
                    help="Write JSON report to file (sidecar; may be used with --verbose)")
 
@@ -331,6 +351,13 @@ def main():
     cmp.add_argument("--hashes-only", action="store_true",
                      help="Compare output hashes only (skip root checks)")
 
+    # verify
+    v = _sub_parser(sub, "verify", help="Recompute .husk root hash in a site")
+    v.add_argument("site", help="Site directory containing .husk file")
+    v.add_argument("--name", help="Build name (auto-detected if only one .husk in site)")
+    v.add_argument("--json", action="store_true", dest="json_output",
+                   help="Output as JSON")
+
     # cache (Beta Gate G1/D5) - nested subcommands
     cache_parser = _sub_parser(sub, "cache", help="Cache management commands")
     cache_sub = cache_parser.add_subparsers(dest="cache_cmd", required=True)
@@ -358,22 +385,47 @@ def main():
         _print_help()
         sys.exit(EXIT_OK)
 
-    # --version
-    if args.version:
-        print(f"husks {_get_version()}")
+    # --version or --version-json
+    if args.version or args.version_json:
+        try:
+            version = _get_version()
+        except RuntimeError as e:
+            # C39: Show version error clearly
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(EXIT_INTERNAL)
+
+        # C40: Support --version-json for machine-readable version info
+        if args.version_json:
+            from husks.core import CSE_VERSION
+            import json
+            version_info = {
+                "husks_version": version,
+                "cse_wire_version": CSE_VERSION.decode('utf-8'),
+                "seal_format_version": 1,
+                "schema_version": "1.0",
+            }
+            print(json.dumps(version_info, indent=2))
+        else:
+            print(f"husks {version}")
         sys.exit(EXIT_OK)
 
     if args.cmd is None:
         _print_help()
         sys.exit(EXIT_USAGE)
 
-    # Validate mutually exclusive flags
-    if args.cmd in ("run", "check"):
-        verbose = getattr(args, 'verbose', False)
-        json_output = getattr(args, 'json_output', False)
-        if verbose and json_output:
-            print("error: --verbose and --json are mutually exclusive", file=sys.stderr)
-            sys.exit(EXIT_USAGE)
+    # C25: Mutually exclusive flags now handled by argparse groups
+
+    # C27, C28: Validate oracle-related flag combinations
+    if args.cmd == "run":
+        stub = getattr(args, 'stub', False)
+        model = getattr(args, 'model', None)
+
+        # C27: --reuse-only + --stub is allowed (reuse cached stub outputs)
+        # No validation needed - they work together
+
+        # C28: Warn when --model is passed with --stub
+        if stub and model and model != "anthropic/claude-haiku-4-5-20251001":
+            print("warning: --model is ignored when --stub is used (no LLM calls)", file=sys.stderr)
 
     # ── init ──────────────────────────────────────────────────
     if args.cmd == "init":
@@ -400,6 +452,11 @@ def main():
     # ── compare (Beta Gate C6/C7) ────────────────────────────
     if args.cmd == "compare":
         _cmd_compare(args)
+        return
+
+    # ── verify ───────────────────────────────────────────────
+    if args.cmd == "verify":
+        _cmd_verify(args)
         return
 
     # ── cache commands (Beta Gate G1/D5) ──────────────────────────
@@ -446,15 +503,48 @@ def main():
         _cmd_check(args, design)
 
     elif args.cmd == "run":
-        # Blocker #3: run requires --site at CLI layer
+        # Auto-generate site from design name if --site not provided
         if not args.site:
-            print("error: run requires --site", file=sys.stderr)
-            sys.exit(EXIT_USAGE)
+            design_name = design.get("name", "unnamed")
+            args.site = f"/tmp/husks-{design_name}"
         _cmd_run(args, design)
 
     elif args.cmd == "history":
         _cmd_history(args, design)
 
 
+def _cli_entry():
+    """C36: Top-level exception handler wrapper for main().
+
+    Catches uncaught exceptions and converts them to EXIT_INTERNAL with
+    a one-line error message. Full traceback is shown only under --verbose.
+    """
+    try:
+        main()
+    except KeyboardInterrupt:
+        # C35: Handle Ctrl-C gracefully
+        print("\nInterrupted", file=sys.stderr)
+        sys.exit(130)  # Standard Unix exit code for SIGINT
+    except SystemExit:
+        # Let explicit sys.exit() calls pass through
+        raise
+    except Exception as e:
+        # Check if --verbose was passed (best effort - may not be available)
+        verbose = "--verbose" in sys.argv or "-v" in sys.argv
+
+        if verbose:
+            # Show full traceback under --verbose
+            import traceback
+            print("Internal error:", file=sys.stderr)
+            traceback.print_exc()
+        else:
+            # Concise error message otherwise
+            error_type = type(e).__name__
+            print(f"error: {error_type}: {e}", file=sys.stderr)
+            print("(run with --verbose for full traceback)", file=sys.stderr)
+
+        sys.exit(EXIT_INTERNAL)
+
+
 if __name__ == "__main__":
-    main()
+    _cli_entry()

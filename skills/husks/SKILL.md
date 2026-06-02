@@ -40,10 +40,10 @@ Your first tool call must be writing `design.json`. No exploring, no reading fil
 
 2. Write `design.json` immediately. This is your first and only action before check.
 
-3. Check and show the design in one step:
+3. Check the design:
 
    ```bash
-   python -m husks.cli check design.json && python -m husks.cli show design.json
+   python -m husks.cli check design.json --verbose
    ```
 
    If `check` fails, repair `design.json` and re-check. Only show a passing design.
@@ -62,21 +62,19 @@ Your first tool call must be writing `design.json`. No exploring, no reading fil
    python -m husks.cli run design.json --site /tmp/husks-<name> --json
    ```
 
-6. After the build completes, **verify the .husk artifact**:
+   **Backend selection:**
+   - `--backend claude-code` — for running inside Claude Code (uses the host tool loop)
+   - `--backend litellm` (default) — for standalone runs with an API key
+
+   **Dry run:** Use `--stub` to verify the build shape without making LLM calls. Oracles produce placeholder outputs so you can confirm the DAG wires correctly before spending fuel.
+
+6. After the build completes, **verify the .husk artifact** (calls `recompute_root` internally):
 
    ```bash
-   python -c "
-   from husks.core import recompute_root
-   import pathlib, sys
-   site = '/tmp/husks-<name>'
-   husk = pathlib.Path(site, '<build-name>.husk').read_bytes()
-   root = recompute_root(husk, site)
-   print(f'build-root: {root}')
-   print('verified: husk seals are content-addressed and reproducible')
-   "
+   python -m husks.cli verify /tmp/husks-<name>
    ```
 
-   This proves the .husk file is self-verifying — any future reader with SHA-256 and the site files can reproduce the root hash. The engine that built it can be discarded.
+   This proves the .husk file is self-verifying — any future reader with SHA-256 and the site files can reproduce the root hash via `recompute_root`. The engine that built it can be discarded.
 
 7. Read the Report output and relay the result:
 
@@ -138,6 +136,15 @@ Watch for the **prompt-loading signature**: if the oracle's fuel is exhausted bu
   ]
 }
 ```
+
+## Site Inputs
+
+Use `site_inputs` to import external files into the build site before rules fire. Two forms:
+
+- **Dict form** (local name → absolute path): `{"local": "/abs/path/to/file"}` — copies the file into the site root under the key name.
+- **List form** (list of absolute paths): `["/abs/path/to/file.txt"]` — copies each file into the site root using its basename.
+
+Files listed in `site_inputs` are available as rule inputs without being produced by a prior rule.
 
 ## Top-Level Fields
 

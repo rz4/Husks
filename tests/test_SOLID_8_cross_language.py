@@ -235,7 +235,8 @@ class TestReaderIndependence:
                      if l.strip() and not l.strip().startswith("//")]
         # Design says ~40 lines; allow generous margin
         # (bounded-read guard + parser safety checks add ~20 lines)
-        assert len(lines) < 120, (
+        # P1-P4: Three critical validations (depth, digit-only, size cap) add ~30 lines
+        assert len(lines) < 150, (
             f"verify.mjs is {len(lines)} non-blank non-comment lines; "
             f"should be compact enough to audit"
         )

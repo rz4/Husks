@@ -49,9 +49,8 @@ def test_export_includes_manifest(cache_temp_site, basic_stub_oracle):
         assert "cache_format_version" in manifest
         assert manifest["cache_format_version"] == "1.0"
 
-        assert "created_ts" in manifest
-        assert isinstance(manifest["created_ts"], (int, float))
-        assert manifest["created_ts"] > 0
+        # X42: created_ts removed for reproducibility (deterministic exports)
+        # assert "created_ts" in manifest
 
         assert "entry_count" in manifest
         assert manifest["entry_count"] == 1

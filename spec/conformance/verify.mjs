@@ -17,13 +17,19 @@ const MAX_HUSK_BYTES = 10 * 1024 * 1024; // 10 MB
 
 // ── CSE codec ────────────────────────────────────────────────────
 
-function parse(buf, off = 0) {
+const MAX_PARSE_DEPTH = 128;                    // Match core.py's _MAX_PARSE_DEPTH
+const MAX_ATOM_LENGTH = 256 * 1024 * 1024;      // 256 MB, match core.py's _MAX_ATOM_LENGTH
+
+function parse(buf, off = 0, depth = 0) {
+  if (depth > MAX_PARSE_DEPTH) {
+    throw new Error(`nesting depth exceeds ${MAX_PARSE_DEPTH} at offset ${off}`);
+  }
   if (off >= buf.length) throw new Error("unexpected EOF");
   if (buf[off] === 0x28) {          // '('
     const items = [];
     off++;
     while (off < buf.length && buf[off] !== 0x29) {
-      const [v, next] = parse(buf, off);
+      const [v, next] = parse(buf, off, depth + 1);
       items.push(v);
       off = next;
     }
@@ -32,10 +38,28 @@ function parse(buf, off = 0) {
   }
   const colon = buf.indexOf(0x3a, off);  // ':'
   if (colon < 0) throw new Error("missing colon in atom");
-  const lenStr = buf.subarray(off, colon).toString();
-  if (lenStr.length > 1 && lenStr[0] === "0") throw new Error("leading zero in atom length");
-  const len = parseInt(lenStr, 10);
-  if (isNaN(len) || len < 0) throw new Error("invalid atom length");
+
+  const lengthBytes = buf.subarray(off, colon);
+
+  // Validate each byte is an ASCII digit (0x30-0x39)
+  for (let i = 0; i < lengthBytes.length; i++) {
+    const b = lengthBytes[i];
+    if (b < 0x30 || b > 0x39) {  // '0' .. '9'
+      throw new Error(`non-digit byte 0x${b.toString(16).padStart(2, '0')} in length at offset ${off + i}`);
+    }
+  }
+
+  const lenStr = lengthBytes.toString();
+  if (lenStr.length > 1 && lenStr[0] === "0") {
+    throw new Error("leading zero in atom length");
+  }
+
+  const len = parseInt(lenStr, 10);  // Safe now that we've validated digit-only
+
+  if (len > MAX_ATOM_LENGTH) {
+    throw new Error(`atom length ${len} exceeds maximum ${MAX_ATOM_LENGTH} at offset ${off}`);
+  }
+
   const start = colon + 1;
   if (start + len > buf.length) throw new Error("atom overruns input");
   return [buf.subarray(start, start + len), start + len];

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 
-from husks.cli.helpers import EXIT_OK
+from husks.cli.helpers import EXIT_OK, EXIT_USAGE
 
 
 def _cmd_cache_export(args):
@@ -18,9 +18,23 @@ def _cmd_cache_export(args):
     """
     from husks.build.site import fresh_store
     from husks.build.cache import cache_export
+    from pathlib import Path
 
     site = args.site
     export_path = args.file
+
+    # C29: Validate paths before creating store
+    if not export_path.endswith('.tar.gz'):
+        print(f"error: export path must end with .tar.gz: {export_path}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    if not Path(site).exists():
+        print(f"error: site directory does not exist: {site}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    if not Path(site).is_dir():
+        print(f"error: site path is not a directory: {site}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
 
     # Create store to access cache
     S = fresh_store(site, fuel=1)
@@ -47,10 +61,24 @@ def _cmd_cache_import(args):
     """Import cache from tarball (Beta Gate G1)."""
     from husks.build.site import fresh_store
     from husks.build.cache import cache_import
+    from pathlib import Path
 
     site = args.site
     import_path = args.file
     merge = not args.no_merge
+
+    # C29: Validate paths before creating store
+    if not import_path.endswith('.tar.gz'):
+        print(f"error: import path must end with .tar.gz: {import_path}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    if not Path(import_path).exists():
+        print(f"error: import file does not exist: {import_path}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    if not Path(import_path).is_file():
+        print(f"error: import path is not a file: {import_path}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
 
     # Create store to access cache
     S = fresh_store(site, fuel=1)

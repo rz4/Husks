@@ -531,32 +531,57 @@ def cache_export(S: Store, export_path: str) -> int:
             entries.append(key)
 
     # Beta Gate D7: Create provenance manifest
+    # X42: Remove timestamp for reproducibility - manifest is deterministic
     manifest = {
         "cache_format_version": "1.0",
-        "created_ts": time.time(),
         "entry_count": len(entries),
         "entry_keys": sorted(entries),
         "source_site_root": S.get("build-root"),
     }
 
     count = 0
-    with tarfile.open(export_path, "w:gz") as tar:
+    # X42-43: Deterministic tar creation - use gzip level 9, mtime=0 for reproducibility
+    with tarfile.open(export_path, "w:gz", compresslevel=9) as tar:
+        # X42: Helper to make TarInfo deterministic
+        def make_deterministic(info: tarfile.TarInfo) -> tarfile.TarInfo:
+            """Strip non-deterministic metadata from TarInfo for reproducible archives."""
+            info.mtime = 0  # Fixed timestamp
+            info.uid = 0    # Fixed user ID
+            info.gid = 0    # Fixed group ID
+            info.uname = ""  # No username
+            info.gname = ""  # No groupname
+            # Keep mode as-is for directories (0o755) and files (0o644)
+            return info
+
         # Add manifest first
-        manifest_json = json.dumps(manifest, indent=2).encode()
+        manifest_json = json.dumps(manifest, indent=2, sort_keys=True).encode()
         manifest_info = tarfile.TarInfo(name="MANIFEST.json")
         manifest_info.size = len(manifest_json)
+        manifest_info.mode = 0o644
+        manifest_info = make_deterministic(manifest_info)
         tar.addfile(manifest_info, fileobj=io.BytesIO(manifest_json))
 
-        # Add cache entries (skip _pending and non-hex directories)
+        # Add cache entries in sorted order for deterministic tar member order
+        # X42: Sort entries for consistent ordering
         if cache_root.exists():
+            entry_dirs = []
             for entry_dir in cache_root.iterdir():
                 if not entry_dir.is_dir():
                     continue
                 key = entry_dir.name
                 if not (len(key) == 64 and all(c in "0123456789abcdef" for c in key)):
                     continue
+                entry_dirs.append(entry_dir)
+
+            # Sort by directory name for deterministic order
+            for entry_dir in sorted(entry_dirs, key=lambda p: p.name):
                 # Add entry directory with relative path for portability
-                tar.add(entry_dir, arcname=entry_dir.name)
+                # Use filter to make metadata deterministic
+                tar.add(
+                    entry_dir,
+                    arcname=entry_dir.name,
+                    filter=make_deterministic
+                )
                 count += 1
 
     return count

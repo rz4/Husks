@@ -205,6 +205,9 @@ def test_tree_without_sandbox_allows_all():
         link = site / "link"
         os.symlink(str(outside), str(link))
 
+        # Ensure no sandbox is active before test
+        tools.set_site_root(None)
+
         # No sandbox active - should follow all symlinks
         result = tools.dispatch("tree", {"path": str(site), "depth": 3})
 

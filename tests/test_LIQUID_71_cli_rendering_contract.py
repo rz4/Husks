@@ -141,11 +141,16 @@ def test_check_json_dry(core_bootstrap_design):
     assert nodes["generate"]["fuel_budget"] == 10
 
 
-def test_run_requires_site(core_bootstrap_design):
-    """run without --site should error."""
+def test_run_auto_site(core_bootstrap_design, tmp_path):
+    """run without --site should auto-generate /tmp/husks-<name>."""
+    import shutil
+    # Clean the auto-site to avoid stale symlink conflicts from prior runs
+    auto_site = Path("/tmp/husks-core-bootstrap")
+    if auto_site.exists():
+        shutil.rmtree(auto_site)
     result = run_husks_cli("run", str(core_bootstrap_design), "--stub")
-    assert result.returncode != 0
-    assert "requires --site" in result.stderr.lower() or "requires --site" in result.stdout.lower()
+    assert result.returncode == 0
+    assert "/tmp/husks-core-bootstrap" in result.stdout
 
 
 def test_run_sealed(core_bootstrap_design):

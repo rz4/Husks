@@ -356,9 +356,26 @@ def elaborate(flat_design: dict[str, Any]) -> CseValue:
 
     by_name: dict[str, dict] = {r["name"]: r for r in rules}
 
-    def elaborate_node(rule_name: str) -> CseValue:
+    def elaborate_node(rule_name: str, ancestors: tuple[str, ...] = ()) -> CseValue:
+        """Elaborate a rule node into CSE form, tracking ancestors to detect cycles.
+
+        Args:
+            rule_name: Name of the rule to elaborate
+            ancestors: Tuple of rule names in the current dependency chain (ordered)
+
+        Raises:
+            ValueError: If a dependency cycle is detected
+        """
+        # T1: Cycle detection - check if we're already elaborating this rule
+        if rule_name in ancestors:
+            cycle_path = " → ".join(ancestors + (rule_name,))
+            raise ValueError(f"dependency cycle detected: {cycle_path}")
+
         r = by_name[rule_name]
         kind: str = r["kind"]
+
+        # Add current rule to ancestor chain for child recursion
+        new_ancestors = ancestors + (rule_name,)
 
         # ── structural kinds ──
         if kind == "commit":
@@ -372,13 +389,13 @@ def elaborate(flat_design: dict[str, Any]) -> CseValue:
             return [
                 b"let",
                 rule_name.encode("utf-8"),
-                elaborate_node(bind_target),
+                elaborate_node(bind_target, new_ancestors),
             ]
 
         if kind == "cond":
             pred_name: str = r.get("predicate", "")
-            then_node = elaborate_node(r["then"])
-            else_node = elaborate_node(r["else"])
+            then_node = elaborate_node(r["then"], new_ancestors)
+            else_node = elaborate_node(r["else"], new_ancestors)
             return [
                 b"cond",
                 pred_name.encode("utf-8"),
@@ -400,7 +417,7 @@ def elaborate(flat_design: dict[str, Any]) -> CseValue:
                 child_name = producer[inp]
                 if child_name not in seen:
                     seen.add(child_name)
-                    children.append(elaborate_node(child_name))
+                    children.append(elaborate_node(child_name, new_ancestors))
 
         result: list[CseValue] = [
             b"rule",

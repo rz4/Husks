@@ -10,7 +10,7 @@ from typing import Any
 from husks.core import CSE_VERSION, CseValue, atom, encode
 from husks.utils import trace as T
 
-from husks.build.site import Store, Node, OracleBackend, Stop, site_path, ensure_dir, fresh_store
+from husks.build.site import Store, Node, OracleBackend, Stop, site_path, ensure_dir, fresh_store, write_bytes_atomic
 from husks.build.eval import eval_node, node_to_cse, compute_build_root
 from husks.build.seal import write_build_manifest
 
@@ -160,7 +160,9 @@ def build(
             husk_form: CseValue = [b"husk", CSE_VERSION, build_form]
             husk_bytes = encode(husk_form)
             husk_path = site_path(S, f"{name}.husk")
-            Path(husk_path).write_bytes(husk_bytes)
+            # P21: Write .husk atomically with fsync for crash safety
+            write_bytes_atomic(husk_path, husk_bytes)
+            # P21: Write build manifest atomically and last (uses atomic write_text)
             write_build_manifest(
                 S, name, nodes,
                 design_source=kwargs.get("design_source"),

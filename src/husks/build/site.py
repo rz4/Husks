@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -146,10 +148,92 @@ def read_text(p: str) -> str:
 
 
 def write_text(p: str, s: str) -> str:
-    """Write UTF-8 text to a file, creating parent directories.  Returns *p*."""
+    """Write UTF-8 text to a file atomically with fsync, creating parent directories.
+
+    Uses a temporary file in the same directory followed by os.replace() to ensure
+    the write is atomic. Calls fsync() before closing to ensure durability on disk.
+    A crash mid-write leaves the original file intact or the new file fully written.
+
+    Returns *p*.
+    """
     pp = Path(p)
     ensure_dir(str(pp.parent))
-    pp.write_text(str(s))
+
+    # Write to a temporary file in the same directory (same filesystem)
+    # to ensure os.replace() can be atomic
+    fd, temp_path = tempfile.mkstemp(
+        dir=str(pp.parent),
+        prefix=f".{pp.name}.",
+        suffix=".tmp"
+    )
+    fd_closed = False
+    try:
+        # Write the content
+        os.write(fd, str(s).encode('utf-8'))
+        # Flush to OS buffers and sync to disk
+        os.fsync(fd)
+        os.close(fd)
+        fd_closed = True
+        # Atomically replace the target file
+        os.replace(temp_path, str(pp))
+    except:
+        # Clean up temp file on error
+        if not fd_closed:
+            try:
+                os.close(fd)
+            except:
+                pass
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+        raise
+
+    return p
+
+
+def write_bytes_atomic(p: str, data: bytes) -> str:
+    """Write bytes to a file atomically with fsync, creating parent directories.
+
+    Uses a temporary file in the same directory followed by os.replace() to ensure
+    the write is atomic. Calls fsync() before closing to ensure durability on disk.
+    A crash mid-write leaves the original file intact or the new file fully written.
+
+    Returns *p*.
+    """
+    pp = Path(p)
+    ensure_dir(str(pp.parent))
+
+    # Write to a temporary file in the same directory (same filesystem)
+    # to ensure os.replace() can be atomic
+    fd, temp_path = tempfile.mkstemp(
+        dir=str(pp.parent),
+        prefix=f".{pp.name}.",
+        suffix=".tmp"
+    )
+    fd_closed = False
+    try:
+        # Write the content
+        os.write(fd, data)
+        # Flush to OS buffers and sync to disk
+        os.fsync(fd)
+        os.close(fd)
+        fd_closed = True
+        # Atomically replace the target file
+        os.replace(temp_path, str(pp))
+    except:
+        # Clean up temp file on error
+        if not fd_closed:
+            try:
+                os.close(fd)
+            except:
+                pass
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+        raise
+
     return p
 
 

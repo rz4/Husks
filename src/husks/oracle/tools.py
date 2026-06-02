@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import signal
 from pathlib import Path
 from typing import Any, get_type_hints
 
@@ -20,6 +21,14 @@ from typing import Any, get_type_hints
 
 _site_root: Path | None = None
 _readonly_roots: set[Path] = set()
+
+# P25: Maximum oracle output size (10 MB)
+# Prevents unbounded artifact generation
+MAX_WRITE_SIZE = 10 * 1024 * 1024
+
+# P26: Maximum tool execution time (30 seconds)
+# Prevents runaway tool operations
+MAX_TOOL_TIMEOUT = 30
 
 
 def set_site_root(path: str | None, readonly: list[str] | None = None) -> None:
@@ -37,6 +46,10 @@ def set_site_root(path: str | None, readonly: list[str] | None = None) -> None:
         symlinks into these directories are permitted; writes are not.
     """
     global _site_root, _readonly_roots
+
+    # P30 (not implemented): Would check for None site_root with write tools,
+    # but this breaks test cleanup. Real protection is in sandbox() function.
+
     _site_root = Path(path).resolve() if path else None
     _readonly_roots = {Path(p).resolve() for p in (readonly or [])}
 
@@ -87,7 +100,11 @@ def sandbox(
             p.relative_to(effective_root)
         except ValueError:
             # Write access: must be under site root only.
+            # P29: write=True path NEVER consults readonly_roots - security critical!
+            # This prevents readonly imports from being re-exported as writable artifacts.
             if write:
+                # Assert: readonly_roots is never consulted for writes
+                # (This path returns immediately without checking effective_readonly)
                 raise ValueError(
                     f"path '{path}' resolves to '{p}' which is outside "
                     f"the site root '{effective_root}' (write denied)"
@@ -164,8 +181,13 @@ def schemas(names: list[str] | None = None) -> list[dict[str, Any]]:
     return [_REGISTRY[n]["schema"] for n in names if n in _REGISTRY]
 
 
-def dispatch(name: str, args: dict[str, Any], *, context: dict[str, Any] | None = None) -> str:
-    """Call a registered tool by name.
+def _timeout_handler(signum, frame):
+    """Signal handler for tool timeout (P26)."""
+    raise TimeoutError("tool execution exceeded time limit")
+
+
+def dispatch(name: str, args: dict[str, Any], *, context: dict[str, Any] | None = None, timeout: int | None = None) -> str:
+    """Call a registered tool by name with timeout protection.
 
     Returns the tool's string output, or an error string if the
     tool is not found or if arguments are malformed.
@@ -176,22 +198,61 @@ def dispatch(name: str, args: dict[str, Any], *, context: dict[str, Any] | None 
         Extra keyword arguments forwarded to the tool function.
         Used to thread ``site_root`` and ``readonly_roots`` from
         the kernel context without relying on module globals.
+    timeout : int, optional
+        P26: Maximum execution time in seconds (default: MAX_TOOL_TIMEOUT).
+        Each tool dispatch is bounded individually.
     """
     entry = _REGISTRY.get(name)
     if entry is None:
         return f"Error: unknown tool '{name}'"
 
+    # P26: Set up timeout for this tool dispatch
+    effective_timeout = timeout if timeout is not None else MAX_TOOL_TIMEOUT
+    old_handler = None
+
     # Catch malformed arguments to prevent crashing the oracle loop
     try:
+        # P26: Install timeout handler (Unix only)
+        if hasattr(signal, 'SIGALRM'):
+            old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+            signal.alarm(effective_timeout)
+
         if context:
-            return entry["fn"](**args, **context)
-        return entry["fn"](**args)
+            result = entry["fn"](**args, **context)
+        else:
+            result = entry["fn"](**args)
+
+        # Cancel timeout if successful
+        if hasattr(signal, 'SIGALRM'):
+            signal.alarm(0)
+            if old_handler:
+                signal.signal(signal.SIGALRM, old_handler)
+
+        return result
+
+    except TimeoutError as e:
+        # P26: Tool timeout
+        if hasattr(signal, 'SIGALRM'):
+            signal.alarm(0)
+            if old_handler:
+                signal.signal(signal.SIGALRM, old_handler)
+        # P27: Include exception type
+        return f"Error: TimeoutError in '{name}': {e}"
     except TypeError as e:
         # Handle argument errors (wrong types, missing/extra params)
-        return f"Error: tool argument error for '{name}': {e}"
+        # P27: Include exception type
+        return f"Error: TypeError in '{name}': {e}"
     except Exception as e:
         # Catch any other unexpected errors from the tool
-        return f"Error: tool execution failed for '{name}': {e}"
+        # P27: Log real exception type instead of just stringifying
+        exc_type = type(e).__name__
+        return f"Error: {exc_type} in '{name}': {e}"
+    finally:
+        # Ensure timeout is always canceled
+        if hasattr(signal, 'SIGALRM'):
+            signal.alarm(0)
+            if old_handler:
+                signal.signal(signal.SIGALRM, old_handler)
 
 
 # ── Core tools ────────────────────────────────────────────────────
@@ -227,7 +288,17 @@ def read_file(path: str, *, site_root=None, readonly_roots=None) -> str:
 
 @tool
 def write_file(path: str, content: str, *, site_root=None, readonly_roots=None) -> str:
-    """Write content to a file, creating parent directories as needed."""
+    """Write content to a file, creating parent directories as needed.
+
+    P25: Enforces a maximum output size (10 MB) to prevent unbounded artifacts.
+    """
+    # P25: Cap output size before writing
+    content_bytes = content.encode('utf-8')
+    if len(content_bytes) > MAX_WRITE_SIZE:
+        size_mb = len(content_bytes) / (1024 * 1024)
+        max_mb = MAX_WRITE_SIZE / (1024 * 1024)
+        return f"Error: content size ({size_mb:.1f} MB) exceeds maximum allowed size ({max_mb:.1f} MB)"
+
     try:
         p = sandbox(path, write=True, **_sandbox_kwargs(site_root, readonly_roots))
     except ValueError as e:

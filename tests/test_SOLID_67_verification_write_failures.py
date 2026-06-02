@@ -74,6 +74,9 @@ def test_build_fails_if_manifest_cannot_be_written():
 
     The build manifest is critical for status/explain commands. If we can't
     write it, the build should fail.
+
+    P21: Updated to make .traces directory read-only instead of just the manifest
+    file, to work correctly with atomic writes that use temp files.
     """
     from husks.build import build, rule
 
@@ -91,14 +94,11 @@ def test_build_fails_if_manifest_cannot_be_written():
             run="cp input.txt output.txt",
         )
 
-        # Make .traces directory but prevent writing manifest
+        # Make .traces directory read-only to prevent any writes
+        # This prevents both direct writes and atomic temp file creation
         traces_dir = site / ".traces"
         traces_dir.mkdir(exist_ok=True)
-
-        # Create a file where manifest should go, then make it read-only
-        manifest_file = traces_dir / "build.manifest.json"
-        manifest_file.write_text("{}")
-        os.chmod(str(manifest_file), 0o444)
+        os.chmod(str(traces_dir), 0o555)
 
         try:
             S = build("test", 10, node, site=str(site))
@@ -112,7 +112,7 @@ def test_build_fails_if_manifest_cannot_be_written():
 
         finally:
             # Restore permissions for cleanup
-            os.chmod(str(manifest_file), 0o644)
+            os.chmod(str(traces_dir), 0o755)
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
