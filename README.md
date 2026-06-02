@@ -41,31 +41,23 @@ husks init
 husks check core-bootstrap.json
 
 # Machine 1: build with stub oracle
-husks run core-bootstrap.json --site m1 --stub --json > m1.json
+husks run core-bootstrap.json --site m1 --stub
 
 # Export M1's cache
 husks cache export cache.tar.gz --site m1
 
 # Machine 2: import cache, reuse at zero cost
-mkdir m2
 husks cache import cache.tar.gz --site m2
-husks run core-bootstrap.json --site m2 --reuse-only --json > m2.json
+husks run core-bootstrap.json --site m2 --reuse-only
 
 # Machine 3: independent rebuild from empty cache
-husks run core-bootstrap.json --site m3 --stub --json > m3.json
+husks run core-bootstrap.json --site m3 --stub
 
 # Validate the proof
-husks compare-runs m1.json m2.json m3.json
+husks compare m1 m2 m3
 ```
 
-Expected:
-
-```
-M1: oracle_calls=1, cost=$0.000800        (paid)
-M2: oracle_calls=0, cost=$0.000000        (cache reuse)
-M3: oracle_calls=1, cost=$0.000800        (independent rebuild)
-All three: same root
-```
+Expected: M1 pays oracle cost, M2 reuses from cache at zero cost with zero oracle calls, M3 rebuilds independently at comparable cost. All three share the same build root (stub oracle is deterministic).
 
 M2 proves reuse. M3 proves portable re-realization from the seed design.
 
@@ -107,9 +99,9 @@ husks run design.json --site ./s1 --stub          # Build with stub oracle
 husks run design.json --site ./s1 --reuse-only    # Cache-only (no oracle calls)
 husks cache export cache.tar.gz --site ./s1       # Export cache
 husks cache import cache.tar.gz --site ./s2       # Import cache
-husks compare-runs m1.json m2.json m3.json        # Validate three-machine proof
-husks explain --site ./s1 --interactive            # Navigate build residue
-husks status design.json --site ./s1              # Show freshness states
+husks compare s1 s2 s3                            # Equivalence + three-machine proof
+husks status s1                                   # Show freshness states
+husks explain --site ./s1 --interactive           # Navigate build residue
 husks history design.json [rule]                  # Convergence history
 husks doctor --selftest                           # Conformance vectors
 husks doctor --live                               # Check live oracle readiness
