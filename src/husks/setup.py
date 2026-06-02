@@ -169,14 +169,9 @@ import textwrap
 
 def _load_template_file(filename: str) -> str:
     """Load a template file from examples/templates/."""
-    import importlib.resources
-    try:
-        files = importlib.resources.files("husks")
-        template_path = files.parent / "examples" / "templates" / filename
-        return template_path.read_text()
-    except (AttributeError, FileNotFoundError):
-        template_file = Path(__file__).parent.parent.parent / "examples" / "templates" / filename
-        return template_file.read_text()
+    from husks.resources import templates_dir
+    template_file = templates_dir() / filename
+    return template_file.read_text()
 
 _DEMO_DESIGN = None
 _DEMO_CHECK_GREETING = None
@@ -203,16 +198,7 @@ def _get_demo_spec_md():
 # ── core-bootstrap template ─────────────────────────────────────────
 def _load_core_bootstrap_design():
     """Load core-bootstrap template from examples/templates/."""
-    import importlib.resources
-    try:
-        # Python 3.9+
-        files = importlib.resources.files("husks")
-        template_path = files.parent / "examples" / "templates" / "core-bootstrap.json"
-        return json.loads(template_path.read_text())
-    except (AttributeError, FileNotFoundError):
-        # Fallback: relative to this file
-        template_file = Path(__file__).parent.parent.parent / "examples" / "templates" / "core-bootstrap.json"
-        return json.loads(template_file.read_text())
+    return json.loads(_load_template_file("core-bootstrap.json"))
 
 _CORE_BOOTSTRAP_DESIGN = None  # Lazy-loaded via _get_core_bootstrap_design()
 

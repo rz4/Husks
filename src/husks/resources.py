@@ -24,3 +24,9 @@ def skill_is_packaged() -> bool:
     """True on a wheel install (skill lives in site-packages, must be copied
     into a project rather than symlinked)."""
     return (_PKG / "_resources" / "skill").exists()
+
+
+def templates_dir() -> Path:
+    """Directory holding setup templates for husks init."""
+    packaged = _PKG / "_resources" / "templates"
+    return packaged if packaged.exists() else (_REPO / "examples" / "templates")

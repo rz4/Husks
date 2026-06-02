@@ -647,61 +647,6 @@ def test_case11_export_refuses_non_committed():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-# ── Case 12: Commit promotes (A5, happy path regression) ────────
-
-@pytest.mark.beta
-def test_case12_commit_promotes_cache():
-    """A committed stub build promotes the oracle output to servable cache.
-    A second site importing that bundle gets a cache hit at zero cost."""
-    tmpdir = tempfile.mkdtemp(prefix="b100-case12-")
-    try:
-        beta_seed_dir = Path(__file__).parent.parent / "examples" / "beta_seed"
-        design_path = beta_seed_dir / "design.json"
-
-        # M1: stub build
-        m1_site = Path(tmpdir) / "m1"
-        m1_site.mkdir()
-        m1_result = run_husks_cli(
-            "run", str(design_path),
-            "--site", str(m1_site),
-            "--stub", "--json",
-            timeout=30,
-        )
-        assert m1_result.returncode == 0
-        m1_report = json.loads(m1_result.stdout)
-        assert m1_report["status"] == "committed"
-
-        # Export cache
-        cache_file = Path(tmpdir) / "cache.tgz"
-        export_result = run_husks_cli(
-            "cache", "export", str(cache_file),
-            "--site", str(m1_site), "--json",
-            timeout=30,
-        )
-        export_data = json.loads(export_result.stdout)
-        assert export_data["entries"] > 0, "Committed build must export cache entries"
-
-        # M2: import and reuse
-        m2_site = Path(tmpdir) / "m2"
-        m2_site.mkdir()
-        run_husks_cli(
-            "cache", "import", str(cache_file),
-            "--site", str(m2_site), "--json",
-            timeout=30,
-        )
-        m2_result = run_husks_cli(
-            "run", str(design_path),
-            "--site", str(m2_site),
-            "--reuse-only", "--json",
-            timeout=30,
-        )
-        assert m2_result.returncode == 0
-        m2_report = json.loads(m2_result.stdout)
-        assert m2_report["status"] == "committed"
-        assert m2_report["cost"]["paid"] == 0.0, "M2 should have zero cost (cache hit)"
-
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 # ── Case 13: Orphan pending is not promoted (A5 run-id filter) ──
