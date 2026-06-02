@@ -349,7 +349,11 @@ def write_build_manifest(
     design_source: str | None = None,
     design_kind: str | None = None,
 ) -> None:
-    """Write .traces/build.manifest.json after a successful build."""
+    """Write .traces/build.manifest.json with build status.
+
+    Records both successful (committed) and failed (halted) builds
+    so status command can distinguish them.
+    """
     seen: set[str] = set()
     rules: list[dict[str, Any]] = []
     for node in nodes:
@@ -358,6 +362,7 @@ def write_build_manifest(
     manifest = {
         "schema": "husks.build.manifest.v1",
         "name": name,
+        "status": S.get("status", "unknown"),  # committed or halted
         "root": S.get("build-root"),
         "site": S["site"],
         "run_id": S["run-id"],

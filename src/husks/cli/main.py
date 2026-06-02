@@ -140,10 +140,18 @@ def _print_subcommand_help(parser):
     print("\n".join(lines))
 
 
-def _sub_parser(sub, name, **kwargs):
-    """Create a subparser with styled help instead of stock argparse help."""
+def _sub_parser(sub, name, parents=None, **kwargs):
+    """Create a subparser with styled help instead of stock argparse help.
+
+    Parameters
+    ----------
+    parents : list, optional
+        List of parent ArgumentParsers to inherit arguments from.
+    """
     kwargs.setdefault("description", kwargs.get("help", ""))
     kwargs["add_help"] = False
+    if parents:
+        kwargs["parents"] = parents
     p = sub.add_parser(name, **kwargs)
     p.add_argument("-h", "--help", action=_StyledHelpAction, help=argparse.SUPPRESS)
     return p
@@ -206,6 +214,11 @@ def _print_help() -> None:
 
 
 def main():
+    # Create a parent parser with shared flags
+    common_parser = argparse.ArgumentParser(add_help=False)
+    common_parser.add_argument("-v", "--verbose", action="store_true",
+                              help="Enable verbose output (show details)")
+
     p = argparse.ArgumentParser(prog="husks", description="Husks design CLI",
                                 add_help=False)
 
@@ -224,7 +237,7 @@ def main():
     sub = p.add_subparsers(dest="cmd")
 
     # init
-    i = _sub_parser(sub, "init", help="Scaffold a new project")
+    i = _sub_parser(sub, "init", parents=[common_parser], help="Scaffold a new project")
     i.add_argument("target", nargs="?", default=".",
                    help="Target directory (default: .)")
     i.add_argument("template", nargs="?", default="core-bootstrap",
@@ -233,8 +246,6 @@ def main():
                    help="Also emit bootstrap.hy (Hy design equivalent)")
     i.add_argument("--force", action="store_true",
                    help="Overwrite existing files")
-    i.add_argument("--verbose", "-v", action="store_true",
-                   help="Show detailed scaffolding output")
 
     # check
     c = _sub_parser(sub, "check", help="Validate a design")
@@ -260,8 +271,6 @@ def main():
                    default="litellm", help="Oracle backend (default: litellm)")
     r.add_argument("--reuse-only", action="store_true",
                    help="Only use cached results, never call oracle (Beta Gate D5)")
-    r.add_argument("--hy", action="store_true",
-                   help="Use original Hy kernel backend instead of Python")
     r.add_argument("--soft-fail", action="store_true",
                    help="Exit 0 even when the build halts")
     # C25: Use mutually exclusive group for --verbose and --json
@@ -274,10 +283,8 @@ def main():
                    help="Write JSON report to file (sidecar; may be used with --verbose)")
 
     # status
-    st_cmd = _sub_parser(sub, "status", help="Inspect site state")
+    st_cmd = _sub_parser(sub, "status", parents=[common_parser], help="Inspect site state")
     st_cmd.add_argument("site", help="Site directory path")
-    st_cmd.add_argument("--verbose", action="store_true",
-                        help="Show detailed DAG with freshness states")
     st_cmd.add_argument("--json", action="store_true", dest="json_output",
                         help="Output as JSON")
     st_cmd.add_argument("--fail-if-dirty", action="store_true",
@@ -286,7 +293,7 @@ def main():
                         help="Exit 4 if any rule is stale")
 
     # explain
-    e = _sub_parser(sub, "explain", help="Navigate the residue tree")
+    e = _sub_parser(sub, "explain", parents=[common_parser], help="Navigate the residue tree")
     e.add_argument("subject", nargs="?", default=None,
                    help="Design file path (.json/.hy), or rule/artifact name")
     # Phase 5: Navigator mode flags
@@ -312,7 +319,7 @@ def main():
                    help="Output as JSON")
 
     # history
-    h = _sub_parser(sub, "history", help="Show convergence across runs")
+    h = _sub_parser(sub, "history", parents=[common_parser], help="Show convergence across runs")
     h.add_argument("design", nargs="?", default=None,
                    help="Path to design file (.json or .hy). Defaults to design.json.")
     h.add_argument("rule", nargs="?", default=None,
@@ -322,7 +329,7 @@ def main():
                    help="Number of recent entries to show (default: 5)")
 
     # doctor
-    doc = _sub_parser(sub, "doctor", help="Diagnose the local environment")
+    doc = _sub_parser(sub, "doctor", parents=[common_parser], help="Diagnose the local environment")
     doc.add_argument("--json", action="store_true", dest="json_output",
                      help="Output as JSON")
     doc.add_argument("--selftest", action="store_true",
@@ -337,11 +344,9 @@ def main():
                      help="Write VERIFIED stamp here on conformance pass")
     doc.add_argument("--no-cross-check", action="store_false", dest="cross_check",
                      help="Disable JS cross-check (with --conformance)")
-    doc.add_argument("--verbose", "-v", action="store_true",
-                     help="Verbose output")
 
     # compare (Beta Gate C6/C7)
-    cmp = _sub_parser(sub, "compare", help="Equivalence across sites (three-machine proof with 3+)")
+    cmp = _sub_parser(sub, "compare", parents=[common_parser], help="Equivalence across sites (three-machine proof with 3+)")
     cmp.add_argument("sites", nargs="+",
                      help="Site directories to compare (2 or more)")
     cmp.add_argument("--json", action="store_true", dest="json_output",
@@ -352,25 +357,25 @@ def main():
                      help="Compare output hashes only (skip root checks)")
 
     # verify
-    v = _sub_parser(sub, "verify", help="Recompute .husk root hash in a site")
+    v = _sub_parser(sub, "verify", parents=[common_parser], help="Recompute .husk root hash in a site")
     v.add_argument("site", help="Site directory containing .husk file")
     v.add_argument("--name", help="Build name (auto-detected if only one .husk in site)")
     v.add_argument("--json", action="store_true", dest="json_output",
                    help="Output as JSON")
 
     # cache (Beta Gate G1/D5) - nested subcommands
-    cache_parser = _sub_parser(sub, "cache", help="Cache management commands")
+    cache_parser = _sub_parser(sub, "cache", parents=[common_parser], help="Cache management commands")
     cache_sub = cache_parser.add_subparsers(dest="cache_cmd", required=True)
 
     # cache export
-    cache_exp = _sub_parser(cache_sub, "export", help="Pack site cache for transfer")
+    cache_exp = _sub_parser(cache_sub, "export", parents=[common_parser], help="Pack site cache for transfer")
     cache_exp.add_argument("file", help="Path to write .tar.gz archive")
     cache_exp.add_argument("--site", required=True, help="Site directory containing cache")
     cache_exp.add_argument("--json", action="store_true", dest="json_output",
                            help="Output result as JSON")
 
     # cache import
-    cache_imp = _sub_parser(cache_sub, "import", help="Unpack cache into a site")
+    cache_imp = _sub_parser(cache_sub, "import", parents=[common_parser], help="Unpack cache into a site")
     cache_imp.add_argument("file", help="Path to .tar.gz archive")
     cache_imp.add_argument("--site", required=True, help="Site directory to import into")
     cache_imp.add_argument("--no-merge", action="store_true",

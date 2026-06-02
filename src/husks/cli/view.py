@@ -146,17 +146,19 @@ def _render_logo_header(residue: CliResidue) -> str:
         stage = "dry"
     elif residue.status == "hydrating":
         stage = "hydrating"
+    elif residue.status == "halted":
+        stage = "failed"
     else:
         stage = "sealed"
 
     status_display = _map_visual_status(residue.status, residue.command)
 
-    # Color the state value
+    # Color the state value to match logo colors
     state_colors = {
-        "checked": DIM,
-        "sealed": CYAN,
-        "failed": RED,
-        "hydrating": YELLOW,
+        "checked": DIM,      # dry/checked → grey
+        "sealed": YELLOW,    # sealed → gold-yellow
+        "failed": RED,       # failed → red
+        "hydrating": CYAN,   # hydrating → blue
     }
     sc = state_colors.get(status_display, DIM)
     state_str = f"{sc}{status_display}{RESET}"

@@ -598,12 +598,7 @@ def _cmd_run(args, design):
         from husks.oracle.backend import run_oracle
         overrides["oracle_backend"] = run_oracle
         overrides["oracle_backend_name"] = getattr(args, "backend", "litellm")
-        if args.hy:
-            from husks.designs.hy import hy_kernel_backend
-            kern = hy_kernel_backend()
-            kern["set_oracle_model"](args.model)
-            overrides["oracle_backend"] = kern["live_oracle"]
-        elif overrides["oracle_backend_name"] == "litellm":
+        if overrides["oracle_backend_name"] == "litellm":
             from husks.oracle import set_oracle_model
             set_oracle_model(args.model)
         overrides["oracle_model"] = args.model

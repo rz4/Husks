@@ -54,11 +54,11 @@ def cursor_up(n: int) -> str:
 
 _DIAMOND = {
     "dry": [
-        f"     {CYAN}\u25c7{RESET}",
-        f"    {CYAN}\u2571 \u2572{RESET}",
-        f"   {CYAN}\u25c7   \u25c7{RESET}",
-        f"    {CYAN}\u2572 \u2571{RESET}",
-        f"     {CYAN}\u25c7{RESET}",
+        f"     {DIM}\u25c7{RESET}",
+        f"    {DIM}\u2571 \u2572{RESET}",
+        f"   {DIM}\u25c7   \u25c7{RESET}",
+        f"    {DIM}\u2572 \u2571{RESET}",
+        f"     {DIM}\u25c7{RESET}",
     ],
     "hydrating": [
         f"     {CYAN}\u2b20{RESET}",
@@ -68,11 +68,18 @@ _DIAMOND = {
         f"     {CYAN}\u2b21{RESET}",
     ],
     "sealed": [
-        f"     {CYAN}\u25c6{RESET}",
-        f"    {CYAN}\u2571 \u2572{RESET}",
-        f"   {CYAN}\u25c6 \u25c6 \u25c6{RESET}",
-        f"    {CYAN}\u2572 \u2571{RESET}",
-        f"     {CYAN}\u25c6{RESET}",
+        f"     {YELLOW}\u25c6{RESET}",
+        f"    {YELLOW}\u2571 \u2572{RESET}",
+        f"   {YELLOW}\u25c6 \u25c6 \u25c6{RESET}",
+        f"    {YELLOW}\u2572 \u2571{RESET}",
+        f"     {YELLOW}\u25c6{RESET}",
+    ],
+    "failed": [
+        f"     {RED}\u25c6{RESET}",
+        f"    {RED}\u2571 \u2572{RESET}",
+        f"   {RED}\u25c6 \u25c6 \u25c6{RESET}",
+        f"    {RED}\u2572 \u2571{RESET}",
+        f"     {RED}\u25c6{RESET}",
     ],
 }
 
@@ -344,7 +351,15 @@ def _on_tool_call(e: dict[str, Any]) -> None:
 
 def _on_tool_result(e: dict[str, Any]) -> None:
     out = e.get("result_preview", "")
-    print(f"      {DIM}{out}{RESET}", flush=True)
+    elapsed = e.get("elapsed", 0.0)
+    parts: list[str] = []
+    if out:
+        parts.append(out)
+    if elapsed > 0:
+        parts.append(_dur(elapsed))
+    if parts:
+        sep = "  " if len(parts) > 1 else ""
+        print(f"      {DIM}{sep.join(parts)}{RESET}", flush=True)
 
 
 def _on_trial_branch(e: dict[str, Any]) -> None:

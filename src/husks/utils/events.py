@@ -49,6 +49,7 @@ class BuildTrace:
         "_build_name", "_build_fuel", "_build_t0",
         "_rule_timers", "_rule_stack",
         "_node_events", "_oracle_events", "_tool_events",
+        "_tool_timers",
         "_artifacts",
     )
 
@@ -65,6 +66,7 @@ class BuildTrace:
         self._node_events: list[tuple[str, str, float]] = []
         self._oracle_events: list[tuple[str, str, int, int, float, float]] = []
         self._tool_events: list[tuple[str, str, str, str | None, dict]] = []
+        self._tool_timers: dict[str, float] = {}
         self._artifacts: dict[str, dict[str, str]] = {}
 
     # -- Listener management --------------------------------------------------
@@ -98,6 +100,7 @@ class BuildTrace:
         self._node_events.clear()
         self._oracle_events.clear()
         self._tool_events.clear()
+        self._tool_timers.clear()
         self._artifacts.clear()
 
     # -- Internal -------------------------------------------------------------
@@ -277,6 +280,8 @@ class BuildTrace:
         if len(args_str) > 80:
             args_str = args_str[:77] + "..."
         self._tool_events.append((rule_name, name, args_str, None, args))
+        # Start timer for this tool call (keyed by tool name for simplicity)
+        self._tool_timers[name] = time.time()
         self._emit({
             "event": "tool_call",
             "rule": rule_name,
@@ -289,6 +294,8 @@ class BuildTrace:
         out_str = str(result)
         if len(out_str) > 120:
             out_str = out_str[:117] + "..."
+        # Calculate elapsed time
+        elapsed = time.time() - self._tool_timers.pop(name, time.time())
         # Update last matching tool event with result.
         for i in range(len(self._tool_events) - 1, -1, -1):
             if self._tool_events[i][1] == name and self._tool_events[i][3] is None:
@@ -300,6 +307,7 @@ class BuildTrace:
             "event": "tool_result",
             "tool": name,
             "result_preview": out_str,
+            "elapsed": elapsed,
         })
 
     # -- Trial events ---------------------------------------------------------

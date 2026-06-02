@@ -174,7 +174,7 @@ def _cmd_status(args):
     """
     from husks.manifest import read_manifest, compute_artifact_states
     from husks.cli.surface import emit_residue
-    from husks.utils.console import BOLD, DIM, CYAN, RESET
+    from husks.utils.console import BOLD, DIM, CYAN, YELLOW, RED, RESET
 
     site = args.site
 
@@ -207,16 +207,26 @@ def _cmd_status(args):
             with open(husk_path, 'rb') as f:
                 husk_hash = hashlib.sha256(f.read()).hexdigest()
 
-        # Determine state
-        if root:
-            state = f"{CYAN}sealed{RESET}"
+        # Determine state from manifest status field
+        manifest_status = manifest.get("status", "unknown")
+        if manifest_status == "committed":
+            state = f"{YELLOW}sealed{RESET}"
+            state_label = "sealed"
+        elif manifest_status == "halted":
+            state = f"{RED}failed{RESET}"
+            state_label = "failed"
+        elif root:
+            # Legacy manifests without status field
+            state = f"{YELLOW}sealed{RESET}"
+            state_label = "sealed"
         else:
             state = f"{DIM}dry{RESET}"
+            state_label = "dry"
 
         if args.json_output:
             print(json.dumps({
                 "name": name,
-                "state": "sealed" if root else "dry",
+                "state": state_label,
                 "husk": husk_hash,
                 "root": root,
                 "site": site,

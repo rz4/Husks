@@ -380,8 +380,8 @@ def _render_site_card(site_path: str, report_data: dict | None, show_cost: bool)
     else:
         stage = "dry"
 
-    # State coloring
-    state_colors = {"sealed": CYAN, "committed": CYAN, "failed": RED}
+    # State coloring to match logo colors
+    state_colors = {"sealed": YELLOW, "committed": YELLOW, "failed": RED}
     status_display = "sealed" if status == "committed" else status
     sc = state_colors.get(status_display, DIM)
     state_str = f"{sc}{status_display}{RESET}"

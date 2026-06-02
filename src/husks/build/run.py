@@ -136,11 +136,10 @@ def build(
     # Sealed artifact manifest
     T.sealed_manifest()
 
-    # Compute build-root (Merkle DAG) and write .husk file
-    # CRITICAL: These verification artifacts are required for build integrity.
-    # If we can't write them, the build must fail - we cannot claim "committed"
-    # status without a verifiable build-root, .husk file, and manifest.
-    if nodes and S["status"] in ("committed", "halted"):
+    # Compute build-root (Merkle DAG) and write verification artifacts
+    # CRITICAL: .husk file is only written for committed builds (successful seal).
+    # Manifest is written for both committed and halted to record the outcome.
+    if nodes and S["status"] == "committed":
         try:
             if len(nodes) == 1:
                 S["build-root"] = compute_build_root(S, nodes[0])
@@ -177,6 +176,21 @@ def build(
             S["trace"].append({
                 "event": "error",
                 "message": f"verification artifact write failed: {e}"
+            })
+    elif nodes and S["status"] == "halted":
+        # Halted builds: write manifest to record the failure, but no .husk file
+        # The .husk file is the final seal artifact, only for successful builds
+        try:
+            write_build_manifest(
+                S, name, nodes,
+                design_source=kwargs.get("design_source"),
+                design_kind=kwargs.get("design_kind"),
+            )
+        except Exception as e:
+            # Log manifest write failure but don't change status (already halted)
+            S["trace"].append({
+                "event": "error",
+                "message": f"failed to write manifest for halted build: {e}"
             })
 
     # Beta 100 Task A5: Promote or discard pending cache based on final status
