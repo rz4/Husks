@@ -37,7 +37,7 @@ jobs:
           python -m pip install --upgrade pip build
           python -m build --wheel
           pip install dist/*.whl pytest
-      - run: python -m pytest tests/test_wheel_smoke.py -v --tb=short
+      - run: python -m pytest tests/test_SOLID_26_gate_g_wheel_smoke.py -v --tb=short
 
   solid-alpha:
     name: Solid Alpha
@@ -61,14 +61,14 @@ jobs:
       - name: Stub three-machine resolution (headline invariant)
         run: |
           python -m pytest \
-            tests/test_three_machine_proof.py \
-            tests/test_three_machine_cli_acceptance.py \
-            tests/test_beta_three_machine.py \
+            tests/test_LIQUID_69_three_machine_proof.py \
+            tests/test_LIQUID_70_three_machine_cli_acceptance.py \
+            tests/test_LIQUID_68_beta_three_machine.py \
             -v --tb=short
       - name: Full deterministic suite
         run: |
           python -m pytest tests/ -m "not beta" \
-            --ignore=tests/test_live_oracle_readiness.py \
+            --ignore=tests/test_SOLID_50_live_oracle_readiness.py \
             -v --tb=short
 
   liquid-beta:
@@ -93,5 +93,5 @@ jobs:
           HUSKS_ENABLE_LIVE_TESTS: "1"
           HUSKS_LIVE_TRIALS: ${{ github.event.inputs.trials }}
         run: |
-          python -m pytest -m beta tests/test_live_oracle_readiness.py \
+          python -m pytest -m beta tests/test_SOLID_50_live_oracle_readiness.py \
             -v --tb=short
