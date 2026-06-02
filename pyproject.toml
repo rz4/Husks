@@ -13,6 +13,7 @@ dependencies = []
 
 [project.optional-dependencies]
 llm = ["litellm"]
+claude-code = ["claude-code-sdk"]
 hy = ["hy>=1.0.0", "hyrule>=1.0.0"]
 
 [project.scripts]

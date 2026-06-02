@@ -2,11 +2,14 @@
 kernel.py -- Fuel-bounded agentic loop for Husks oracle execution.
 
 Mediates between the LLM and the sandboxed tool registry.  Loops
-iteratively until the LLM stops or fuel is exhausted.  live_oracle()
-adapts the kernel to the build's oracle backend signature.
+iteratively until the LLM stops or fuel is exhausted.
 
-See docs/architecture.md for context dict schema, execution flow,
-and the live_oracle adapter.
+Primitives: parse_response, _build_messages, invoke_llm, step, agent.
+Model getter/setter: set_oracle_model, get_oracle_model.
+
+The build-facing oracle entry point (live_oracle / run_oracle) lives in
+oracle/__init__.py and is backed by pluggable backends (litellm.py,
+claude_code.py) registered through backend.py.
 """
 
 from __future__ import annotations
@@ -188,6 +191,8 @@ def invoke_llm(C: dict[str, Any]) -> dict[str, Any]:
         "model": C.get("model", llm.DEFAULT_MODEL),
         "max_tokens": C.get("max-tokens", 4096),
         "rule": C.get("rule"),
+        "params": C.get("params"),
+        "router": C.get("router"),
     }
     tracker = C.get("tracker")
     if tracker is not None:
@@ -373,137 +378,3 @@ def set_oracle_model(model: str) -> None:
 def get_oracle_model() -> str:
     """Return the current oracle model."""
     return _oracle_model
-
-
-# ── Live oracle backend ──────────────────────────────────────────
-
-def live_oracle(
-    S: dict[str, Any],
-    rule_name: str,
-    recipe: dict[str, Any],
-    outputs: list[str],
-) -> dict[str, Any]:
-    """Run the kernel as a build oracle backend.
-
-    This function matches the OracleBackend signature expected by
-    build.py.  It:
-      1. Activates site-root sandboxing.
-      2. Constructs a system prompt with the site location and
-         required output files.
-      3. Snapshots usage before/after to compute token deltas.
-      4. Runs agent() and returns the usage dict.
-
-    Parameters
-    ----------
-    S : Store
-        The build store (must contain "site").
-    rule_name : str
-        The name of the rule being evaluated.
-    recipe : dict
-        The oracle recipe (prompt, tools, fuel).
-    outputs : list of str
-        Declared output filenames that the oracle must produce.
-
-    Returns
-    -------
-    dict
-        Usage dict with keys: tokens_in, tokens_out, cost_usd,
-        fuel_steps.
-    """
-    from pathlib import Path as _Path
-
-    site: str = S.get("stage", S["site"])
-    prompt: str = recipe.get("prompt", "")
-    tool_names: list[str] = recipe.get(
-        "tools", ["read-file", "write-file", "list-dir", "tree"]
-    )
-    fuel: int = recipe.get("fuel", 8)
-
-    # Enforce site containment at the tool layer (global, for backward compat)
-    readonly: list[str] = S.get("readonly-dirs", [])
-    tools.set_site_root(site, readonly=readonly or None)
-
-    # Context-threaded site root and readonly roots (per-invocation)
-    site_root = _Path(site).resolve()
-    readonly_roots = {_Path(p).resolve() for p in (readonly or [])}
-
-    # Per-invocation usage tracker
-    tracker = llm.UsageTracker()
-
-    # System prompt: tell the oracle where it is and what it must produce
-    output_lines = "\n".join(f"  - {o}" for o in outputs)
-    system = (
-        "You are an oracle inside a build system.\n"
-        f"Site directory: {site}\n"
-        "File paths are relative to the site directory.\n"
-        "You must produce these outputs:\n"
-        f"{output_lines}\n\n"
-        "Use the available tools to read inputs and write outputs. "
-        "When finished, stop."
-    )
-
-    try:
-        result = agent(
-            {
-                "prompt": prompt,
-                "tools": tool_names,
-                "system": system,
-                "model": _oracle_model,
-                "rule": rule_name,
-                "tracker": tracker,
-                "site_root": site_root,
-                "readonly_roots": readonly_roots,
-            },
-            fuel=fuel,
-        )
-    finally:
-        tools.set_site_root(None)
-
-    # Check agent result status - only "stop" is successful
-    result_type = result.get("type")
-    if result_type != "stop":
-        # Agent failed - raise to prevent sealing partial outputs
-        if result_type == "error":
-            error_msg = result.get("error", "unknown error")
-            raise RuntimeError(f"oracle agent error: {error_msg}")
-        elif result_type == "halt":
-            raise RuntimeError("oracle agent ran out of fuel")
-        elif result_type == "kill":
-            raise RuntimeError("oracle agent interrupted")
-        elif result_type == "say":
-            text = result.get("text", "")
-            raise RuntimeError(f"oracle agent produced text without stopping: {text[:100]}")
-        else:
-            raise RuntimeError(f"oracle agent returned unexpected type: {result_type}")
-
-    # Compute deltas from the local tracker
-    snap = tracker.snapshot()
-
-    # Compute provenance hashes for config and prompt
-    import hashlib
-    import json as jsonlib
-
-    # Config: model + temperature/max_tokens (sorted for determinism)
-    config = {
-        "model": _oracle_model,
-        "temperature": 1.0,  # litellm default
-        "max_tokens": 4096,  # typical default
-    }
-    if tool_names:
-        config["tools"] = sorted(tool_names)
-    config_json = jsonlib.dumps(config, sort_keys=True, separators=(",", ":"))
-    config_hash = hashlib.sha256(config_json.encode("utf-8")).hexdigest()
-
-    # Prompt hash (user prompt only, not system prompt which varies by outputs)
-    prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-
-    return {
-        "tokens_in": snap["input_tokens"],
-        "tokens_out": snap["output_tokens"],
-        "cost_usd": snap["cost_usd"],
-        "fuel_steps": result.get("fuel_steps", 0),
-        "backend": "litellm",
-        "model": _oracle_model,
-        "config_hash": config_hash,
-        "prompt_hash": prompt_hash,
-    }

@@ -21,22 +21,8 @@ def test_oracle_agent_error_prevents_sealing():
 
         # Create a custom oracle backend that simulates agent error
         def error_oracle_backend(S, rule_name, recipe, outputs):
-            """Mock backend that simulates agent returning error status."""
-            from unittest.mock import patch
-
-            # Mock agent to return error
-            def mock_agent(C, fuel=8, M=None):
-                return {
-                    "type": "error",
-                    "error": "test-tool not in scope",
-                    "C": C,
-                    "fuel_steps": 0,
-                }
-
-            # Call live_oracle with mocked agent
-            from husks.oracle import kernel
-            with patch.object(kernel, 'agent', mock_agent):
-                return kernel.live_oracle(S, rule_name, recipe, outputs)
+            """Mock backend that raises RuntimeError for agent error."""
+            raise RuntimeError("oracle agent error: test-tool not in scope")
 
         node = rule(
             "processor",
@@ -74,19 +60,8 @@ def test_oracle_agent_halt_prevents_sealing():
         (site / "input.txt").write_text("data\n")
 
         def halt_oracle_backend(S, rule_name, recipe, outputs):
-            """Mock backend that simulates agent running out of fuel."""
-            from unittest.mock import patch
-
-            def mock_agent(C, fuel=8, M=None):
-                return {
-                    "type": "halt",
-                    "C": C,
-                    "fuel_steps": fuel,
-                }
-
-            from husks.oracle import kernel
-            with patch.object(kernel, 'agent', mock_agent):
-                return kernel.live_oracle(S, rule_name, recipe, outputs)
+            """Mock backend that raises RuntimeError for fuel exhaustion."""
+            raise RuntimeError("oracle agent ran out of fuel")
 
         node = rule(
             "processor",
@@ -122,20 +97,10 @@ def test_oracle_agent_say_prevents_sealing():
         (site / "input.txt").write_text("data\n")
 
         def say_oracle_backend(S, rule_name, recipe, outputs):
-            """Mock backend that simulates agent returning say (text without stop)."""
-            from unittest.mock import patch
-
-            def mock_agent(C, fuel=8, M=None):
-                return {
-                    "type": "say",
-                    "text": "I'm thinking about this task...",
-                    "C": C,
-                    "fuel_steps": 1,
-                }
-
-            from husks.oracle import kernel
-            with patch.object(kernel, 'agent', mock_agent):
-                return kernel.live_oracle(S, rule_name, recipe, outputs)
+            """Mock backend that raises RuntimeError for text-without-stop."""
+            raise RuntimeError(
+                "oracle agent produced text without stopping: I'm thinking about this task..."
+            )
 
         node = rule(
             "processor",
@@ -171,19 +136,8 @@ def test_oracle_agent_kill_prevents_sealing():
         (site / "input.txt").write_text("data\n")
 
         def kill_oracle_backend(S, rule_name, recipe, outputs):
-            """Mock backend that simulates agent being interrupted."""
-            from unittest.mock import patch
-
-            def mock_agent(C, fuel=8, M=None):
-                return {
-                    "type": "kill",
-                    "C": C,
-                    "fuel_steps": 0,
-                }
-
-            from husks.oracle import kernel
-            with patch.object(kernel, 'agent', mock_agent):
-                return kernel.live_oracle(S, rule_name, recipe, outputs)
+            """Mock backend that raises RuntimeError for interrupt."""
+            raise RuntimeError("oracle agent interrupted")
 
         node = rule(
             "processor",
@@ -210,7 +164,7 @@ def test_oracle_agent_kill_prevents_sealing():
 
 def test_oracle_agent_stop_allows_sealing():
     """Oracle agent stop (success) should allow normal sealing after output guard."""
-    from husks.build import build, rule, oracle
+    from husks.build import build, rule, oracle, site_path
 
     tmpdir = tempfile.mkdtemp(prefix="oracle-stop-")
     try:
@@ -219,23 +173,14 @@ def test_oracle_agent_stop_allows_sealing():
         (site / "input.txt").write_text("data\n")
 
         def stop_oracle_backend(S, rule_name, recipe, outputs):
-            """Mock backend that simulates successful agent stop."""
-            from unittest.mock import patch
-            from husks.build import site_path
-
-            def mock_agent(C, fuel=8, M=None):
-                # Write the expected output before returning stop
-                Path(site_path(S, "output.txt", write=True)).write_text("success\n")
-                return {
-                    "type": "stop",
-                    "value": "done",
-                    "C": C,
-                    "fuel_steps": 1,
-                }
-
-            from husks.oracle import kernel
-            with patch.object(kernel, 'agent', mock_agent):
-                return kernel.live_oracle(S, rule_name, recipe, outputs)
+            """Mock backend that produces the output and returns cost."""
+            Path(site_path(S, "output.txt", write=True)).write_text("success\n")
+            return {
+                "tokens_in": 0,
+                "tokens_out": 0,
+                "cost_usd": 0.0,
+                "fuel_steps": 1,
+            }
 
         node = rule(
             "processor",

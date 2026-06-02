@@ -30,6 +30,7 @@ def build(
     fuel: int | None = None,
     site: str | None = None,
     oracle_backend: OracleBackend | None = None,
+    oracle_backend_name: str = "litellm",
     oracle_model: str | None = None,
     readonly_dirs: list[str] | None = None,
     site_inputs: list[str] | dict[str, str] | None = None,
@@ -100,7 +101,7 @@ def build(
     # Clear trace state so sequential in-process builds don't accumulate.
     T.clear()
 
-    S = fresh_store(site, fuel, oracle_backend=oracle_backend, readonly_dirs=readonly_dirs)
+    S = fresh_store(site, fuel, oracle_backend=oracle_backend, oracle_backend_name=oracle_backend_name, readonly_dirs=readonly_dirs)
 
     # Beta Gate D5: Set cache-reuse-only mode if requested
     if kwargs.get("cache_reuse_only"):

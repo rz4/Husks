@@ -163,6 +163,7 @@ def fresh_store(
     fuel: int,
     *,
     oracle_backend: OracleBackend | None = None,
+    oracle_backend_name: str = "litellm",
     readonly_dirs: list[str] | None = None,
 ) -> Store:
     """Create a new build store rooted at *site*."""
@@ -174,6 +175,7 @@ def fresh_store(
         "value": None,
         "trace": [],
         "oracle-backend": oracle_backend,
+        "oracle-backend-name": oracle_backend_name,
         "readonly-dirs": readonly_dirs or [],
         "run-id": str(uuid.uuid4()),
         "usage": {

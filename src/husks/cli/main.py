@@ -238,6 +238,8 @@ def main():
                    default="anthropic/claude-haiku-4-5-20251001")
     r.add_argument("--stub", action="store_true",
                    help="Use stub oracle (no LLM, placeholder outputs)")
+    r.add_argument("--backend", choices=["litellm", "claude-code"],
+                   default="litellm", help="Oracle backend (default: litellm)")
     r.add_argument("--reuse-only", action="store_true",
                    help="Only use cached results, never call oracle (Beta Gate D5)")
     r.add_argument("--hy", action="store_true",

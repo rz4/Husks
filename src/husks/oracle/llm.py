@@ -38,6 +38,7 @@ def compute_config_hash(
     max_tokens: int,
     temperature: float | None = None,
     tools: list[dict] | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> str:
     """Compute deterministic config hash for oracle provenance.
 
@@ -53,6 +54,9 @@ def compute_config_hash(
         Sampling temperature
     tools : list of dicts, optional
         Tool definitions (we hash tool names only, not implementations)
+    extra : dict, optional
+        Additional key-value pairs to include in the hash.  Only
+        JSON-serialisable, hashable-stable values should be passed.
 
     Returns
     -------
@@ -60,7 +64,7 @@ def compute_config_hash(
         SHA-256 hex hash of config (lowercase)
     """
     # Build stable config dict
-    config = {
+    config: dict[str, Any] = {
         "backend": "litellm",
         "model": model,
         "max_tokens": max_tokens,
@@ -72,6 +76,9 @@ def compute_config_hash(
     if tools:
         # Hash tool names only (stable across implementations)
         config["tools"] = sorted([t.get("function", {}).get("name", "") for t in tools])
+
+    if extra:
+        config.update(extra)
 
     # JSON serialize with sorted keys for determinism
     config_json = json.dumps(config, sort_keys=True, separators=(",", ":"))
@@ -177,21 +184,36 @@ def call(
     tools: list[dict] | None = None,
     temperature: float | None = None,
     tracker: UsageTracker | None = None,
+    params: dict[str, Any] | None = None,
+    router: Any | None = None,
 ) -> Any:
     """Single-shot LLM call.  Returns the litellm response object.
 
     Beta 100: Attaches config_hash and prompt_hash to response for provenance.
+
+    Parameters
+    ----------
+    params : dict, optional
+        Power-user pass-through kwargs for litellm.completion.
+        Loop-owned keys (messages, tools, model) win over params.
+    router : litellm.Router, optional
+        If provided, ``router.completion(**kwargs)`` is called instead
+        of ``litellm.completion(**kwargs)`` for load-balancing/fallbacks.
     """
     msgs: list[dict[str, Any]] = []
     if system:
         msgs.append({"role": "system", "content": system})
     msgs.append({"role": "user", "content": prompt})
-    kwargs: dict[str, Any] = {"model": model, "max_tokens": max_tokens, "messages": msgs}
+    kwargs: dict[str, Any] = {**(params or {})}
+    kwargs.update({"model": model, "max_tokens": max_tokens, "messages": msgs})
     if tools:
         kwargs["tools"] = tools
     if temperature is not None:
         kwargs["temperature"] = temperature
-    r = _litellm().completion(**kwargs)
+    if router is not None:
+        r = router.completion(**kwargs)
+    else:
+        r = _litellm().completion(**kwargs)
     (tracker or _usage).track(r)
 
     # Beta 100: Attach provenance hashes to response
@@ -212,6 +234,8 @@ def call_messages(
     temperature: float | None = None,
     rule: str | None = None,
     tracker: UsageTracker | None = None,
+    params: dict[str, Any] | None = None,
+    router: Any | None = None,
 ) -> Any:
     """Multi-turn LLM call with pre-built messages list.
 
@@ -235,6 +259,12 @@ def call_messages(
         Rule name for per-rule usage tracking.
     tracker : UsageTracker, optional
         Usage tracker instance.  Defaults to the module-level tracker.
+    params : dict, optional
+        Power-user pass-through kwargs for litellm.completion.
+        Loop-owned keys (messages, tools, model) win over params.
+    router : litellm.Router, optional
+        If provided, ``router.completion(**kwargs)`` is called instead
+        of ``litellm.completion(**kwargs)`` for load-balancing/fallbacks.
 
     Returns
     -------
@@ -243,12 +273,16 @@ def call_messages(
     msgs = list(messages)
     if system:
         msgs.insert(0, {"role": "system", "content": system})
-    kwargs: dict[str, Any] = {"model": model, "max_tokens": max_tokens, "messages": msgs}
+    kwargs: dict[str, Any] = {**(params or {})}
+    kwargs.update({"model": model, "max_tokens": max_tokens, "messages": msgs})
     if tools:
         kwargs["tools"] = tools
     if temperature is not None:
         kwargs["temperature"] = temperature
-    r = _litellm().completion(**kwargs)
+    if router is not None:
+        r = router.completion(**kwargs)
+    else:
+        r = _litellm().completion(**kwargs)
     (tracker or _usage).track(r, rule=rule)
 
     # Beta 100: Attach provenance hashes
