@@ -101,3 +101,110 @@ def run_husks_cli(*args, cwd=None, timeout=30, check=False):
         ) from e
 
     return result
+
+
+# ── Cache Test Fixtures ─────────────────────────────────────────────
+
+import tempfile
+import shutil
+from pathlib import Path
+
+
+@pytest.fixture
+def cache_temp_site():
+    """Create temporary site directory with automatic cleanup for cache tests."""
+    tmpdir = tempfile.mkdtemp(prefix="test-cache-")
+    try:
+        site = Path(tmpdir) / "site"
+        site.mkdir()
+        yield {"tmpdir": tmpdir, "site": site}
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.fixture
+def cache_temp_site_with_input():
+    """Create temporary site with input.txt file for cache tests."""
+    tmpdir = tempfile.mkdtemp(prefix="test-cache-")
+    try:
+        site = Path(tmpdir) / "site"
+        site.mkdir()
+        (site / "input.txt").write_text("data\n")
+        yield {"tmpdir": tmpdir, "site": site}
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.fixture
+def basic_stub_oracle():
+    """Basic oracle that writes deterministic output for cache tests."""
+    def oracle(S, rule_name, recipe, outputs):
+        from husks.build.site import write_text, site_path
+        write_text(site_path(S, outputs[0], write=True), "result\n")
+        return {"tokens_in": 100, "tokens_out": 50, "cost_usd": 0.001, "fuel_steps": 1}
+    return oracle
+
+
+@pytest.fixture
+def counting_oracle():
+    """Oracle that increments counter each call for cache tests."""
+    counter = {"n": 0}
+    def oracle(S, rule_name, recipe, outputs):
+        counter["n"] += 1
+        from husks.build.site import write_text, site_path
+        write_text(site_path(S, outputs[0], write=True), f"result {counter['n']}\n")
+        return {"tokens_in": 100, "tokens_out": 50, "cost_usd": 0.001, "fuel_steps": 1}
+    oracle.count = counter
+    return oracle
+
+
+@pytest.fixture
+def expensive_oracle():
+    """Oracle with high cost for testing usage tracking in cache tests."""
+    def oracle(S, rule_name, recipe, outputs):
+        from husks.build.site import write_text, site_path
+        write_text(site_path(S, outputs[0], write=True), "expensive result\n")
+        return {"tokens_in": 1000, "tokens_out": 500, "cost_usd": 0.10, "fuel_steps": 1}
+    return oracle
+
+
+def make_oracle_node(name="worker", inputs=None, outputs=None, prompt="Test", fuel=5):
+    """Create a standard oracle rule node for cache testing.
+
+    Args:
+        name: Rule name
+        inputs: List of input files (default: ["input.txt"])
+        outputs: List of output files (default: ["output.txt"])
+        prompt: Oracle prompt text
+        fuel: Oracle fuel allocation
+
+    Returns:
+        Rule node for use with build()
+    """
+    from husks.build import rule, oracle
+    return rule(
+        name,
+        inputs=inputs or ["input.txt"],
+        outputs=outputs or ["output.txt"],
+        recipe=oracle(prompt=prompt, fuel=fuel),
+    )
+
+
+def read_history(site, rule_name):
+    """Read and parse history file for a rule in cache tests.
+
+    Args:
+        site: Site directory path
+        rule_name: Name of the rule
+
+    Returns:
+        List of history records (parsed JSON objects)
+    """
+    import json
+    history_file = Path(site) / ".traces" / f"{rule_name}.history.jsonl"
+    if not history_file.exists():
+        return []
+    content = history_file.read_text().strip()
+    if not content:
+        return []
+    return [json.loads(line) for line in content.split('\n')]

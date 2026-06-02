@@ -54,7 +54,7 @@ def test_action_missing_output_halts():
 @pytest.mark.alpha
 
 
-def test_action_zero_byte_marker_commits():
+def test_gate11_action_zero_byte_marker_commits():
     """An action producing a zero-byte marker file must commit (existence-only)."""
     from husks.designs.ir import run
     tmpdir = tempfile.mkdtemp(prefix="guard-action-marker-")
@@ -87,7 +87,7 @@ def test_action_zero_byte_marker_commits():
 @pytest.mark.alpha
 
 
-def test_oracle_empty_output_halts():
+def test_gate11_oracle_empty_output_halts():
     """An oracle producing a zero-byte output must halt."""
     from husks.designs.ir import run
     from husks.build import site_path
@@ -139,7 +139,7 @@ def test_oracle_empty_output_halts():
 @pytest.mark.alpha
 
 
-def test_oracle_missing_output_halts():
+def test_gate11_oracle_missing_output_halts():
     """An oracle that never writes its declared output must halt."""
     from husks.designs.ir import run
     tmpdir = tempfile.mkdtemp(prefix="guard-oracle-missing-")

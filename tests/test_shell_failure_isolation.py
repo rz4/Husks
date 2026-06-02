@@ -114,8 +114,8 @@ def test_bootstrap_core_with_stub_commits():
 
     tmpdir = tempfile.mkdtemp(prefix="bootstrap-stub-test-")
     try:
-        # Load the bootstrap-core design
-        design_path = Path(__file__).parent.parent / "examples" / "json_designs" / "bootstrap-core.json"
+        # Load the bootstrap-core design template
+        design_path = Path(__file__).parent.parent / "examples" / "templates" / "core-bootstrap.json"
         design = from_json(design_path)
 
         # Create temporary site and a separate inputs directory

@@ -167,173 +167,69 @@ def selftest(verbose=True, conformance=None):
 import json
 import textwrap
 
-_DEMO_DESIGN = {
-    "name": "demo",
-    "fuel": 12,
-    "target": "gate",
-    "site_inputs": {},
-    "rules": [
-        {
-            "name": "generate-greeting",
-            "kind": "oracle",
-            "inputs": [],
-            "outputs": ["greeting.txt"],
-            "prompt": "Write a single-line friendly greeting to greeting.txt. It must start with 'Hello' and end with '!'. Be warm and welcoming.",
-            "tools": ["write-file"],
-            "fuel": 8,
-        },
-        {
-            "name": "gate",
-            "kind": "action",
-            "inputs": ["greeting.txt"],
-            "outputs": ["validation-report.txt", "VERIFIED"],
-            "run": "python3 check-greeting.py && touch VERIFIED && echo 'pass' > validation-report.txt",
-        },
-    ],
-}
+def _load_template_file(filename: str) -> str:
+    """Load a template file from examples/templates/."""
+    import importlib.resources
+    try:
+        files = importlib.resources.files("husks")
+        template_path = files.parent / "examples" / "templates" / filename
+        return template_path.read_text()
+    except (AttributeError, FileNotFoundError):
+        template_file = Path(__file__).parent.parent.parent / "examples" / "templates" / filename
+        return template_file.read_text()
 
-_DEMO_CHECK_GREETING = textwrap.dedent("""\
-    #!/usr/bin/env python3
-    \"\"\"Validate that greeting.txt follows the spec.\"\"\"
-    import sys
-    from pathlib import Path
+_DEMO_DESIGN = None
+_DEMO_CHECK_GREETING = None
+_DEMO_SPEC_MD = None
 
-    greeting_file = Path("greeting.txt")
-    if not greeting_file.exists():
-        print("ERROR: greeting.txt not found", file=sys.stderr)
-        Path("result.txt").write_text("fail: file not found\\n")
-        sys.exit(1)
+def _get_demo_design():
+    global _DEMO_DESIGN
+    if _DEMO_DESIGN is None:
+        _DEMO_DESIGN = json.loads(_load_template_file("demo.json"))
+    return _DEMO_DESIGN
 
-    text = greeting_file.read_text().strip()
-    lines = text.splitlines()
+def _get_demo_check_greeting():
+    global _DEMO_CHECK_GREETING
+    if _DEMO_CHECK_GREETING is None:
+        _DEMO_CHECK_GREETING = _load_template_file("check-greeting.py")
+    return _DEMO_CHECK_GREETING
 
-    errors = []
-    if not lines:
-        errors.append("empty file")
-    elif len(lines) != 1:
-        errors.append(f"expected 1 line, got {len(lines)}")
-    else:
-        line = lines[0]
-        if not line.startswith("Hello"):
-            errors.append("must start with 'Hello'")
-        if not line.endswith("!"):
-            errors.append("must end with '!'")
-
-    if errors:
-        for err in errors:
-            print(f"FAIL: {err}", file=sys.stderr)
-        Path("result.txt").write_text("fail\\n")
-        sys.exit(1)
-    else:
-        print("PASS: greeting validated")
-        Path("result.txt").write_text("pass\\n")
-        sys.exit(0)
-""")
-
-_DEMO_SPEC_MD = textwrap.dedent("""\
-    # Greeting Spec
-
-    Write a short, friendly greeting that:
-    - Starts with "Hello"
-    - Is exactly one line
-    - Ends with an exclamation mark
-""")
+def _get_demo_spec_md():
+    global _DEMO_SPEC_MD
+    if _DEMO_SPEC_MD is None:
+        _DEMO_SPEC_MD = _load_template_file("demo-spec.md")
+    return _DEMO_SPEC_MD
 
 # ── core-bootstrap template ─────────────────────────────────────────
-_CORE_BOOTSTRAP_DESIGN = {
-    "name": "core-bootstrap",
-    "fuel": 20,
-    "target": "validate",
-    "cost_tolerance": {"ratio": [0.5, 2.0]},
-    "site_inputs": {
-        "CSE-v1.md": "spec/CSE-v1.md",
-        "CSE-v2.md": "spec/CSE-v2.md"
-    },
-    "rules": [
-        {
-            "name": "generate",
-            "kind": "oracle",
-            "inputs": ["CSE-v1.md", "CSE-v2.md"],
-            "outputs": ["readers/generated_reader.py"],
-            "equivalence": {"readers/generated_reader.py": "free"},
-            "prompt": "Read CSE-v1.md (the frozen spec) and CSE-v2.md (clarifications with worked examples). Implement a dependency-free CSE reader in a single Python file at readers/generated_reader.py. Constraints: use ONLY the Python standard library, and ONLY hashlib, sys, os. Do NOT use json, re, ast, pickle, or any parsing library. Write a byte-level netstring parser: read the decimal length prefix, then a colon, then exactly that many raw bytes. Reject leading zeros in a length (e.g. 05:hello is invalid). Reject an atom whose declared length exceeds the remaining bytes. After parsing the root value, reject the input if any trailing bytes remain (parser position must equal input length). The husk file structure is: (husk <version> (build <name> <fuel> <target-node>)). A rule node is: (rule <name> <recipe> <inputs-list> <outputs-list> <child-rule>...) — a rule always has AT LEAST 5 elements (tag, name, recipe, inputs, outputs) and MAY have additional child rules at positions 5, 6, etc. Parse the recipe as a list, inputs as a list of atoms, outputs as a list of atoms. Implement the seal preimage, recipe digest, output bindings, and Merkle node digest exactly as specified, using SHA-256 and lowercase hex. Critical: children of a rule are the CSE values at positions 5+ in the parsed rule list — recurse into them in positional order. Do NOT match children against input filenames. All intermediate digests (recipe-digest, seal, child digests) are 64-byte lowercase hex string atoms, not raw 32-byte hashes. Command-line contract: `python generated_reader.py <husk-file> <site-dir>` must print the lowercase-hex build-root to stdout and exit 0; on any CSE violation it must exit with a nonzero status. Write only readers/generated_reader.py.",
-            "tools": ["read-file", "write-file"],
-            "fuel": 15
-        },
-        {
-            "name": "validate",
-            "kind": "action",
-            "inputs": ["readers/generated_reader.py"],
-            "outputs": ["readers/gate-report.txt", "readers/VERIFIED"],
-            "equivalence": {
-                "readers/gate-report.txt": "free",
-                "readers/VERIFIED": "exact"
-            },
-            "run": "python3 -m husks.gate 'python3 readers/generated_reader.py' --stamp-dir readers"
-        }
-    ]
-}
+def _load_core_bootstrap_design():
+    """Load core-bootstrap template from examples/templates/."""
+    import importlib.resources
+    try:
+        # Python 3.9+
+        files = importlib.resources.files("husks")
+        template_path = files.parent / "examples" / "templates" / "core-bootstrap.json"
+        return json.loads(template_path.read_text())
+    except (AttributeError, FileNotFoundError):
+        # Fallback: relative to this file
+        template_file = Path(__file__).parent.parent.parent / "examples" / "templates" / "core-bootstrap.json"
+        return json.loads(template_file.read_text())
 
-_CORE_BOOTSTRAP_HY = textwrap.dedent("""\
-    #!/usr/bin/env hy
-    \"\"\"Bootstrap-core: generate a CSE reader and gate it.
+_CORE_BOOTSTRAP_DESIGN = None  # Lazy-loaded via _get_core_bootstrap_design()
 
-    Usage:
-        husks run bootstrap.hy --stub
-    \"\"\"
+def _get_core_bootstrap_design():
+    """Get core-bootstrap design, loading it on first access."""
+    global _CORE_BOOTSTRAP_DESIGN
+    if _CORE_BOOTSTRAP_DESIGN is None:
+        _CORE_BOOTSTRAP_DESIGN = _load_core_bootstrap_design()
+    return _CORE_BOOTSTRAP_DESIGN
 
-    (import husks.build [build rule oracle])
-    (import husks.oracle [live_oracle set_oracle_model])
-    (require husks.macros [deforacle ->])
+_CORE_BOOTSTRAP_HY = None
 
-    (set_oracle_model "anthropic/claude-haiku-4-5-20251001")
-
-    (deforacle generate-reader
-      :prompt (+ "Read CSE-v1.md (the frozen spec) and CSE-v2.md (clarifications with worked examples). "
-                 "Implement a dependency-free CSE reader in a single Python file at readers/generated_reader.py. "
-                 "Constraints: use ONLY the Python standard library, and ONLY hashlib, sys, os. "
-                 "Do NOT use json, re, ast, pickle, or any parsing library. "
-                 "Write a byte-level netstring parser: read the decimal length prefix, "
-                 "then a colon, then exactly that many raw bytes. Reject leading zeros in a length "
-                 "(e.g. 05:hello is invalid). Reject an atom whose declared length exceeds the remaining bytes. "
-                 "After parsing the root value, reject the input if any trailing bytes remain "
-                 "(parser position must equal input length). "
-                 "The husk file structure is: (husk <version> (build <name> <fuel> <target-node>)). "
-                 "A rule node is: (rule <name> <recipe> <inputs-list> <outputs-list> <child-rule>...) — "
-                 "a rule always has AT LEAST 5 elements (tag, name, recipe, inputs, outputs) and MAY have "
-                 "additional child rules at positions 5, 6, etc. Parse the recipe as a list, inputs as a list "
-                 "of atoms, outputs as a list of atoms. "
-                 "Implement the seal preimage, recipe digest, output bindings, and Merkle node digest exactly "
-                 "as specified, using SHA-256 and lowercase hex. Critical: children of a rule are the CSE values "
-                 "at positions 5+ in the parsed rule list — recurse into them in positional order. Do NOT match "
-                 "children against input filenames. All intermediate digests (recipe-digest, seal, child digests) "
-                 "are 64-byte lowercase hex string atoms, not raw 32-byte hashes. Command-line contract: `python "
-                 "generated_reader.py <husk-file> <site-dir>` must print the lowercase-hex build-root to stdout "
-                 "and exit 0; on any CSE violation it must exit with a nonzero status. Write only readers/generated_reader.py.")
-      :tools ["read-file" "write-file"]
-      :fuel 15)
-
-    (build
-      :name "bootstrap-core"
-      :fuel 20
-      :site "site"
-      :cost_tolerance {"ratio" [0.5 2.0]}
-      :site_inputs {"CSE-v1.md" "spec/CSE-v1.md" "CSE-v2.md" "spec/CSE-v2.md"}
-      :oracle_backend live_oracle
-
-      (-> (rule :name "generate"
-                :inputs ["CSE-v1.md" "CSE-v2.md"]
-                :recipe (generate-reader)
-                :outputs ["readers/generated_reader.py"]
-                :equivalence {"readers/generated_reader.py" "free"})
-
-          (rule :name "validate"
-                :inputs ["readers/generated_reader.py"]
-                :run "python3 -m husks.gate 'python3 readers/generated_reader.py' --stamp-dir readers"
-                :outputs ["readers/gate-report.txt" "readers/VERIFIED"]
-                :equivalence {"readers/gate-report.txt" "free"
-                              "readers/VERIFIED" "exact"})))
-    """)
+def _get_core_bootstrap_hy():
+    global _CORE_BOOTSTRAP_HY
+    if _CORE_BOOTSTRAP_HY is None:
+        _CORE_BOOTSTRAP_HY = _load_template_file("core-bootstrap.hy")
+    return _CORE_BOOTSTRAP_HY
 
 
 def _write_if(path: Path, content: str, force: bool, verbose: bool = False) -> bool:
@@ -398,7 +294,7 @@ def _scaffold_core_bootstrap(target: Path, force: bool, emit_hy: bool, verbose: 
     # 1. Create core-bootstrap.json
     _write_if(
         target / "core-bootstrap.json",
-        json.dumps(_CORE_BOOTSTRAP_DESIGN, indent=2) + "\n",
+        json.dumps(_get_core_bootstrap_design(), indent=2) + "\n",
         force, verbose=verbose,
     )
 
@@ -430,7 +326,7 @@ def _scaffold_core_bootstrap(target: Path, force: bool, emit_hy: bool, verbose: 
 
     # 4. Optionally create bootstrap.hy
     if emit_hy:
-        _write_if(target / "bootstrap.hy", _CORE_BOOTSTRAP_HY, force, verbose=verbose)
+        _write_if(target / "bootstrap.hy", _get_core_bootstrap_hy(), force, verbose=verbose)
 
     return True
 
@@ -441,8 +337,8 @@ def _scaffold_template(target: Path, template: str, force: bool, emit_hy: bool =
         return _scaffold_core_bootstrap(target, force, emit_hy, verbose=verbose)
     elif template == "demo":
         _write_if(target / "design.json",
-                  json.dumps(_DEMO_DESIGN, indent=2) + "\n", force, verbose=verbose)
-        _write_if(target / "check-greeting.py", _DEMO_CHECK_GREETING, force, verbose=verbose)
+                  json.dumps(_get_demo_design(), indent=2) + "\n", force, verbose=verbose)
+        _write_if(target / "check-greeting.py", _get_demo_check_greeting(), force, verbose=verbose)
         # Also write a gitignore for build artifacts
         gitignore_content = textwrap.dedent("""\
             # Husks build artifacts

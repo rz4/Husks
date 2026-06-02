@@ -21,7 +21,7 @@ def test_status_verifies_valid_root():
     """Status command shows sealed state with valid root for a committed build."""
     from husks.build import build, rule, action
     from conftest import make_site
-    from husks.cli.commands import _cmd_status
+    from husks.cli.cmd import _cmd_status
 
     class Args:
         json_output = True
@@ -74,7 +74,7 @@ def test_status_detects_invalid_root():
     """Status with --fail-if-stale detects tampered output."""
     from husks.build import build, rule, action
     from conftest import make_site
-    from husks.cli.commands import _cmd_status
+    from husks.cli.cmd import _cmd_status
 
     class Args:
         json_output = True
@@ -130,7 +130,7 @@ def test_status_missing_husk_file():
     """Status handles missing .husk file by exiting with error."""
     from husks.build import build, rule, action
     from conftest import make_site
-    from husks.cli.commands import _cmd_status
+    from husks.cli.cmd import _cmd_status
 
     class Args:
         json_output = True
@@ -194,7 +194,7 @@ def test_status_corrupt_husk_file():
     """Status detects corrupt manifest data by exiting with error."""
     from husks.build import build, rule, action
     from conftest import make_site
-    from husks.cli.commands import _cmd_status
+    from husks.cli.cmd import _cmd_status
 
     class Args:
         json_output = True
@@ -260,7 +260,7 @@ def test_status_json_output_includes_verification_fields():
     """Status JSON output includes all expected schema fields."""
     from husks.build import build, rule, action
     from conftest import make_site
-    from husks.cli.commands import _cmd_status
+    from husks.cli.cmd import _cmd_status
 
     class Args:
         json_output = True

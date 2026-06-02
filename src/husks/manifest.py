@@ -20,6 +20,52 @@ SUPPORTED_MANIFEST_SCHEMAS = {"husks.build.manifest.v1"}
 SUPPORTED_SEAL_VERSIONS = {1}
 
 
+def _validate_schema(
+    data: dict,
+    version_field: str,
+    version_name: str,
+    supported_versions: set,
+    required_fields: list[str],
+    type_checks: dict[str, type] | None = None,
+) -> tuple[bool, str | None]:
+    """Generic schema validation for manifest and seal formats.
+
+    Args:
+        data: The dict to validate
+        version_field: Name of the version field (e.g., "schema", "v")
+        version_name: Human-readable name for error messages (e.g., "manifest schema", "seal version")
+        supported_versions: Set of valid version values
+        required_fields: List of required field names
+        type_checks: Optional dict mapping field names to expected types
+
+    Returns:
+        (valid, error_msg) where valid is True if data is valid,
+        and error_msg describes the problem if invalid.
+    """
+    # Check version field
+    version = data.get(version_field)
+    if version is None:
+        return (False, f"missing required field: {version_field}")
+    if version_field == "v" and not isinstance(version, int):
+        return (False, f"field '{version_field}' must be an integer")
+    if version not in supported_versions:
+        return (False, f"unsupported {version_name}: {version}")
+
+    # Check required fields
+    for field in required_fields:
+        if field not in data:
+            return (False, f"missing required field: {field}")
+
+    # Type checks
+    if type_checks:
+        for field, expected_type in type_checks.items():
+            if field in data and not isinstance(data[field], expected_type):
+                type_name = expected_type.__name__
+                return (False, f"field '{field}' must be a {type_name}")
+
+    return (True, None)
+
+
 def _validate_manifest(data: dict) -> tuple[bool, str | None]:
     """Validate manifest schema and required fields.
 
@@ -29,24 +75,14 @@ def _validate_manifest(data: dict) -> tuple[bool, str | None]:
         (valid, error_msg) where valid is True if manifest is valid,
         and error_msg describes the problem if invalid.
     """
-    # Check schema field
-    schema = data.get("schema")
-    if schema is None:
-        return (False, "missing required field: schema")
-    if schema not in SUPPORTED_MANIFEST_SCHEMAS:
-        return (False, f"unsupported manifest schema: {schema}")
-
-    # Check required fields for v1 manifest
-    required = ["name", "root", "site", "run_id", "rules"]
-    for field in required:
-        if field not in data:
-            return (False, f"missing required field: {field}")
-
-    # Validate rules is a list
-    if not isinstance(data["rules"], list):
-        return (False, "field 'rules' must be a list")
-
-    return (True, None)
+    return _validate_schema(
+        data=data,
+        version_field="schema",
+        version_name="manifest schema",
+        supported_versions=SUPPORTED_MANIFEST_SCHEMAS,
+        required_fields=["name", "root", "site", "run_id", "rules"],
+        type_checks={"rules": list},
+    )
 
 
 def read_manifest(site: str) -> dict | None:
@@ -78,31 +114,14 @@ def _validate_seal(data: dict) -> tuple[bool, str | None]:
         (valid, error_msg) where valid is True if seal is valid,
         and error_msg describes the problem if invalid.
     """
-    # Check version field
-    version = data.get("v")
-    if version is None:
-        return (False, "missing required field: v")
-    if not isinstance(version, int):
-        return (False, "field 'v' must be an integer")
-    if version not in SUPPORTED_SEAL_VERSIONS:
-        return (False, f"unsupported seal version: {version}")
-
-    # Check required fields for seal format v1
-    # (v1 refers to seal format version, independent of CSE wire version)
-    required = ["seal", "recipe_digest", "inputs"]
-    for field in required:
-        if field not in data:
-            return (False, f"missing required field: {field}")
-
-    # Validate inputs is a dict
-    if not isinstance(data["inputs"], dict):
-        return (False, "field 'inputs' must be a dict")
-
-    # Validate outputs if present
-    if "outputs" in data and not isinstance(data["outputs"], dict):
-        return (False, "field 'outputs' must be a dict")
-
-    return (True, None)
+    return _validate_schema(
+        data=data,
+        version_field="v",
+        version_name="seal version",
+        supported_versions=SUPPORTED_SEAL_VERSIONS,
+        required_fields=["seal", "recipe_digest", "inputs"],
+        type_checks={"inputs": dict, "outputs": dict},
+    )
 
 
 def read_seal(site: str, rule_name: str) -> dict | None:

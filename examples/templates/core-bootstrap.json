@@ -1,11 +1,11 @@
 {
-  "name": "bootstrap-core",
+  "name": "core-bootstrap",
   "fuel": 20,
   "target": "validate",
   "cost_tolerance": {"ratio": [0.5, 2.0]},
   "site_inputs": {
-    "CSE-v1.md": "../../spec/CSE-v1.md",
-    "CSE-v2.md": "../../spec/CSE-v2.md"
+    "CSE-v1.md": "spec/CSE-v1.md",
+    "CSE-v2.md": "spec/CSE-v2.md"
   },
   "rules": [
     {
