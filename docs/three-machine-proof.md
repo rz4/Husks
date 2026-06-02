@@ -185,6 +185,58 @@ Exit criteria:
 - The beta seed exists outside tests and is the only source of truth for the acceptance test.
 ```
 
+## Conditional seed semantics
+
+Conditional seed portability semantics (formerly Beta Gate A4).
+
+**Runtime Execution**: Only the selected branch executes (determined by predicate evaluation).
+
+**Design Identity**: Both branches are bound into the seed identity (CSE form).
+
+**Build Root**: Includes actual output content, so it differs when different branches produce different outputs.
+
+This semantic choice enables seed portability while maintaining reproducibility:
+
+```
+Machine 1 (file exists)    ->  executes 'then' branch  ->  output A
+Machine 2 (file missing)   ->  executes 'else' branch  ->  output B
+
+Same seed design (same CSE form)
+Different build outputs (different build-roots)
+Both valid, both reproducible
+```
+
+The **seed design** is portable and complete. The **build outputs** depend on the environment and predicate evaluation.
+
+### Design identity (CSE form)
+
+When a `cond` node is serialized to CSE, it includes the predicate identity, the complete 'then' branch subtree, and the complete 'else' branch subtree:
+
+```python
+[b"cond", predicate_id, then_cse, else_cse]
+```
+
+Both branches are part of the design, making it complete (all execution paths specified), portable (the design can move between machines), and deterministic (same design produces the same CSE hash).
+
+### Build root (Merkle DAG)
+
+The build-root is computed after execution and includes which branch actually executed, the actual output content hashes, and the seals of rules that fired. Different branches produce different outputs, so:
+
+```
+Build-root = f(design, inputs, environment, predicate_result)
+```
+
+### Three-machine conditional scenario
+
+For the beta three-machine proof, if Machine 1 and Machine 3 take different branches:
+
+- Machine 1: `predicate=True` -> executes then branch -> output A
+- Machine 3: `predicate=False` -> executes else branch -> output B
+
+Expected behavior: same design (CSE hash matches), different build-roots (outputs differ), both valid and reproducible, seed is portable. Machine 2 uses cache from Machine 1: same design, same branch executed (cache hit requires same recipe), same build-root (reused outputs), zero oracle cost.
+
+A conditional design is complete only if both branches are specified. Missing either branch makes the design incomplete and non-portable.
+
 # Gate B: Transactional execution
 
 Goal:
@@ -247,6 +299,77 @@ Exit criteria:
 - Invalid roots or invalid manifests fail the acceptance path with clear JSON.
 ```
 
+## Live-path equivalence vocabulary
+
+Two values, per declared output. Default is `exact` for backward compatibility.
+
+- `exact`: the output's content hash must match across independent realizations. Reserved for acceptance-bearing outputs whose content is a deterministic function of the artifact's verified behavior (the conformance digest), not a constant pass-marker.
+- `free`: the output may differ across independent realizations. Not acceptance-bearing. Excluded from the cross-machine relation.
+
+Validator-bounded acceptance is `exact` applied to the output that carries the conformance digest. An `exact` mark on a constant output is meaningless; the acceptance output must be behavioral so the mark has content.
+
+### Cross-machine relation in `compare-runs`
+
+Replace global root identity with three scoped checks:
+
+1. **Cache path is deterministic.** M1 root must equal M2 root exactly. If not, violation `m1_m2_root_identical` fails. This preserves the existing guarantee that cache reuse is bitwise materialization.
+
+2. **Re-realization is validator-bounded.** Build the set of acceptance-bearing outputs from declared `equivalence` (every output not marked `free`, across all rules). For each acceptance output, M3's hash must equal M1's hash, matched by `path`, not position. Any mismatch is a violation `m3_declared_equivalence`. `free` outputs are excluded before comparison. If the seed declared nothing, default all outputs to `exact` (preserves current strictness for designs that never opt in).
+
+3. **Cost comparability uses the declared tolerance.** Keep this a hard violation when out of bound.
+
+Add an observational `convergence` block that never flips `equivalent`:
+
+```json
+"convergence": {
+  "m1_m3_same_root": false,
+  "acceptance_outputs": ["readers/VERIFIED"],
+  "acceptance_outputs_match": true,
+  "free_outputs": ["readers/generated_reader.py", "readers/gate-report.txt"]
+}
+```
+
+### Declaring equivalence in the seed design
+
+Add an optional per-rule `equivalence` map keyed by output path. Unlisted outputs default to `exact`. Example for `core-bootstrap`:
+
+```json
+{
+  "name": "generate",
+  "kind": "oracle",
+  "outputs": ["readers/generated_reader.py"],
+  "equivalence": { "readers/generated_reader.py": "free" }
+}
+```
+
+```json
+{
+  "name": "validate",
+  "kind": "action",
+  "outputs": ["readers/gate-report.txt", "readers/VERIFIED"],
+  "equivalence": {
+    "readers/gate-report.txt": "free",
+    "readers/VERIFIED": "exact"
+  }
+}
+```
+
+Constraints: `equivalence` is metadata for `compare-runs` only. It must not enter the seal preimage or the build root. Keep `outputs` as `list[str]`. The build transaction must continue to receive a plain string list. Do not overload `outputs`.
+
+### Binding acceptance to behavior
+
+The `core-bootstrap` validate rule must run the conformance gate, not just `py_compile`. The gate stamps a conformance digest — a SHA-256 of the reader's correct outputs on frozen vectors — instead of a constant. The conformance digest is constant across all *correct* readers, because the frozen `.root` values are fixed. A reader that computes a wrong root fails the gate before any stamp is written, so it cannot produce the digest. Two machines matching on `VERIFIED` is a real statement of behavioral equivalence, not "both compiled."
+
+### Declared cost tolerance
+
+Add a top-level seed field:
+
+```json
+"cost_tolerance": { "ratio": [0.5, 2.0] }
+```
+
+`compare-runs` reads this. If absent, default to ratio `[0.5, 2.0]`. This replaces hard-coded epsilon values. The point is to source the bound from the seed, not from code.
+
 # Gate D: Cache reuse
 
 Goal:
@@ -280,6 +403,32 @@ Exit criteria:
 - A poisoned imported cache entry cannot materialize as a successful zero-cost build.
 ```
 
+## Commit-gate cache promotion
+
+A killed or halted run currently leaves a servable, exportable cache entry for an oracle output that never passed its consuming gate. A rerun then serves that poisoned entry. By the system's stance a non-committed realization must leave no reusable residue.
+
+Root cause: `cache_put` fires inside the oracle rule's own block, right after `write_seal`, gated only on `recipe.type == "oracle"` and cache-not-disabled. It has no knowledge of the downstream gate or the build's final status. So the cache reflects "the oracle produced a nonempty file," not "the realization committed."
+
+Required semantics — separate two promotions that are currently fused:
+
+1. **Site promotion** (unchanged): the oracle output is written into the live site per rule, so the consuming gate can read and test it.
+2. **Cache promotion** (new): the oracle output becomes a servable, exportable cache entry only when the build reaches `committed`.
+
+Mechanism:
+
+- In the oracle rule block, replace the immediate `cache_put` with a staged write to a pending cache area (e.g. `.cache/_pending/<key>/`), recording everything `cache_put` needs.
+- At build end, promote pending entries into the servable cache only when `S["status"] == "committed"` (via `cache_promote_pending`).
+- On `halt`, or if the run ends without reaching `committed`, discard the pending area. Do not promote.
+- `cache_get` and lookup read only the servable cache, never `_pending`. A SIGKILL mid-run leaves only an unpromoted pending area, which is never a hit.
+
+Status (shipped in `a143da7`): `cache_put_pending`, `cache_promote_pending`, and `cache_discard_pending` exist in `src/husks/build/cache.py`; eval stages oracle outputs to `_pending`; run promotes on committed and discards on halt; export skips `_pending`.
+
+Remaining defect: promotion does not filter by run. `cache_promote_pending` iterates the whole `_pending` directory and promotes every entry, regardless of which run created it. The fix: pending entries already record `created_run_id` in `meta.json`, so `cache_promote_pending` must promote only entries whose `created_run_id == S["run-id"]`, and best-effort GC foreign orphans.
+
+Export must refuse non-committed builds (shipped): `_cmd_cache_export` skips `_pending`, so a halted build exports zero entries.
+
+Keep the existing `cache-write-failed` nonfatal behavior: a failure to promote at commit must not corrupt an already-sealed build.
+
 # Gate E: Independent re-realization
 
 Goal:
@@ -312,6 +461,18 @@ Exit criteria:
 - Machine 3 cost is comparable to Machine 1 by explicit tolerance.
 - The seed works in stub mode and has a clear live-mode path.
 ```
+
+## Live equivalence acceptance criteria
+
+A live three-machine run (M1 live oracle, M2 cache reuse, M3 live oracle) returns `equivalent: true`, exit 0, with divergent build roots and matching `VERIFIED` conformance digests.
+
+Acceptance is behavioral: `VERIFIED` carries the conformance digest, and a reader that compiles but computes a wrong root fails the gate and never seals.
+
+`compare-runs` enforces: M1==M2 root, M3 validator-bounded acceptance on the conformance digest, cost within declared tolerance. It reports M1/M3 root convergence observationally only.
+
+The seed design states the per-output equivalence form and the cost tolerance, satisfying white paper Section 5.
+
+Build root is unchanged by the new metadata. The `equivalence` and `cost_tolerance` fields do not enter the seal preimage or the build root.
 
 # Gate F: Ledger and cost comparability
 
@@ -366,7 +527,7 @@ Red / Yellow. CLI support is closer, but direct subprocess tests still fail unle
 | G2 | Blocker | Use `--reuse-only` in Machine 2 acceptance | `tests/test_three_machine_cli_acceptance.py`, CLI code | Machine 2 must run with CLI `--reuse-only`. A test that reuses cache without `--reuse-only` is not the beta proof. |
 | G3 | Blocker | Fix subprocess CLI helper and migrate tests | `tests/conftest.py`, CLI tests | Create one helper that sets absolute `PYTHONPATH`, has a timeout, supports temp cwd, captures stdout and stderr, and prints useful failure output. Replace ad hoc `subprocess.run` calls in beta-relevant tests. |
 | G4 | Blocker | Add clean wheel/install smoke | `pyproject.toml`, tests, CI | Build a wheel, install it in a clean venv, then run `husks doctor`, `husks init`, `husks check`, `husks run --stub`, `husks status --json`, and the stub three-machine proof. |
-| G5 | Partial | Reconcile docs with CLI command names | `README.md`, `docs/cli.md`, `examples/beta_seed/README.md`, CLI code | Make docs, tests, and command parser agree. Fix stale command references and case-sensitive doc links. |
+| G5 | Partial | Reconcile docs with CLI command names | `README.md`, `docs/liquid-beta.md`, `examples/beta_seed/README.md`, CLI code | Make docs, tests, and command parser agree. Fix stale command references and case-sensitive doc links. |
 | G6 | Partial | Split doctor into core and live readiness | `src/husks/cli/commands.py`, doctor code, tests | Default `husks doctor` should pass for core and stub installs. Missing live-oracle dependencies should fail only under `doctor --live` or equivalent. |
 | G7 | Partial | Standardize beta exit codes | `src/husks/cli/helpers.py`, `src/husks/cli/commands.py`, tests | Define stable exit codes for success, validation failure, build halt, reuse miss, verification failure, and internal error. Add tests only for beta commands. |
 | G8 | Partial | Make JSON acceptance commands quiet | `src/husks/cli/commands.py`, tests | `run --json`, cache import/export JSON, status JSON, and compare-runs JSON should write parseable JSON only to stdout. |

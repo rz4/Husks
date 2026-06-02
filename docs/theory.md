@@ -186,6 +186,26 @@ This is an informal operational account, not a worked-out formal semantics. The 
 
 ---
 
+## 10. Current limitations
+
+Concrete gaps in what the engine can express or execute today.
+
+1. **No parallelism.** The engine walks the dependency tree depth-first, one rule at a time. Independent branches execute sequentially even though the graph says they could run concurrently.
+
+2. **Limited predicate vocabulary for JSON cond rules.** `cond` predicates can be specified as built-in strings (`file-exists:<path>`, `file-nonempty:<path>`, `exit-zero:<command>`) or looked up from the optional `predicates` dict. Custom predicates that don't fit these patterns still require Python.
+
+3. **No incremental output within a rule.** A rule either fully commits or fully halts. If an oracle writes 3 of 4 declared outputs and then exhausts fuel, all work is discarded. There is no partial sealing.
+
+4. **No remote or distributed execution.** The site directory is a local filesystem path. The oracle backend, tool sandbox, and seal I/O all assume local disk. There is no mechanism for running rules on different machines or sharing sealed artifacts across builds. Partial mitigation: read-only imports (`"imports"` in a design) allow referencing external files and directories via symlinks, but the external paths must still be on the local filesystem.
+
+5. **No artifact caching across sites.** Freshness checks compare against `.traces/<rule>.seal` in the current site. If you run the same design against a fresh site directory, every rule re-fires even if the inputs and recipe are identical to a previous build elsewhere.
+
+6. **Actions can't fail gracefully.** An action rule runs a shell command or Python callable. If it returns a nonzero exit code, the build halts. There is no retry, no fallback, no way to express "try this action, and if it fails, do something else" without `trial`.
+
+7. **No streaming or progress from oracles.** The oracle backend returns a complete result. There is no callback for partial output, token streaming, or intermediate checkpoints. For long-running oracle calls, the user sees nothing until the rule either commits or exhausts fuel.
+
+---
+
 ## The claim, held to account
 
 A husk has object permanence when its verifier can be produced as residue, the producing event discarded, and the result confirmed by a reader that is not it. The cross-language readers and the frozen root are the first form of that proof. The sharpest form is harder: hand a model nothing but the spec, have it write a CSE reader from cold, and check whether that reader — which has never seen the engine, the shipped readers, or the answer — arrives at the same root hashes the bedrock already holds.

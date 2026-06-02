@@ -3,7 +3,7 @@
 Internal reference for the Husks build calculus.  This document
 consolidates the technical material previously embedded as module-level
 essays in the source.  For the conceptual argument, see
-[Theory.md](Theory.md).  For usage, see [Tutorial.md](Tutorial.md).
+[theory.md](theory.md).  For usage, see [tutorial.md](tutorial.md).
 
 ---
 
@@ -506,3 +506,131 @@ dict consumed by all renderers.
 ●  sealed (reused)
 ✗  failed
 ```
+
+---
+
+## CI Pipeline
+
+Three jobs, replacing the earlier `core-tests` and `beta-acceptance` jobs.
+
+| Job | Gate | Trigger | What it proves |
+|-----|------|---------|----------------|
+| **Wheel Smoke** | Install | push, PR | Wheel builds and imports on Python 3.10-3.13 |
+| **Solid Alpha** | Deterministic | push, PR | Full test suite passes with stub oracles |
+| **Liquid Beta** | Live | manual dispatch | Three-machine proof with live LLM oracle |
+
+### `.github/workflows/ci.yml`
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      trials:
+        description: "Liquid Beta: number of live three-machine trials to run"
+        required: false
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wheel-smoke:
+    name: Wheel Smoke
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+          pip install dist/*.whl pytest
+      - run: python -m pytest tests/test_wheel_smoke.py -v --tb=short
+
+  solid-alpha:
+    name: Solid Alpha
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      HUSKS_ENABLE_LIVE_TESTS: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+      - name: Stub three-machine resolution (headline invariant)
+        run: |
+          python -m pytest -m alpha \
+            tests/test_three_machine_proof.py \
+            tests/test_three_machine_cli_acceptance.py \
+            tests/test_beta_three_machine.py \
+            -v --tb=short
+      - name: Full deterministic suite
+        run: |
+          python -m pytest tests/ -m "not beta" \
+            --ignore=tests/test_live_oracle_readiness.py \
+            -v --tb=short
+
+  liquid-beta:
+    name: Liquid Beta (live three-machine)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: live-oracle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install (with live oracle extra)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[llm]" pytest
+      - name: Live three-machine demo
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HUSKS_ENABLE_LIVE_TESTS: "1"
+          HUSKS_LIVE_TRIALS: ${{ github.event.inputs.trials }}
+        run: |
+          python -m pytest -m beta tests/test_live_oracle_readiness.py \
+            -v --tb=short
+```
+
+### Wiring notes
+
+- **Branch protection**: mark every Wheel Smoke and Solid Alpha matrix entry as a required status check. Do **not** require Liquid Beta. The red/green badge reflects deterministic invariants only.
+- **Triggers**: Liquid Beta runs only on `workflow_dispatch`. It never runs on push, PR, or schedule, so it costs an API call only when you click run.
+- **Fork safety**: `workflow_dispatch` can be triggered only by users with write access, and fork PRs cannot read secrets. The optional `environment: live-oracle` adds a manual-approval gate.
+- **`continue-on-error: true`** on the live step: a single live divergence records as a failed step but does not fail the job or turn the repo red.
+- **`HUSKS_ENABLE_LIVE_TESTS: ""`** is set explicitly on Solid Alpha so a stray live test can never execute there even if mismarked.
+
+### Assumptions to confirm before merging
+
+- The install extras (`pip install -e .` for alpha, `".[llm]"` for beta) match the project's actual packaging.
+- The three stub three-machine files named in the headline step are the right set after any rename.
+- `ANTHROPIC_API_KEY` exists as a repo (or `live-oracle` environment) secret.
