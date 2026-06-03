@@ -13,7 +13,7 @@ No command awareness — all "what to show" decisions live in surface.py.
 """
 
 from __future__ import annotations
-from husks.cli.residue import CliResidue, CliNode, LogEntry
+from husks.cli.residue import CliResidue, CliNode, LogEntry, map_display_status
 from husks.utils.console import (
     GREEN, YELLOW, RED, CYAN, DIM, BOLD, RESET,
     render_banner, _visible_len,
@@ -229,8 +229,6 @@ def render_explain_mode(
     Quarantined: still takes residue directly because explain mode
     has its own bounded-box rendering path.
     """
-    from husks.cli.residue import map_display_status
-
     lines: list[str] = []
 
     box_width = 40
@@ -491,8 +489,6 @@ def _render_aperture_details(
             lines.append(f"{indent}{DIM}model:   {t.model}{RESET}")
         if t.tools:
             lines.append(f"{indent}{DIM}tools:   {', '.join(t.tools)}{RESET}")
-        if t.fuel is not None:
-            lines.append(f"{indent}{DIM}fuel:    {t.fuel}{RESET}")
         if t.config_hash:
             lines.append(f"{indent}{DIM}config:  {t.config_hash[:6]}{RESET}")
         if t.prompt_hash:

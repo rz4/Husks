@@ -30,18 +30,13 @@ seal is executor-blind: a husk built under one backend resumes under the
 other without busting a single seal.
 """
 
-from husks.oracle import backend as _backend
 from husks.oracle.backend import (
     OracleBackend,
     RealizedCost,
     register,
     run_oracle,
+    REGISTRY,
 )
-from husks.oracle.litellm import LiteLLMBackend
-from husks.oracle.claude_code import ClaudeCodeBackend
-
-_backend.register(LiteLLMBackend())
-_backend.register(ClaudeCodeBackend())
 
 
 # -- Back-compat ----------------------------------------------------
@@ -49,6 +44,48 @@ _backend.register(ClaudeCodeBackend())
 # run_oracle has the identical 4-arg contract, so alias it.
 
 live_oracle = run_oracle
+
+
+def get_backend(name: str) -> OracleBackend:
+    """Get an oracle backend by name, lazy-loading on first use.
+
+    This function breaks the oracle package cycle by importing concrete
+    backends only when first requested, rather than at module load time.
+
+    Sanctioned deferred imports (whitelisted in layers.toml):
+    - husks.oracle.litellm (loaded on first "litellm" request)
+    - husks.oracle.claude_code (loaded on first "claude-code" request)
+
+    Parameters
+    ----------
+    name : str
+        Backend name: "litellm" or "claude-code"
+
+    Returns
+    -------
+    OracleBackend
+        The backend instance
+
+    Raises
+    ------
+    KeyError
+        If the backend name is unknown
+    """
+    if name not in REGISTRY:
+        # Lazy-load concrete backends on first use (breaks the package cycle)
+        if name == "litellm":
+            from husks.oracle.litellm import LiteLLMBackend
+            register(LiteLLMBackend())
+        elif name == "claude-code":
+            from husks.oracle.claude_code import ClaudeCodeBackend
+            register(ClaudeCodeBackend())
+        else:
+            # Unknown backend - fall through to let backend.get_backend() raise
+            pass
+
+    # Delegate to backend.get_backend() which provides nice error messages
+    from husks.oracle import backend as _backend
+    return _backend.get_backend(name)
 
 
 def set_oracle_model(model: str) -> None:
@@ -64,10 +101,9 @@ def set_oracle_model(model: str) -> None:
 __all__ = [
     "run_oracle",
     "live_oracle",
+    "get_backend",
     "set_oracle_model",
     "register",
     "OracleBackend",
     "RealizedCost",
-    "LiteLLMBackend",
-    "ClaudeCodeBackend",
 ]

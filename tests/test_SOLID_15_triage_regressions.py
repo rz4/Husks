@@ -68,7 +68,7 @@ def test_trace_clear_listeners():
 
 def test_sequential_builds_independent_traces():
     """Two sequential in-process builds have independent traces."""
-    from husks.designs.ir import run
+    from husks.design.locke import run
 
     site1 = tempfile.mkdtemp(prefix="trace-test-1-")
     site2 = tempfile.mkdtemp(prefix="trace-test-2-")
@@ -121,7 +121,7 @@ def test_sequential_builds_independent_traces():
 
 def test_check_list_target_tolerated():
     """check() handles 'target' being a list without crashing."""
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     design = {
         "name": "test",
@@ -145,7 +145,7 @@ def test_check_list_target_tolerated():
 
 def test_check_list_target_multiple():
     """check() handles 'target' being a list of multiple targets."""
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     design = {
         "name": "test",
@@ -166,7 +166,7 @@ def test_check_list_target_multiple():
 
 def test_check_rejects_path_traversal_output():
     """check() rejects outputs with '..' components."""
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     design = {
         "name": "test",
@@ -190,7 +190,7 @@ def test_check_rejects_path_traversal_output():
 
 def test_check_rejects_absolute_path_output():
     """check() rejects outputs with absolute paths."""
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     design = {
         "name": "test",
@@ -214,7 +214,7 @@ def test_check_rejects_absolute_path_output():
 
 def test_check_rejects_path_traversal_input():
     """check() rejects inputs with '..' components."""
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     design = {
         "name": "test",
@@ -419,7 +419,7 @@ def test_litellm_not_imported_at_module_level():
 
 def test_check_rejects_traversal_import_name():
     """check() rejects import local names with '..' components."""
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     design = {
         "name": "test",
@@ -439,7 +439,7 @@ def test_check_rejects_traversal_import_name():
 
 def test_check_rejects_absolute_import_name():
     """check() rejects import local names with absolute paths."""
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     design = {
         "name": "test",
@@ -465,7 +465,7 @@ def test_check_allows_oracle_fuel_independent_of_global():
     Global fuel counts rule fires (including trial branches).
     An oracle with fuel=99 is valid in a build with global fuel=1.
     """
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     design = {
         "name": "fuel",
@@ -492,7 +492,7 @@ def test_check_allows_oracle_fuel_independent_of_global():
 
 def test_check_allows_oracle_fuel_within_budget():
     """check() accepts designs where oracle fuel fits within the budget."""
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     design = {
         "name": "fuel",

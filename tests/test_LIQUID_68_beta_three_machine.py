@@ -48,7 +48,7 @@ def test_machine_1_and_3_independent_realization():
     - Pay comparable oracle costs
     - Have comparable oracle call counts
     """
-    from husks.designs.ir import run
+    from husks.design.locke import run
     from husks.build.cache import cache_list
 
     tmpdir = tempfile.mkdtemp(prefix="beta-three-machine-")
@@ -165,7 +165,7 @@ def test_three_machine_full_proof():
 
     This test requires cache export/import (Beta Gate D) to be complete.
     """
-    from husks.designs.ir import run
+    from husks.design.locke import run
     from husks.build.cache import cache_export, cache_import
 
     tmpdir = tempfile.mkdtemp(prefix="beta-full-proof-")

@@ -150,7 +150,7 @@ def test_shell_action_identity_independent_of_outputs():
     """Shell action identity is command string only (recipe identity v2)."""
     from husks.build.identity import recipe_to_cse
     from husks.core import recipe_digest
-    from husks.designs.ir import _make_shell_action
+    from husks.design.locke import _make_shell_action
 
     # Same command, different output names (outputs don't affect recipe)
     fn_a = _make_shell_action("echo hello", ["out1.txt"])

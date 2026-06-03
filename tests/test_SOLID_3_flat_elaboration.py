@@ -8,7 +8,7 @@ import pytest
 
 from conftest import DEMO_SITE, load_demo
 from husks.core import encode, parse, recompute_root, NIL
-from husks.designs.transport import elaborate, ast_to_json
+from husks.design.transport import elaborate, ast_to_json
 
 
 # -- The flat design equivalent to demo.husk -----------------------------------
@@ -381,7 +381,7 @@ class TestElaborateEdgeCases:
 
     def test_elaborate_then_json_round_trip(self):
         """elaborate -> ast_to_json -> json_to_ast -> encode is stable."""
-        from husks.designs.transport import json_to_ast
+        from husks.design.transport import json_to_ast
         tree = elaborate(DEMO_FLAT_DESIGN)
         j = ast_to_json(tree)
         tree2 = json_to_ast(j)

@@ -1,0 +1,150 @@
+# layers.toml — Module layer assignment + legal-edge contract
+#
+# This file defines the DAG structure of the Husks codebase.
+# - Every module is assigned a single layer index (0..7)
+# - Imports must target a strictly lower layer, or a declared same-layer sibling
+# - The import linter (husks doctor --arch) enforces this contract
+# - The test runner uses this graph to order tests topologically
+#
+# See docs/husks-dag-rearchitecture.md for the full design rationale.
+
+# ── Layer assignments ─────────────────────────────────────────────
+
+[layers]
+# L0 — Kernel (CSE forms, codec, Merkle, seal computation)
+"husks.core" = 0
+
+# L1 — CSE forms (pure)
+"husks.build.policies" = 1
+"husks.build.identity" = 1
+"husks.design.transport" = 1
+
+# L2 — Sealing + FS
+"husks.build.site" = 2
+"husks.build.seal" = 2
+
+# L3 — Engine
+"husks.build.eval" = 3
+"husks.build.cache" = 3
+"husks.build.run" = 3
+"husks.build.nodes" = 3
+
+# L4 — Oracle
+"husks.oracle.backend" = 4
+"husks.oracle.kernel" = 4
+"husks.oracle.llm" = 4
+"husks.oracle.tools" = 4
+"husks.oracle.litellm" = 4
+"husks.oracle.claude_code" = 4
+"husks.oracle" = 4  # package init (KNOWN CYCLES 2 & 3 — phase 2a)
+
+# L5 — Surface Language (Locke is the IR)
+"husks.design.locke" = 5
+"husks.design.convergence" = 5
+
+# L6 — Inspection
+"husks.report" = 6
+"husks.manifest" = 6
+"husks.graph" = 6
+
+# L7 — Entry / CLI
+"husks.cli.contract" = 7
+"husks.cli.main" = 7
+"husks.cli.surface" = 7
+"husks.cli.console" = 7
+"husks.cli.helpers" = 7
+"husks.cli.navigator" = 7
+"husks.cli.residue" = 7
+"husks.cli.view" = 7
+"husks.cli.cmd.build" = 7
+"husks.cli.cmd.cache" = 7
+"husks.cli.cmd.compare" = 7
+"husks.cli.cmd.inspect" = 7
+"husks.cli.cmd.validate" = 7
+"husks.setup" = 7
+"husks.resources" = 7
+
+# ── Special modules ───────────────────────────────────────────────
+
+[isolated]
+# The gate reader depends on core only (zero cross-dependencies by design)
+"husks.gate" = 0
+
+[pure_infra]
+# Utilities with zero husks.* imports (exempt from layer index)
+modules = [
+    "husks.utils.events",
+    "husks.utils.console",
+]
+
+# ── Intra-layer ordering (acyclic within a layer) ─────────────────
+
+[intra_layer]
+# Phase 1: identity may import from policies (top-level)
+# policies may import from identity (deferred, whitelisted below)
+"husks.build.identity" = ["husks.build.policies"]
+
+# Phase 3: Additional intra-layer orderings
+# L2: Sealing depends on site abstraction
+"husks.build.seal" = ["husks.build.site"]
+
+# L3: Engine (run/eval depend on cache for oracle caching)
+"husks.build.run" = ["husks.build.cache", "husks.build.eval"]
+"husks.build.eval" = ["husks.build.cache"]
+
+# L4: Oracle backends and plugins
+"husks.oracle.kernel" = ["husks.oracle"]
+"husks.oracle" = ["husks.oracle.backend"]
+"husks.oracle.litellm" = ["husks.oracle", "husks.oracle.backend"]
+"husks.oracle.claude_code" = ["husks.oracle.backend"]
+
+# L6: Inspection tools
+"husks.graph" = ["husks.manifest"]
+"husks.report" = ["husks.manifest"]
+
+# L7: CLI layer (helpers/residue/contract are leaves, surface/navigator use them, main uses all)
+"husks.cli.navigator" = ["husks.cli.residue"]
+"husks.cli.view" = ["husks.cli.residue"]
+"husks.cli.surface" = ["husks.cli.contract", "husks.cli.residue", "husks.cli.view"]
+"husks.cli.main" = ["husks.cli.contract", "husks.cli.helpers", "husks.cli.surface", "husks.setup"]
+"husks.setup" = ["husks.cli.surface", "husks.resources"]
+
+# L7: CLI commands (all depend on helpers, surface, residue)
+"husks.cli.cmd.build" = ["husks.cli.helpers", "husks.cli.residue", "husks.cli.surface"]
+"husks.cli.cmd.cache" = ["husks.cli.helpers"]
+"husks.cli.cmd.inspect" = ["husks.cli.helpers", "husks.cli.navigator", "husks.cli.residue", "husks.cli.surface"]
+"husks.cli.cmd.validate" = ["husks.cli.helpers", "husks.setup"]
+"husks.cli.cmd.compare" = ["husks.cli.cmd.inspect", "husks.cli.helpers", "husks.cli.surface"]
+
+# ── Sanctioned deferred imports ───────────────────────────────────
+
+[allow_deferred]
+# Phase 1: same-layer import for behavior digest (policies < identity in L1)
+"husks.build.policies" = ["husks.build.identity"]
+# Phase 2a: oracle plugin lazy-load (breaks the package cycle)
+"husks.oracle" = ["husks.oracle.litellm", "husks.oracle.claude_code", "husks.oracle.backend", "husks.oracle"]
+# Phase 2b/3: argparse action callback (leaf calls back to its user)
+"husks.cli.contract" = ["husks.cli.surface"]
+# Phase 3b: Locke is the IR - needs build/core/transport for compilation
+"husks.design.locke" = ["husks.build", "husks.build.site", "husks.core", "husks.design.transport", "husks.design.locke"]
+# Phase 3b: Locke submodules (after fracturing locke.py into package)
+"husks.design.locke._compiler" = ["husks.core", "husks.design.transport"]
+"husks.design.locke._executor" = ["husks.build", "husks.build.site"]
+
+# ── Known cycles (removed in phases) ──────────────────────────────
+
+# KNOWN CYCLE 1 (phase 1): REMOVED ✓
+#   Was: build.eval → build.cache → build.identity → build.eval
+#   Fix: Created build.policies at L1; moved first_valid + VERDICT_POLICIES
+
+# KNOWN CYCLE 2 (phase 2a): REMOVED ✓
+#   Was: oracle → oracle.litellm → oracle
+#   Fix: Lazy get_backend() in oracle.__init__, leaf-base imports in litellm.py
+
+# KNOWN CYCLE 3 (phase 2a): REMOVED ✓
+#   Was: oracle → oracle.claude_code → oracle
+#   Fix: Lazy get_backend() in oracle.__init__, leaf-base imports in claude_code.py
+
+# KNOWN CYCLE 4 (phase 2b): REMOVED ✓
+#   Was: cli.main → cli.cmd.build → cli.surface → cli.main
+#   Fix: Created cli.contract; moved argparse helpers (_flag_str, _StyledHelpAction, _NO_VALUE_ACTIONS)

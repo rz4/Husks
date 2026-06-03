@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from husks.build.site import Store, Node, Recipe, site_path, write_text
 from husks.build.identity import _ACTION_ARG_TYPES
+from husks.utils import trace as _T
 
 
 # ── Node constructors ─────────────────────────────────────────────
@@ -92,7 +93,6 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
         import subprocess as _sp
         import selectors as _sel
         from pathlib import Path as _Path
-        from husks.utils import trace as _T
 
         site = S.get("stage", S["site"])
         live_site = _Path(S["site"])

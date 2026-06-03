@@ -11,6 +11,10 @@ from husks.utils.console import (
     BOLD, DIM, RESET, GREEN, YELLOW, RED, CYAN, W,
     render_banner, _visible_len,
 )
+from husks.report import validate_report_schema
+from husks.manifest import read_manifest, compare_artifacts
+from husks.cli.cmd.inspect import collect_site_residue
+from husks.cli.surface import emit_residue
 
 
 def _load_site_reports(sites, *, json_output: bool):
@@ -19,8 +23,6 @@ def _load_site_reports(sites, *, json_output: bool):
     Returns a list of {"path": ..., "data": ...} dicts for sites that have
     reports.  Sites missing reports are returned in a separate skip list.
     """
-    from husks.report import validate_report_schema
-
     reports = []
     skipped = []
 
@@ -352,8 +354,6 @@ def _rpad(left: str, right: str, width: int) -> str:
 
 def _render_site_card(site_path: str, report_data: dict | None, show_cost: bool) -> str:
     """Return a rendered diamond card for a single site."""
-    from husks.manifest import read_manifest
-
     short_name = Path(site_path).name or site_path
     manifest = read_manifest(site_path)
 
@@ -413,8 +413,6 @@ def _cmd_compare(args):
     For 3+ sites: additionally reads .traces/report.json from each site
     and runs the three-machine proof checks.
     """
-    from husks.manifest import compare_artifacts
-
     if len(args.sites) < 2:
         print("error: compare requires at least 2 sites", file=sys.stderr)
         sys.exit(EXIT_USAGE)
@@ -496,10 +494,6 @@ def _cmd_compare(args):
         # -- Site cards -------------------------------------------------------
         print()
         if verbose:
-            from husks.manifest import read_manifest
-            from husks.cli.cmd.inspect import collect_site_residue
-            from husks.cli.surface import emit_residue
-
             for idx, site in enumerate(sites):
                 manifest = read_manifest(site)
                 if manifest:
@@ -528,7 +522,6 @@ def _cmd_compare(args):
 
         # Compute husk hashes per site (SHA256 of the .husk file)
         import hashlib
-        from husks.manifest import read_manifest
         husk_hash_by_site: dict[str, str | None] = {}
         for site in sites:
             m = read_manifest(site)

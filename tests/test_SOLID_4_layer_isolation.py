@@ -197,13 +197,13 @@ class TestOracleBackendProtocol:
     @pytest.mark.alpha
 
     def test_protocol_importable(self):
-        from husks.designs.transport import OracleBackend
+        from husks.design.transport import OracleBackend
         assert OracleBackend is not None
 
     @pytest.mark.alpha
 
     def test_protocol_is_runtime_checkable(self):
-        from husks.designs.transport import OracleBackend
+        from husks.design.transport import OracleBackend
         # A conforming callable should satisfy isinstance check
         def my_backend(recipe_form, inputs):
             return {}, {}
@@ -214,7 +214,7 @@ class TestOracleBackendProtocol:
     def test_protocol_signature_is_content_keyed(self):
         """The protocol accepts recipe_form and inputs (content),
         not store, model, or other instrumentation."""
-        from husks.designs.transport import OracleBackend
+        from husks.design.transport import OracleBackend
         import inspect
         sig = inspect.signature(OracleBackend.__call__)
         params = list(sig.parameters.keys())
@@ -231,7 +231,7 @@ class TestOracleBackendProtocol:
 
     def test_stub_backend_conforms(self):
         """A minimal stub backend satisfies the protocol."""
-        from husks.designs.transport import OracleBackend
+        from husks.design.transport import OracleBackend
 
         def stub_backend(recipe_form, inputs):
             prompt = recipe_form[2].decode("utf-8") if len(recipe_form) > 2 else ""

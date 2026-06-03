@@ -316,7 +316,7 @@ def test_import_integration_with_build():
     """Imports work correctly in full build context."""
     from husks.build import build, rule, action
     from husks.build.site import site_path
-    from husks.designs.ir import _setup_imports
+    from husks.design.locke import _setup_imports
 
     tmpdir = tempfile.mkdtemp(prefix="b4-integration-")
     try:

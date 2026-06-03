@@ -10,9 +10,10 @@ from typing import Any
 from husks.core import CSE_VERSION, CseValue, atom, encode
 from husks.utils import trace as T
 
-from husks.build.site import Store, Node, OracleBackend, Stop, site_path, ensure_dir, fresh_store, write_bytes_atomic
+from husks.build.site import Store, Node, OracleBackend, Stop, site_path, ensure_dir, fresh_store, write_bytes_atomic, setup_links, resolve_site_inputs
 from husks.build.eval import eval_node, node_to_cse, compute_build_root
-from husks.build.seal import write_build_manifest
+from husks.build.cache import cache_promote_pending, cache_discard_pending
+from husks.build.seal import write_build_manifest, clear_fired_seals
 
 
 # ── Top-level build ───────────────────────────────────────────────
@@ -86,8 +87,6 @@ def build(
     # to a dict of local_name → resolved_path with validated existence.
     # Beta Gate 95: Use resolve_site_inputs() for transparent list/dict handling.
     if site_inputs:
-        from husks.build.site import setup_links, resolve_site_inputs
-
         # Normalize to dict (handles both list and dict forms)
         site_inputs = resolve_site_inputs(site_inputs)
 
@@ -193,7 +192,6 @@ def build(
     # Beta 100 Task A5: Promote or discard pending cache based on final status
     # Handles both explicit commit nodes and auto-commits
     if S["status"] == "committed":
-        from husks.build.cache import cache_promote_pending
         try:
             promoted = cache_promote_pending(S)
             if promoted > 0:
@@ -208,8 +206,6 @@ def build(
                 "error": str(e),
             })
     else:
-        from husks.build.cache import cache_discard_pending
-        from husks.build.seal import clear_fired_seals
         try:
             cache_discard_pending(S)
         except Exception:

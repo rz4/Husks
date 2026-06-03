@@ -98,7 +98,7 @@ def test_shell_action_identity_is_command():
     """Shell actions with the same command produce the same recipe digest."""
     from husks.build import recipe_to_cse
     from husks.core import recipe_digest
-    from husks.designs.ir import _make_shell_action
+    from husks.design.locke import _make_shell_action
 
     fn_a = _make_shell_action("echo hello", ["out.txt"])
     fn_b = _make_shell_action("echo hello", ["other.txt"])
@@ -121,7 +121,7 @@ def test_shell_action_different_command_different_digest():
     """Shell actions with different commands produce different digests."""
     from husks.build import recipe_to_cse
     from husks.core import recipe_digest
-    from husks.designs.ir import _make_shell_action
+    from husks.design.locke import _make_shell_action
 
     fn_a = _make_shell_action("echo hello", ["out.txt"])
     fn_b = _make_shell_action("echo goodbye", ["out.txt"])
@@ -147,7 +147,7 @@ def test_cond_pred_different_args_different_roots():
     sealed identically.
     """
     from husks.build import build, rule, action, cond, commit, halt
-    from husks.designs.ir import _resolve_predicate
+    from husks.design.locke import _resolve_predicate
 
     tmpdir = tempfile.mkdtemp(prefix="cond-pred-")
     try:
@@ -184,7 +184,7 @@ def test_cond_pred_different_args_different_roots():
 def test_cond_pred_same_spec_same_root():
     """Cond predicates with the same spec string produce the same root."""
     from husks.build import build, cond, commit, halt
-    from husks.designs.ir import _resolve_predicate
+    from husks.design.locke import _resolve_predicate
 
     tmpdir = tempfile.mkdtemp(prefix="cond-same-")
     try:

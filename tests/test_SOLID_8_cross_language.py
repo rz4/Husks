@@ -17,7 +17,7 @@ import pytest
 
 from conftest import SPEC_DIR, DEMO_HUSK, DEMO_ROOT, DEMO_SITE, load_demo
 from husks.core import encode, recompute_root
-from husks.designs.transport import elaborate
+from husks.design.transport import elaborate
 
 VERIFY_JS = os.path.join(SPEC_DIR, "verify.mjs")
 
@@ -138,7 +138,7 @@ class TestMultiTargetCrossLanguage:
 
     def test_multi_target_js_verifier(self, tmp_path):
         """Build a multi-target design, verify with JS reader."""
-        from husks.designs.ir import run
+        from husks.design.locke import run
 
         site = str(tmp_path / "site")
         os.makedirs(site)

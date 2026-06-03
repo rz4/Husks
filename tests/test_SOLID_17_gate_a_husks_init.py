@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 
 from conftest import run_husks_cli
-from husks.designs.ir import from_json, check, run
+from husks.design.locke import from_json, check, run
 from husks.setup import _DEMO_DESIGN
 
 import pytest

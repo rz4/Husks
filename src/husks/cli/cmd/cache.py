@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 from husks.cli.helpers import EXIT_OK, EXIT_USAGE
+from husks.build.site import fresh_store
+from husks.build.cache import cache_export, cache_import
+from husks.utils.console import BOLD, DIM, RESET
 
 
 def _cmd_cache_export(args):
@@ -16,10 +20,6 @@ def _cmd_cache_export(args):
     servable on commit. cache_export skips _pending directories, so halted
     builds naturally export 0 entries.
     """
-    from husks.build.site import fresh_store
-    from husks.build.cache import cache_export
-    from pathlib import Path
-
     site = args.site
     export_path = args.file
 
@@ -51,7 +51,6 @@ def _cmd_cache_export(args):
         }
         print(json.dumps(output, indent=2))
     else:
-        from husks.utils.console import BOLD, DIM, RESET
         print(f"  exported {BOLD}{count}{RESET} entries {DIM}\u2192 {export_path}{RESET}")
 
     sys.exit(EXIT_OK)
@@ -59,10 +58,6 @@ def _cmd_cache_export(args):
 
 def _cmd_cache_import(args):
     """Import cache from tarball (Beta Gate G1)."""
-    from husks.build.site import fresh_store
-    from husks.build.cache import cache_import
-    from pathlib import Path
-
     site = args.site
     import_path = args.file
     merge = not args.no_merge
@@ -96,7 +91,6 @@ def _cmd_cache_import(args):
         }
         print(json.dumps(output, indent=2))
     else:
-        from husks.utils.console import BOLD, DIM, RESET
         print(f"  imported {BOLD}{count}{RESET} entries {DIM}\u2192 {site}{RESET}")
 
     sys.exit(EXIT_OK)

@@ -3,6 +3,8 @@
 import sys
 from pathlib import Path
 
+from husks.manifest import resolve_manifest, read_manifest
+
 # ── Exit codes ────────────────────────────────────────────────────
 # C21: Documented and frozen exit code contract
 #
@@ -90,8 +92,6 @@ def resolve_design(args) -> str:
 
 def _load_manifest(args) -> tuple[dict, str]:
     """Resolve manifest and site from CLI args, exit on failure."""
-    from husks.manifest import resolve_manifest, read_manifest
-
     site = getattr(args, "site", None)
     design = getattr(args, "design", None)
 

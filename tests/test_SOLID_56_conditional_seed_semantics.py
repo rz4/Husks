@@ -288,7 +288,7 @@ def test_cond_branch_order_affects_identity():
 
 def test_cond_design_completeness():
     """A cond design is complete only if both branches are specified."""
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     # Valid cond design
     valid_design = {

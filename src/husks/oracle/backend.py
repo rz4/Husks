@@ -93,6 +93,14 @@ def register(backend: OracleBackend) -> None:
 
 
 def get_backend(name: str) -> OracleBackend:
+    if name not in REGISTRY:
+        # Lazy-load concrete backends on first use
+        if name == "litellm":
+            from husks.oracle.litellm import LiteLLMBackend
+            register(LiteLLMBackend())
+        elif name == "claude-code":
+            from husks.oracle.claude_code import ClaudeCodeBackend
+            register(ClaudeCodeBackend())
     try:
         return REGISTRY[name]
     except KeyError:

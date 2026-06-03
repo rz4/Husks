@@ -100,7 +100,7 @@ def test_bootstrap_core_with_stub_commits():
     should work correctly with write_path() and staging. The design should
     commit successfully when run with a stub oracle backend.
     """
-    from husks.designs.ir import from_json, run
+    from husks.design.locke import from_json, run
     from husks.build import write_path
 
     # Stub oracle that uses write_path for proper staging

@@ -1,0 +1,98 @@
+# Complete Husks DAG Architecture (Post-Phase 3)
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ L7: CLI / Entry Point                                          │
+│                                                                │
+│  cli.main ──→ cli.surface ──→ cli.view                        │
+│     │            │               │                             │
+│     │            └───→ cli.residue ←─── cli.navigator         │
+│     │                                                          │
+│     └──→ cli.helpers,  cli.contract,  cli.console            │
+│          setup,  resources                                     │
+│                                                                │
+│  Commands: cli.cmd.build, .validate, .inspect, .compare       │
+│            .cache  (all depend on helpers/surface/residue)    │
+└────────────────────────────────────────────────────────────────┘
+                            │
+                            ↓
+┌────────────────────────────────────────────────────────────────┐
+│ L6: Inspection & Reporting                                     │
+│                                                                │
+│  report ──→ manifest ←── graph                                │
+└────────────────────────────────────────────────────────────────┘
+                            │
+                            ↓
+┌────────────────────────────────────────────────────────────────┐
+│ L5: Surface → IR (Design Compilation)                          │
+│                                                                │
+│  locke (parser) ──→ designs.ir ──→ designs.convergence       │
+│                         │                                      │
+│                         └──→ designs.transport                │
+└────────────────────────────────────────────────────────────────┘
+                            │
+                            ↓
+┌────────────────────────────────────────────────────────────────┐
+│ L4: Oracle (LLM Integration)                                   │
+│                                                                │
+│  oracle.kernel ──→ oracle ──→ oracle.backend                  │
+│                       │                                        │
+│                       ├──→ oracle.litellm                      │
+│                       ├──→ oracle.claude_code                  │
+│                       ├──→ oracle.llm                          │
+│                       └──→ oracle.tools                        │
+└────────────────────────────────────────────────────────────────┘
+                            │
+                            ↓
+┌────────────────────────────────────────────────────────────────┐
+│ L3: Build Engine                                               │
+│                                                                │
+│  build.run ──→ build.eval ──→ build.cache                     │
+│                │                                               │
+│                └──→ build.nodes                                │
+└────────────────────────────────────────────────────────────────┘
+                            │
+                            ↓
+┌────────────────────────────────────────────────────────────────┐
+│ L2: Sealing + Filesystem                                       │
+│                                                                │
+│  build.seal ──→ build.site                                    │
+└────────────────────────────────────────────────────────────────┘
+                            │
+                            ↓
+┌────────────────────────────────────────────────────────────────┐
+│ L1: CSE Forms (Content-Addressed Identity)                     │
+│                                                                │
+│  build.identity ──→ build.policies                            │
+│  designs.transport                                             │
+└────────────────────────────────────────────────────────────────┘
+                            │
+                            ↓
+┌────────────────────────────────────────────────────────────────┐
+│ L0: Kernel (Core CSE, Codec, Merkle)                          │
+│                                                                │
+│  core  (CSE encoding, Merkle trees, seal computation)         │
+│  gate  (isolated test reader)                                 │
+└────────────────────────────────────────────────────────────────┘
+
+
+Dependency Rules:
+─────────────────
+✓ Imports flow DOWNWARD only (higher → lower layers)
+✓ Same-layer imports follow declared intra-layer ordering
+✓ No cycles (Tarjan SCC = 0)
+✓ TYPE_CHECKING for type-only imports that would violate layers
+
+Special Modules:
+────────────────
+• utils.events, utils.console: Pure infra (no husks.* imports)
+• gate: Isolated L0 (zero cross-dependencies by design)
+
+Remaining Deferred Imports (9):
+────────────────────────────────
+All are performance optimizations to defer expensive subsystems:
+• locke → core, designs.transport (parser heavy deps)
+• designs.ir → build.*, locke (compiler heavy deps)  
+• setup → cli.surface, resources, utils.console (init heavy deps)
+• cli.cmd.validate → setup (internal helper)
+```

@@ -1,0 +1,92 @@
+# Remaining 9 Deferred Import Violations
+
+## Dependency Graph (showing only the deferred imports)
+
+```
+Layer Structure:
+L0: core
+L1: designs.transport  
+L5: locke, designs.ir
+L7: setup, cli.surface, resources, utils.console, cli.cmd.validate
+
+
+┌─────────────────────────────────────────────────────────┐
+│                    L5: locke                            │
+│  (Surface language parser)                              │
+└─────────────────────────────────────────────────────────┘
+           │                    │
+           │ (deferred)         │ (deferred)
+           ↓                    ↓
+    ┌──────────┐         ┌─────────────────┐
+    │ L0: core │         │ L1: designs.    │
+    │          │         │     transport   │
+    └──────────┘         └─────────────────┘
+
+
+┌─────────────────────────────────────────────────────────┐
+│                 L5: designs.ir                          │
+│  (Intermediate representation)                          │
+└─────────────────────────────────────────────────────────┘
+     │              │                   │
+     │ (deferred)   │ (deferred)        │ (deferred)
+     ↓              ↓                   ↓
+┌──────────┐  ┌──────────┐      ┌─────────┐
+│ L3: build│  │ L2: build│      │ L5:     │
+│          │  │   .site  │      │  locke  │
+└──────────┘  └──────────┘      └─────────┘
+
+
+┌─────────────────────────────────────────────────────────┐
+│                   L7: setup                             │
+│  (Package initialization)                               │
+└─────────────────────────────────────────────────────────┘
+     │              │                   │
+     │ (deferred)   │ (deferred)        │ (deferred)
+     ↓              ↓                   ↓
+┌──────────┐  ┌──────────┐      ┌─────────────┐
+│ L7: cli. │  │ L7:      │      │ L7: utils.  │
+│  surface │  │ resources│      │   console   │
+└──────────┘  └──────────┘      └─────────────┘
+
+
+┌─────────────────────────────────────────────────────────┐
+│            L7: cli.cmd.validate                         │
+│  (Doctor command - architecture checker)                │
+└─────────────────────────────────────────────────────────┘
+                     │
+                     │ (deferred)
+                     │ _resolve_conformance helper
+                     ↓
+              ┌─────────────┐
+              │ L7: setup   │
+              └─────────────┘
+```
+
+## Why These Are Deferred
+
+**locke → core, designs.transport**
+- Locke is the surface language parser
+- Defers heavy parsing dependencies until actually parsing .locke files
+- Only needed when running `husks run` with .locke syntax
+
+**designs.ir → build, build.site, locke**  
+- IR is the intermediate representation layer
+- Defers the entire build engine until actually compiling designs
+- Only needed when converting surface → IR → execution
+
+**setup → cli.surface, resources, utils.console**
+- Setup is the package init/selftest module
+- Defers CLI rendering until running `husks init` or `husks doctor`
+- Avoids loading UI dependencies on simple imports
+
+**cli.cmd.validate → setup**
+- Internal helper `_resolve_conformance` for finding test vectors
+- Only used in specific doctor subcommands
+- Could be hoisted but left as internal optimization
+
+## Key Insight
+
+All 9 violations are **same-layer or downward** deferred imports:
+- No upward imports (would violate DAG)
+- No cycles (all were eliminated in phases 0-2)
+- All are performance optimizations to defer expensive subsystems

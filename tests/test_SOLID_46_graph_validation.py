@@ -7,7 +7,7 @@ Tests for clear diagnostics on forward references, circular dependencies,
 and duplicate outputs (with both producers named).
 """
 
-from husks.designs.ir import check
+from husks.design.locke import check
 
 
 def test_duplicate_output_names_both_producers():

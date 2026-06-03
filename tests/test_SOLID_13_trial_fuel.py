@@ -125,7 +125,7 @@ def test_trial_branch_history_records_actual_fuel_steps():
     the oracle used within that branch.
     """
     from husks.build import build, rule, trial, oracle
-    from husks.designs.convergence import read_history
+    from husks.design.convergence import read_history
 
     tmpdir = tempfile.mkdtemp(prefix="trial-fuel-steps-")
     try:

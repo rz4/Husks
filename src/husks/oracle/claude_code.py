@@ -1,6 +1,5 @@
 """
-claude_code.py -- Claude Code Agent SDK oracle backend.
-
+claude_code.py -- Claude Code Agent SDK oracle 
 Does NOT use kernel.py.  Claude Code owns its own agent loop and tool
 protocol; this backend hands one oracle rule to one SDK ``query()`` call
 and never sees the inner loop.  Every constraint the kernel enforced
@@ -55,8 +54,13 @@ import os
 from pathlib import Path
 from typing import Any
 
-from husks.oracle import backend
-from husks.oracle.backend import RealizedCost
+from husks.oracle.backend import (
+    RealizedCost,
+    site_of,
+    DEFAULT_TOOLS,
+    readonly_roots_of,
+    build_system_prompt,
+)
 
 
 # -- husk tool namespace -> Claude Code tool namespace --------------

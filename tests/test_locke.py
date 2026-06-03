@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from husks.locke import (
+from husks.design.locke import (
     tokenize, parse, resolve, from_file, compile_bytes,
     _TT, DeclNode, RuleNode, BindNode, LetNode,
 )
@@ -372,8 +372,8 @@ class TestCSEEquivalence:
         if not locke_path.exists() or not json_path.exists():
             pytest.skip("template files not found")
 
-        from husks.designs.ir import from_json
-        from husks.designs.transport import elaborate
+        from husks.design.locke import from_json
+        from husks.design.transport import elaborate
         from husks.core import encode
 
         locke_bytes = compile_bytes(

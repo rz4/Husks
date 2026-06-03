@@ -251,3 +251,107 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Selftest — Core Conformance Verification
+# ══════════════════════════════════════════════════════════════════════
+#
+# Moved from setup.py (L7) to gate.py (L0) for architectural coherence.
+# Tests core CSE functionality where it belongs.
+
+import sys
+from pathlib import Path
+
+from husks.core import recompute_root
+
+def _resolve_conformance(override=None) -> Path:
+    """Resolve the conformance vector directory via fallback chain.
+
+    1. Explicit override (from --conformance flag)
+    2. HUSKS_CONFORMANCE_DIR env var
+    3. husks_conformance.conformance_dir() (if installed)
+    4. spec/conformance relative to repo root
+    5. Error
+    """
+    # 1. Explicit argument
+    if override is not None:
+        p = Path(override).resolve()
+        if p.exists():
+            return p
+        raise FileNotFoundError(f"Conformance directory not found: {p}")
+
+    # 2. Environment variable
+    env = os.environ.get("HUSKS_CONFORMANCE_DIR")
+    if env:
+        p = Path(env).resolve()
+        if p.exists():
+            return p
+        raise FileNotFoundError(
+            f"HUSKS_CONFORMANCE_DIR points to nonexistent path: {p}"
+        )
+
+    # 3. husks_conformance package
+    try:
+        from husks_conformance import conformance_dir
+        return conformance_dir()
+    except (ImportError, FileNotFoundError):
+        pass
+
+    # 3.5. Bundled in wheel (force-included by pyproject.toml)
+    _PKG = Path(__file__).resolve().parent
+    bundled = _PKG / "_resources" / "conformance"
+    if bundled.exists():
+        return bundled
+
+    # 4. Repo-relative fallback
+    repo = Path(__file__).resolve().parent.parents[1]  # src/husks -> src -> repo
+    candidate = repo / "spec" / "conformance"
+    if candidate.exists():
+        return candidate
+
+    raise FileNotFoundError(
+        "Conformance vectors not found. Install husks-conformance, "
+        "set HUSKS_CONFORMANCE_DIR, or pass --conformance."
+    )
+
+
+def selftest(verbose=True, conformance=None):
+    """Recompute the frozen conformance roots. Returns True iff all match."""
+    try:
+        conf = _resolve_conformance(conformance)
+    except FileNotFoundError as e:
+        print(f"  error: {e}", file=sys.stderr)
+        return False
+
+    vectors = sorted(p.stem for p in conf.glob("*.husk"))
+    if not vectors:
+        print(f"  error: no .husk vectors in {conf}", file=sys.stderr)
+        return False
+
+    all_ok = True
+    for name in vectors:
+        husk = (conf / f"{name}.husk").read_bytes()
+        root_file = conf / f"{name}.root"
+
+        if root_file.exists():
+            # positive vector: reader must reproduce the frozen root
+            want = root_file.read_text().strip()
+            site = str(conf / f"{name}.site")
+            try:
+                got = recompute_root(husk, site)
+                ok, detail = (got == want), got[:16] + "..."
+            except Exception as e:  # noqa: BLE001
+                ok, detail = False, f"error: {e}"
+        else:
+            # negative vector: reader must REJECT malformed input
+            try:
+                got = recompute_root(husk, str(conf))
+                ok, detail = False, f"accepted ({got[:16]}...)"  # accepting is failure
+            except Exception:  # noqa: BLE001
+                ok, detail = True, "correctly rejected"
+
+        all_ok &= ok
+        if verbose:
+            print(f"  {name:<26s} {'PASS' if ok else 'FAIL'}  {detail}")
+    return all_ok

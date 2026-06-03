@@ -1,6 +1,5 @@
 """
-litellm.py -- LiteLLM oracle backend.
-
+litellm.py -- LiteLLM oracle 
 Owns an OpenAI-shaped agent loop (kernel.py) and reaches providers
 through litellm.  Enforces the tool allowlist and the fuel bound
 *in-process*: the loop dispatches every tool itself, so "allowed" and
@@ -44,8 +43,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from husks.oracle import backend, kernel, llm, tools
+from husks.oracle import backend
 from husks.oracle.backend import RealizedCost
+from husks.oracle import kernel, llm, tools
 
 
 def _resolve_config(config: dict[str, Any], rule_name: str) -> dict[str, Any]:

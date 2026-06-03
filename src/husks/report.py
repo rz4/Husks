@@ -23,7 +23,7 @@ import json
 import time
 from typing import Any
 
-from husks.designs.convergence import convergence_summary, read_history
+from husks.design.convergence import convergence_summary, read_history
 from husks.manifest import read_seal
 from husks.utils.events import BuildTrace
 

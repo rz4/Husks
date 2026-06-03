@@ -62,7 +62,7 @@ def _make_design(site):
 
 def _run_build(design):
     """Run a build via design.run() and return the store."""
-    from husks.designs.ir import run
+    from husks.design.locke import run
     return run(design)
 
 
@@ -196,7 +196,7 @@ def test_cond_file_nonempty_branching():
             ],
         }
 
-        from husks.designs.ir import check, run
+        from husks.design.locke import check, run
         errs = check(design)
         assert errs == [], f"check errors: {errs}"
 
@@ -290,7 +290,7 @@ def test_imports_readable():
             ],
         }
 
-        from husks.designs.ir import run
+        from husks.design.locke import run
         S = run(design)
         assert S["status"] == "committed", f"build failed: {S.get('value')}"
 
@@ -381,7 +381,7 @@ def test_imports_build_succeeds():
             ],
         }
 
-        from husks.designs.ir import run
+        from husks.design.locke import run
         S = run(design)
         assert S["status"] == "committed"
 
@@ -418,7 +418,7 @@ def test_multi_target_build():
             ],
         }
 
-        from husks.designs.ir import check, run
+        from husks.design.locke import check, run
         errs = check(design)
         assert errs == [], f"check errors: {errs}"
 
@@ -464,7 +464,7 @@ def test_multi_target_engine_equals_reader_root():
             ],
         }
 
-        from husks.designs.ir import run
+        from husks.design.locke import run
         S = run(design)
         assert S["status"] == "committed"
         engine_root = S["build-root"]
@@ -507,7 +507,7 @@ def test_single_target_string_backward_compat():
             ],
         }
 
-        from husks.designs.ir import check, run
+        from husks.design.locke import check, run
         errs = check(design)
         assert errs == [], f"check errors: {errs}"
 
@@ -534,7 +534,7 @@ def test_different_shell_commands_different_seal():
     """Two shell actions with different commands must produce different seals."""
     tmpdir = tempfile.mkdtemp(prefix="shell-seal-")
     try:
-        from husks.designs.ir import run
+        from husks.design.locke import run
 
         # Build A: shell command "echo alpha"
         site_a = os.path.join(tmpdir, "site-a")
@@ -592,7 +592,7 @@ def test_different_shell_commands_different_seal():
 
 def test_imports_check_validation():
     """check() catches bad imports: relative paths, collisions."""
-    from husks.designs.ir import check
+    from husks.design.locke import check
 
     # Relative path
     d = {

@@ -15,6 +15,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from husks.core import recompute_root
+
 # Beta Gate C2: Manifest and seal schema validation
 SUPPORTED_MANIFEST_SCHEMAS = {"husks.build.manifest.v1"}
 SUPPORTED_SEAL_VERSIONS = {1}
@@ -283,8 +285,6 @@ def compare_artifacts(
     ...     for diff in result["differences"]:
     ...         print(f"Difference: {diff}")
     """
-    from husks.core import recompute_root
-
     differences = []
     details = {}
 

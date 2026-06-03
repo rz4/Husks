@@ -38,7 +38,7 @@ def _missing_oracle_backend(S, rule_name, recipe, outputs):
 
 def test_gate6_oracle_empty_output_halts():
     """An oracle producing a zero-byte declared output must halt, not seal."""
-    from husks.designs.ir import run
+    from husks.design.locke import run
     tmpdir = tempfile.mkdtemp(prefix="oracle-empty-")
     try:
         site = os.path.join(tmpdir, "site")
@@ -82,7 +82,7 @@ def test_gate6_oracle_empty_output_halts():
 
 def test_gate6_oracle_missing_output_halts():
     """An oracle whose declared output is never written must halt."""
-    from husks.designs.ir import run
+    from husks.design.locke import run
     tmpdir = tempfile.mkdtemp(prefix="oracle-missing-")
     try:
         site = os.path.join(tmpdir, "site")
@@ -123,7 +123,7 @@ def test_gate6_oracle_missing_output_halts():
 
 def test_gate6_action_zero_byte_marker_commits():
     """An action producing a zero-byte marker file must still commit."""
-    from husks.designs.ir import run
+    from husks.design.locke import run
     tmpdir = tempfile.mkdtemp(prefix="action-marker-")
     try:
         site = os.path.join(tmpdir, "site")

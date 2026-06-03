@@ -9,14 +9,20 @@ import shutil
 import sys
 
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_MISSING_DEP
+from husks.gate import selftest, gate, _resolve_conformance
+from husks._arch.check import check_architecture
 
 
 # ── doctor ────────────────────────────────────────────────────────
 
 def _cmd_doctor(args):
+    # Handle --arch mode
+    if args.arch:
+        _doctor_arch(args)
+        return
+
     # Handle --selftest mode
     if args.selftest:
-        from husks.setup import selftest
         ok = selftest()
         if not args.json_output:
             print("selftest: pass" if ok else "selftest: FAIL")
@@ -51,7 +57,6 @@ def _cmd_doctor(args):
 
     # 2. conformance vectors
     try:
-        from husks.setup import _resolve_conformance
         conf = _resolve_conformance()
         vectors = sorted(p.stem for p in conf.glob("*.husk"))
         checks.append({"name": "conformance", "ok": bool(vectors),
@@ -61,7 +66,6 @@ def _cmd_doctor(args):
 
     # 3. selftest (core deterministic verification)
     try:
-        from husks.setup import selftest
         ok = selftest(verbose=False)
         checks.append({"name": "selftest", "ok": ok,
                         "detail": "pass" if ok else "fail"})
@@ -91,8 +95,6 @@ def _cmd_doctor(args):
 
 def _doctor_conformance(args):
     """Run external reader conformance gate (formerly top-level 'gate')."""
-    from husks.gate import gate
-
     # Beta B6: Use shlex.split() to handle quoted arguments
     reader = shlex.split(args.reader_cmd)
     cross_check = getattr(args, "cross_check", True)
@@ -171,3 +173,87 @@ def _doctor_live(args):
 
     if any(c["ok"] is False for c in checks):
         sys.exit(EXIT_MISSING_DEP)
+
+
+def _doctor_arch(args):
+    """Check architecture conformance (Phase 0: report-only).
+
+    Verifies the module dependency graph against layers.toml.
+    In Phase 0, this runs in report-only mode (always exits 0).
+    In Phase 3, this will be enforcing mode (exits non-zero on violations).
+    """
+    from pathlib import Path
+    try:
+        import tomllib  # Python 3.11+
+    except ImportError:
+        import tomli as tomllib  # Python 3.10
+
+    # Find layers.toml (packaged in wheel or at repo root)
+    pkg_dir = Path(__file__).resolve().parent.parent.parent  # ...husks/cli/cmd -> husks
+    packaged_layers = pkg_dir / "_resources" / "layers.toml"
+
+    if packaged_layers.exists():
+        # Wheel install
+        layers_toml = packaged_layers
+        src_root = pkg_dir.parent / "husks"  # site-packages/husks
+    else:
+        # Editable/source install - walk up to find repo root
+        current = Path(__file__).resolve()
+        for parent in [current] + list(current.parents):
+            candidate = parent / "layers.toml"
+            if candidate.exists():
+                layers_toml = candidate
+                src_root = parent / "src"
+                break
+        else:
+            print("error: could not find layers.toml", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+
+    if not src_root.exists():
+        print(f"error: src directory not found at {src_root}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    # Load the contract
+    try:
+        contract = tomllib.loads(layers_toml.read_text())
+    except Exception as e:
+        print(f"error: failed to load layers.toml: {e}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    # Run the checker
+    try:
+        violations = check_architecture(src_root, contract)
+    except Exception as e:
+        print(f"error: architecture check failed: {e}", file=sys.stderr)
+        sys.exit(EXIT_BUILD_FAIL)
+
+    # Output results
+    if args.json_output:
+        result = {
+            "violations": violations,
+            "count": len(violations),
+            "pass": len(violations) == 0,
+        }
+        print(json.dumps(result, indent=2))
+    else:
+        print()
+        if violations:
+            print(f"Architecture violations: {len(violations)}")
+            print()
+            for v in violations:
+                print(f"  \u2717 {v}")
+            print()
+            print("Phase 0: Report-only mode (exit 0)")
+            print("These violations will be removed in phases 1-2.")
+        else:
+            print("\u2713 No architecture violations detected!")
+        print()
+
+    # Phase 3: Enforcing mode enabled
+    # Exit non-zero if any violations detected
+    if len(violations) > 0:
+        if not args.json_output:
+            print(f"FAIL: {len(violations)} architecture violations")
+        sys.exit(EXIT_BUILD_FAIL)
+
+    sys.exit(EXIT_OK)

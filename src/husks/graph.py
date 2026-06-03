@@ -13,6 +13,8 @@ import json
 import sys
 from typing import Any
 
+from husks.manifest import read_manifest, compute_rule_states
+
 from husks.utils.console import DIM, BOLD, RESET, GREEN, YELLOW, RED, CYAN
 
 
@@ -113,7 +115,6 @@ def render_graph(
     states: dict[str, str] = {}
     if site:
         try:
-            from husks.manifest import read_manifest, compute_rule_states
             manifest = read_manifest(site)
             if manifest:
                 for rs in compute_rule_states(site, manifest):

@@ -7,7 +7,7 @@ Tests that misspelled or unknown fields are detected and reported clearly,
 helping users catch typos like 'ouputs', 'taget', 'fuell', etc.
 """
 
-from husks.designs.ir import check
+from husks.design.locke import check
 
 
 def test_unknown_top_level_field():

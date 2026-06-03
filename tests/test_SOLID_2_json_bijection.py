@@ -9,7 +9,7 @@ import pytest
 
 from conftest import DEMO_HUSK, DEMO_ROOT, DEMO_SITE, load_demo
 from husks.core import encode, parse, recompute_root, NIL
-from husks.designs.transport import ast_to_json, json_to_ast, to_json_str, from_json_str, round_trip
+from husks.design.transport import ast_to_json, json_to_ast, to_json_str, from_json_str, round_trip
 
 
 # -- Gate tests ----------------------------------------------------------------

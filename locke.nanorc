@@ -1,0 +1,38 @@
+## Locke syntax highlighting for Nano
+## Save this as ~/.nano/locke.nanorc and include it in your ~/.nanorc
+
+syntax "locke" "\.locke$"
+
+# 1. Base Atoms (File paths, identifiers)
+# This colors all generic words, paths, and atoms magenta first.
+color magenta "[A-Za-z0-9_/\.-]+"
+
+# 2. Contextual Left-Side Highlighting
+# Overwrites the magenta base for specific operator contexts.
+# Matches an atom and ':-', coloring both blue
+color blue "[A-Za-z0-9_/\.-]+\s*:-"
+# Matches an atom, ':=', and 'action', coloring the whole block green
+color green "[A-Za-z0-9_/\.-]+\s*:=\s*action\>"
+
+# 3. Core Operators
+# Ensures the base operators remain their designated colors
+color green ":="
+color blue ":-"
+
+# 4. Keywords and Labels
+# Overwrites the magenta (and the right side of the green block) with yellow
+color yellow "\<(design|fuel|tolerance|site|action|oracle|inputs|outputs|free|exact|run|tools|prompt)\>"
+
+# 5. Brackets / Site boundaries
+color brightwhite "\[" "\]"
+
+# 6. Numeric values (Fuel limits, tolerances)
+# Overwrites the magenta base for standalone numbers
+color brightred "\b[0-9]+(\.[0-9]+)?\b"
+
+# 7. Strings (Overrides everything above if inside quotes)
+color white ""(\\.|[^"])*""
+color white start="\"\"\"" end="\"\"\""
+
+# 8. Comments 
+color brightblack "(^|[[:space:]])#.*$"

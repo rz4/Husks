@@ -9,7 +9,9 @@ description = "A small build system for nondeterministic work."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "tomli>=1.0.0; python_version < '3.11'",
+]
 
 [project.optional-dependencies]
 llm = ["litellm"]
@@ -28,6 +30,7 @@ packages = ["src/husks"]
 "spec/conformance" = "husks/_resources/conformance"
 "skills/husks" = "husks/_resources/skill"
 "examples/templates" = "husks/_resources/templates"
+"layers.toml" = "husks/_resources/layers.toml"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

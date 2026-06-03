@@ -319,10 +319,12 @@ def _animate_help(version: str) -> None:
         _pp([{"str": line, "end": "\n", "t": 0.025}])
 
 
+import argparse
+from husks.cli.contract import _flag_str, _StyledHelpAction, _NO_VALUE_ACTIONS
+
+
 def emit_subcommand_help(parser) -> str:
     """Render branded help for a subcommand parser."""
-    import argparse
-    from husks.cli.main import _flag_str, _StyledHelpAction, _NO_VALUE_ACTIONS
 
     desc = parser.description or ""
 

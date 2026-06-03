@@ -20,9 +20,13 @@ from husks.build.site import (
 from husks.build.identity import (
     _fn_behavior_digest,
     _pred_identity,
-    VERDICT_POLICIES,
     recipe_to_cse,
     _ACTION_ARG_TYPES,
+)
+from husks.build.policies import (
+    VERDICT_POLICIES,
+    first_valid,
+    DEFAULT_VERDICT,
 )
 from husks.build.seal import (
     compute_cse_seal,
@@ -55,7 +59,6 @@ from husks.build.eval import (
     eval_recipe,
     default_oracle_backend,
     eval_oracle,
-    first_valid,
     eval_trial,
     node_to_cse,
     compute_build_root,
@@ -72,7 +75,7 @@ __all__ = [
     "Store", "Node", "Recipe", "OracleBackend", "Stop",
     "site_path", "read_path", "write_path", "ensure_dir", "read_text", "write_text", "file_exists",
     "fresh_store", "burn", "file_sig",
-    "_fn_behavior_digest", "_pred_identity", "VERDICT_POLICIES",
+    "_fn_behavior_digest", "_pred_identity", "VERDICT_POLICIES", "DEFAULT_VERDICT",
     "recipe_to_cse", "_ACTION_ARG_TYPES",
     "compute_cse_seal", "seal_file", "read_seal", "output_hashes",
     "freshness_check", "write_seal", "history_file", "append_history",

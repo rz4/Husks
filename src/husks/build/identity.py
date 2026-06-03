@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import inspect
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
 
 from husks.core import NIL, CseValue
+from husks.build.policies import verdict_identity
 
-from husks.build.site import Recipe
+if TYPE_CHECKING:
+    from husks.build.site import Recipe
 
 
 # ── Behavior digest ───────────────────────────────────────────────
@@ -41,13 +43,7 @@ def _pred_identity(predicate: Callable) -> str:
     return _fn_behavior_digest(predicate)
 
 
-# ── Verdict policies ──────────────────────────────────────────────
-
-# Registry of named built-in verdict policies for trial recipes.
-# The name is included in the recipe CSE form so that changing the
-# verdict changes the recipe digest.
-VERDICT_POLICIES: dict[str, Callable] = {}
-# Populated after first_valid is defined (in eval.py).
+# Verdict policies moved to build.policies (L1) to break the cycle.
 
 
 # ── Action arg types ─────────────────────────────────────────────
@@ -72,9 +68,6 @@ def recipe_to_cse(recipe: Recipe) -> CseValue:
 
     See core.py for version terminology clarification.
     """
-    # Import here to avoid circular import; first_valid is defined in eval.py
-    from husks.build.eval import first_valid
-
     if recipe is None:
         return NIL
     kind: str = recipe["type"]
@@ -102,11 +95,6 @@ def recipe_to_cse(recipe: Recipe) -> CseValue:
         ]
     if kind == "trial":
         verdict = recipe.get("verdict")
-        if verdict is None or verdict is first_valid:
-            policy_name = b"first-valid"
-        elif isinstance(verdict, str) and verdict in VERDICT_POLICIES:
-            policy_name = verdict.encode()
-        else:
-            policy_name = b"custom:" + _fn_behavior_digest(verdict).encode()
+        policy_name = verdict_identity(verdict)
         return [b"trial", policy_name] + [recipe_to_cse(b) for b in recipe["branches"]]
     return NIL

@@ -6,11 +6,15 @@ import json
 import sys
 from pathlib import Path
 
-from husks.designs.ir import from_json
-from husks.designs.convergence import read_history, convergence_summary
-from husks.utils.console import _shorthash
+from husks.design.locke import from_json
+from husks.design.convergence import read_history, convergence_summary
+from husks.utils.console import _shorthash, GREEN, YELLOW, RED, DIM, RESET
 from husks.cli.helpers import _load_manifest, _STATE_SYM, resolve_design, EXIT_OK, EXIT_USAGE, EXIT_DIRTY_STALE, EXIT_BUILD_FAIL
-from husks.cli.residue import CliResidue, CliNode, map_manifest_state
+from husks.cli.residue import CliResidue, CliNode, map_manifest_state, CliOutput, CliTrace
+from husks.manifest import compute_rule_states, read_seal, read_manifest, compute_artifact_states, read_trial_report, compute_rule_state
+from husks.cli.surface import emit_residue, emit_explain
+from husks.cli.navigator import move_cursor, adjust_aperture, create_explain_state
+from husks.graph import render_graph
 
 
 # ── Residue collectors (Beta Gate 95) ────────────────────────────────
@@ -24,8 +28,6 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
     Beta 100: Adds cse_path, target, and output records.
     Blocker #7: Check history for cache evidence to distinguish sealed vs cached.
     """
-    from husks.manifest import compute_rule_states
-    from husks.cli.residue import CliOutput
     import os
 
     rule_states = compute_rule_states(site, manifest)
@@ -81,7 +83,6 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
             outputs.append(CliOutput(path=output_path, sha256=output_hash))
 
         # Phase 3: Read seal data for aperture 2
-        from husks.manifest import read_seal
         seal = read_seal(site, rule_name)
         seal_digest = None
         recipe_digest = None
@@ -94,7 +95,6 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
             output_hashes = seal.get("output_hashes", {})
 
         # Phase 3: Build trace for aperture 3
-        from husks.cli.residue import CliTrace
         trace = None
         if trace_metadata:
             trace = CliTrace(
@@ -210,9 +210,6 @@ def _cmd_status(args):
     Hardened: Takes site as positional arg. Always shows diamond logo
     with metadata. With --verbose, also shows full DAG tree.
     """
-    from husks.manifest import read_manifest, compute_artifact_states
-    from husks.cli.surface import emit_residue
-
     site = args.site
 
     # Step 1: Read manifest from site
@@ -242,7 +239,6 @@ def _cmd_status(args):
             sys.exit(EXIT_DIRTY_STALE)
 
     if args.fail_if_stale:
-        from husks.manifest import compute_rule_states
         rule_states = compute_rule_states(site, manifest)
         if any(rs["state"] != "fresh" for rs in rule_states):
             sys.exit(EXIT_DIRTY_STALE)
@@ -300,10 +296,6 @@ def _run_interactive_pilot(state):
         ←/→: Decrease/increase aperture
         q: Quit
     """
-    from husks.cli.navigator import move_cursor, adjust_aperture
-    from husks.cli.surface import emit_explain
-    import sys
-
     # Clear screen and hide cursor
     print('\033[2J\033[H', end='', flush=True)
     print('\033[?25l', end='', flush=True)  # Hide cursor
@@ -353,11 +345,6 @@ def _explain_navigate(args):
 
     Phase 6: Interactive mode when --interactive and in a TTY.
     """
-    from husks.manifest import read_manifest
-    from husks.cli.navigator import create_explain_state
-    from husks.cli.surface import emit_residue, emit_explain
-    import sys
-
     site = args.site
 
     # Phase 5: Infer CSE from site manifest (task #36)
@@ -438,9 +425,6 @@ def _cmd_explain(args):
 
 def _explain_graph(args):
     """Render the bordered DAG tree (primary explain output)."""
-    from husks.graph import render_graph
-    from husks.manifest import read_manifest
-
     design_path = resolve_design(args)
     design = from_json(design_path)
 
@@ -469,11 +453,6 @@ def _explain_graph(args):
 
 def _explain_subject(args):
     """Explain a rule, artifact, or root by name."""
-    from husks.manifest import (
-        read_seal, read_trial_report, compute_rule_state,
-        compute_artifact_states,
-    )
-
     manifest, site = _load_manifest(args)
 
     subject = args.subject
@@ -555,8 +534,6 @@ def _explain_subject(args):
 
 def _explain_diff(args):
     """Show differences between sealed and current artifacts."""
-    from husks.manifest import compute_artifact_states
-
     manifest, site = _load_manifest(args)
     artifacts = compute_artifact_states(site, manifest)
 
@@ -613,8 +590,6 @@ def _explain_diff(args):
 
 def _explain_seal(args):
     """Show seal material for a rule, artifact, or root."""
-    from husks.manifest import read_seal
-
     manifest, site = _load_manifest(args)
     subject = args.seal
 
@@ -714,59 +689,188 @@ def _render_explain(info: dict) -> None:
 
 # ── history ───────────────────────────────────────────────────────
 
-def _cmd_history(args, design):
-    site = args.site or design.get("site")
-    if not site:
-        print("error: no site directory. Use --site or set 'site' in design.",
-              file=sys.stderr)
-        sys.exit(EXIT_BUILD_FAIL)
+_TREND_ARROW = {"falling": "↓", "rising": "↑", "flat": "→"}
+_CLASS_COLOR = {
+    "stable": GREEN,
+    "converging": YELLOW,
+    "prompt-loading": YELLOW,
+    "volatile": RED,
+    "no-data": DIM,
+}
+_SEP = f"  {'─' * 76}"
+
+
+def _cmd_history(args):
+    """Show convergence history for a site.
+
+    Site-wide mode (no rule): banner + summary table with trend arrows.
+    Per-rule mode: banner + detailed table of last N entries + convergence.
+    """
+    site = args.site
+
+    # Read manifest
+    try:
+        manifest = read_manifest(site)
+        if not manifest:
+            print(f"error: no manifest found in {site}", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+    except Exception as e:
+        print(f"error: failed to read manifest from {site}: {e}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+    # Build and print banner
+    residue = collect_site_residue(manifest, site)
+
+    if getattr(args, "json_output", False):
+        _cmd_history_json(args, manifest, site, residue)
+        return
+
+    # Render banner only (non-verbose, no tree)
+    banner = emit_residue(residue, json_mode=False, verbose=False)
+    print(banner)
 
     if args.rule:
-        # detailed history for one rule
-        entries = read_history(site, args.rule)
+        _history_per_rule(args, site)
+    else:
+        _history_site_wide(args, manifest, site)
+
+
+def _history_site_wide(args, manifest, site):
+    """Render site-wide convergence summary table."""
+    verbose = getattr(args, "verbose", False)
+    rules = manifest.get("rules", [])
+
+    print(f"  convergence")
+    print(_SEP)
+    if verbose:
+        print(f"  {'':24s}{'runs':>5s}  {'fuel':>4s}  {'prompt':>6s}  {'output':<8s} {'cost':>10s}  {'hash':<12s} {'trend'}")
+    else:
+        print(f"  {'':24s}{'runs':>5s}  {'fuel':>4s}  {'output':<8s} {'trend'}")
+    for r in rules:
+        rname = r["name"]
+        entries = read_history(site, rname)
         if not entries:
-            print(f"  no history for '{args.rule}' in {site}")
-            sys.exit(EXIT_OK)
-        recent = entries[-args.n:]
-        print(f"\n  history: {args.rule}  ({len(entries)} total, showing last {len(recent)})")
-        print(f"  {'─' * 72}")
+            if verbose:
+                print(f"  {rname:<24s}{DIM}   –     –       –  –              –  –            no-data{RESET}")
+            else:
+                print(f"  {rname:<24s}{DIM}   –     –  –        no-data{RESET}")
+            continue
+        n = min(args.n, len(entries))
+        cs = convergence_summary(rname, site, n=n)
+        fuel_arrow = _TREND_ARROW.get(cs["fuel_trend"], "–")
+        output_str = "stable" if cs["output_stable"] else ("varying" if cs["output_stable"] is False else "–")
+        classification = cs["classification"]
+        color = _CLASS_COLOR.get(classification, DIM)
+        if verbose:
+            prompt_arrow = _TREND_ARROW.get(cs["prompt_trend"], "–") if cs["prompt_trend"] else "–"
+            total_cost = sum(e.get("cost_usd", 0.0) or 0.0 for e in entries)
+            cost_str = f"${total_cost:.4f}" if total_cost > 0 else "–"
+            last = entries[-1]
+            hashes = last.get("output_hashes", [])
+            ohash = _shorthash(hashes[0]) if hashes else "–"
+            print(f"  {rname:<24s}{len(entries):>5d}  {fuel_arrow:>4s}  {prompt_arrow:>6s}  {output_str:<8s} {cost_str:>10s}  {ohash:<12s} {color}{classification}{RESET}")
+        else:
+            print(f"  {rname:<24s}{len(entries):>5d}  {fuel_arrow:>4s}  {output_str:<8s} {color}{classification}{RESET}")
+    print(_SEP)
+
+    # Footer: sealed status
+    status = "sealed" if manifest.get("root") else "dry"
+    print(f"  {status}")
+
+
+def _history_per_rule(args, site):
+    """Render detailed per-rule history table."""
+    import datetime
+
+    verbose = getattr(args, "verbose", False)
+    rule_name = args.rule
+    entries = read_history(site, rule_name)
+    if not entries:
+        print(f"  no history for '{rule_name}' in {site}")
+        sys.exit(EXIT_OK)
+
+    recent = entries[-args.n:]
+    print(f"  history: {rule_name}  ({len(entries)} total, showing last {len(recent)})")
+    print(_SEP)
+    if verbose:
+        print(f"  {'run_id':<12s} {'fuel':>4s} {'prompt':>6s} {'sat':>5s} {'reads':>5s} {'cost':>10s} {'cached':>6s} {'output hash':<64s}")
+    else:
         print(f"  {'run_id':<12s} {'fuel':>4s} {'prompt':>6s} {'sat':>5s} {'reads':>5s} {'output hash':<12s}")
-        print(f"  {'─' * 72}")
+    print(_SEP)
+    for e in recent:
+        rid = e.get("run_id", "?")[:10]
+        fuel = str(e.get("fuel_consumed", "?"))
+        pl = e.get("prompt_length")
+        prompt = str(pl) if pl is not None else "–"
+        sat = e.get("satisfaction")
+        sat_str = "true" if sat is True else ("false" if sat is False else "–")
+        reads = str(len(e.get("traced_reads", [])))
+        hashes = e.get("output_hashes", [])
+        if verbose:
+            cost_usd = e.get("cost_usd")
+            cost_str = f"${cost_usd:.4f}" if cost_usd else "–"
+            cached = "yes" if e.get("cached") else "no"
+            ohash = hashes[0] if hashes else "–"
+            print(f"  {rid:<12s} {fuel:>4s} {prompt:>6s} {sat_str:>5s} {reads:>5s} {cost_str:>10s} {cached:>6s} {ohash}")
+        else:
+            ohash = _shorthash(hashes[0]) if hashes else "–"
+            print(f"  {rid:<12s} {fuel:>4s} {prompt:>6s} {sat_str:>5s} {reads:>5s} {ohash:<12s}")
+    print(_SEP)
+
+    # Verbose: show recipe digest + timestamp for each entry
+    if verbose:
+        print()
+        print(f"  {DIM}details{RESET}")
+        print(_SEP)
         for e in recent:
             rid = e.get("run_id", "?")[:10]
-            fuel = str(e.get("fuel_consumed", "?"))
-            pl = e.get("prompt_length")
-            prompt = str(pl) if pl is not None else "\u2013"
-            sat = e.get("satisfaction")
-            sat_str = "true" if sat is True else ("false" if sat is False else "\u2013")
-            reads = str(len(e.get("traced_reads", [])))
-            hashes = e.get("output_hashes", [])
-            ohash = _shorthash(hashes[0]) if hashes else "\u2013"
-            print(f"  {rid:<12s} {fuel:>4s} {prompt:>6s} {sat_str:>5s} {reads:>5s} {ohash:<12s}")
-        print(f"  {'─' * 72}")
+            ts = e.get("ts")
+            ts_str = datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else "–"
+            recipe = e.get("recipe_digest", "–")[:16]
+            print(f"  {rid:<12s} {ts_str}  recipe:{recipe}")
+        print(_SEP)
 
-        # convergence summary
+    # Convergence summary
+    cs = convergence_summary(rule_name, site, n=args.n)
+    classification = cs["classification"]
+    color = _CLASS_COLOR.get(classification, DIM)
+    print(f"\n  convergence: {color}{classification}{RESET}")
+    if cs["fuel_trend"]:
+        print(f"    fuel:   {cs['fuel_trend']} {_TREND_ARROW.get(cs['fuel_trend'], '')}")
+    if cs["prompt_trend"]:
+        print(f"    prompt: {cs['prompt_trend']} {_TREND_ARROW.get(cs['prompt_trend'], '')}")
+    if cs["output_stable"] is not None:
+        print(f"    output: {'stable' if cs['output_stable'] else 'varying'}")
+    print()
+
+
+def _cmd_history_json(args, manifest, site, residue):
+    """JSON output mode for history command."""
+    rules = manifest.get("rules", [])
+    result = {
+        "command": "history",
+        "site": site,
+        "design_name": manifest.get("name"),
+        "status": "committed" if manifest.get("root") else "dry",
+    }
+
+    if args.rule:
+        entries = read_history(site, args.rule)
         cs = convergence_summary(args.rule, site, n=args.n)
-        print(f"\n  convergence: {cs['classification']}")
-        if cs["fuel_trend"]:
-            print(f"    fuel:   {cs['fuel_trend']}")
-        if cs["prompt_trend"]:
-            print(f"    prompt: {cs['prompt_trend']}")
-        if cs["output_stable"] is not None:
-            print(f"    output: {'stable' if cs['output_stable'] else 'varying'}")
-        print()
+        result["rule"] = args.rule
+        result["entries"] = entries[-args.n:] if entries else []
+        result["convergence"] = cs
     else:
-        # summary for all rules
-        rules = design.get("rules", [])
-        print(f"\n  convergence history summary  (site: {site})")
-        print(f"  {'─' * 60}")
+        summaries = []
         for r in rules:
             rname = r["name"]
             entries = read_history(site, rname)
-            if not entries:
-                print(f"  {rname:<24s} no history")
-                continue
-            n = min(args.n, len(entries))
-            cs = convergence_summary(rname, site, n=n)
-            print(f"  {rname:<24s} {len(entries)} runs  {cs['classification']}")
-        print(f"  {'─' * 60}\n")
+            cs = convergence_summary(rname, site, n=args.n)
+            summaries.append({
+                "rule": rname,
+                "runs": len(entries),
+                "convergence": cs,
+            })
+        result["rules"] = summaries
+
+    print(json.dumps(result, indent=2, default=str))

@@ -15,7 +15,7 @@ import pytest
 
 from conftest import DEMO_SITE, load_demo
 from husks.core import encode, parse, recompute_root, verify
-from husks.designs.transport import elaborate, ast_to_json
+from husks.design.transport import elaborate, ast_to_json
 
 SKILL_PATH = os.path.join(os.path.dirname(__file__), "..",
                           "skills", "husks", "SKILL.md")

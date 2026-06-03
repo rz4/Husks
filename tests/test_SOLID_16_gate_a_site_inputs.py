@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from conftest import run_husks_cli
-from husks.designs.ir import from_json, run, check
+from husks.design.locke import from_json, run, check
 
 
 def stub_oracle(S, rule_name, recipe, outputs):
@@ -369,7 +369,7 @@ def test_site_inputs_not_children():
     }
 
     # Compile the design
-    from husks.designs.ir import compile
+    from husks.design.locke import compile
     _name, _fuel, terminals, _kwargs = compile(design)
 
     # The terminal node should have no children (external.txt is a site input)

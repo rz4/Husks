@@ -25,7 +25,7 @@ def _noop_oracle(S, rule_name, recipe, outputs):
 
 def test_action_missing_output_halts():
     """An action that declares an output but never writes it must halt."""
-    from husks.designs.ir import run
+    from husks.design.locke import run
     from husks.build import build, rule, action as action_recipe
     tmpdir = tempfile.mkdtemp(prefix="guard-action-missing-")
     try:
@@ -56,7 +56,7 @@ def test_action_missing_output_halts():
 
 def test_gate11_action_zero_byte_marker_commits():
     """An action producing a zero-byte marker file must commit (existence-only)."""
-    from husks.designs.ir import run
+    from husks.design.locke import run
     tmpdir = tempfile.mkdtemp(prefix="guard-action-marker-")
     try:
         site = make_site(tmpdir)
@@ -89,7 +89,7 @@ def test_gate11_action_zero_byte_marker_commits():
 
 def test_gate11_oracle_empty_output_halts():
     """An oracle producing a zero-byte output must halt."""
-    from husks.designs.ir import run
+    from husks.design.locke import run
     from husks.build import site_path
     from pathlib import Path
     tmpdir = tempfile.mkdtemp(prefix="guard-oracle-empty-")
@@ -141,7 +141,7 @@ def test_gate11_oracle_empty_output_halts():
 
 def test_gate11_oracle_missing_output_halts():
     """An oracle that never writes its declared output must halt."""
-    from husks.designs.ir import run
+    from husks.design.locke import run
     tmpdir = tempfile.mkdtemp(prefix="guard-oracle-missing-")
     try:
         site = os.path.join(tmpdir, "site")

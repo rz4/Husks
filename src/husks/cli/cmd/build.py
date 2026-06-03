@@ -8,10 +8,16 @@ import threading
 import time
 from pathlib import Path
 
-from husks.designs.ir import check, check_categorized, show, run
+from husks.design.locke import check, check_categorized, show, run
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_MISSING_DEP
-from husks.cli.residue import CliResidue, CliNode, LogEntry
-from husks.utils.console import is_tty, cursor_up, CLEAR_DOWN
+from husks.cli.residue import CliResidue, CliNode, LogEntry, map_trace_state, CliOutput, CliTrace
+from husks.cli.surface import emit_residue
+from husks.utils.console import is_tty, cursor_up, CLEAR_DOWN, _visible_len
+from husks.utils import trace as T
+from husks.core import recompute_root
+from husks.report import assemble, render_json
+from husks.oracle.backend import run_oracle
+from husks.oracle import set_oracle_model
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -49,7 +55,6 @@ def _physical_rows(frame: str) -> int:
     except (OSError, ValueError):
         cols = 80
 
-    from husks.utils.console import _visible_len
 
     rows = 0
     for line in frame.split("\n"):
@@ -260,8 +265,6 @@ class LiveFrameEmitter:
                     self._append_log(name, "meta", f"model:   {event['model']}")
                 if event.get("tools"):
                     self._append_log(name, "meta", f"tools:   {', '.join(event['tools'])}")
-                if event.get("fuel") is not None:
-                    self._append_log(name, "meta", f"fuel:    {event['fuel']}")
                 if event.get("config_hash"):
                     self._append_log(name, "meta", f"config:  {event['config_hash'][:6]}")
                 if event.get("prompt_hash"):
@@ -386,7 +389,6 @@ class LiveFrameEmitter:
                 duration = self.node_elapsed[rule_name]
 
             # Per-node accumulated metrics from oracle_done events
-            from husks.cli.residue import CliTrace
             trace = None
             node_ti = self.node_tokens_in.get(rule_name, 0)
             node_to = self.node_tokens_out.get(rule_name, 0)
@@ -450,7 +452,6 @@ class LiveFrameEmitter:
             return
         self._last_render = now
 
-        from husks.cli.surface import emit_residue
 
         residue = self._build_residue()
         frame = emit_residue(residue, verbose=False, log_lines=self.logs)
@@ -480,16 +481,19 @@ def collect_dry_residue(design: dict) -> CliResidue:
     rules = design.get("rules", [])
     rules_by_name = {r["name"]: r for r in rules}
 
-    # Build dependency map (rule -> inputs it depends on)
+    # Build dependency map (rule -> children it depends on)
     deps = {}
     for rule in rules:
+        rule_children = list(rule.get("children", []))
         rule_inputs = set(rule.get("inputs", []))
-        deps[rule["name"]] = []
-        # Find rules that produce these inputs
+        # Also find rules that produce these inputs (input/output overlap)
         for other in rules:
+            if other["name"] in rule_children:
+                continue
             other_outputs = set(other.get("outputs", []))
-            if rule_inputs & other_outputs:  # Intersection
-                deps[rule["name"]].append(other["name"])
+            if rule_inputs & other_outputs:
+                rule_children.append(other["name"])
+        deps[rule["name"]] = rule_children
 
     # Build nodes with children
     nodes = []
@@ -536,7 +540,6 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
 
     Beta 100: Adds cse_path, target, outputs with hashes, and trace info.
     """
-    from husks.cli.residue import map_trace_state, CliOutput, CliTrace
 
     rules = design.get("rules", [])
     rules_by_name = {r["name"]: r for r in rules}
@@ -700,7 +703,6 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
 
     # Beta 100: Extract oracle_calls from report for sealed runs
     oracle_calls = 0
-    from husks.report import assemble
     report_data = assemble(S, T, design)
     oracle_calls = report_data.get("oracle_calls", 0)
 
@@ -741,8 +743,6 @@ def _cmd_check(args, design):
 
     Silent on success unless --verbose or --json provided.
     """
-    from husks.cli.surface import emit_residue
-
     # Step 1: Validate design
     result = check_categorized(design)
     if not result["ok"]:
@@ -781,24 +781,21 @@ def _cmd_run(args, design):
         overrides["cache_reuse_only"] = True
 
     if not args.stub:
-        from husks.oracle.backend import run_oracle
         overrides["oracle_backend"] = run_oracle
         overrides["oracle_backend_name"] = getattr(args, "backend", "litellm")
         if overrides["oracle_backend_name"] == "litellm":
-            from husks.oracle import set_oracle_model
             set_oracle_model(args.model)
         overrides["oracle_model"] = args.model
 
     # Suppress old Console listener; attach LiveFrameEmitter for non-JSON runs
-    from husks.utils import trace as T_pre
-    T_pre.clear_listeners()
+    T.clear_listeners()
 
     live_emitter = None
     if not args.json_output and not getattr(args, 'quiet', False):
         live_emitter = LiveFrameEmitter(
             design, verbose=args.verbose, site=overrides.get("site"),
         )
-        T_pre.add_listener(live_emitter)
+        T.add_listener(live_emitter)
 
     # Beta Gate F/G: Catch setup/validation failures and emit JSON errors when --json specified
     try:
@@ -846,14 +843,12 @@ def _cmd_run(args, design):
         sys.exit(EXIT_BUILD_FAIL)
 
     # Build Report
-    from husks.utils import trace as T
 
     # Blocker #1: Handle sidecar JSON report (--report-json)
     report_json_path = getattr(args, 'report_json', None)
 
     # Write sidecar JSON report if requested
     if report_json_path:
-        from husks.report import assemble, render_json
         report = assemble(S, T, design)
         report_json = render_json(report)
         try:
@@ -864,7 +859,6 @@ def _cmd_run(args, design):
             sys.exit(EXIT_BUILD_FAIL)
 
     # Always write report into site for compare to find
-    from husks.report import assemble, render_json
     if report_json_path:
         # Report already assembled above for sidecar; reuse it
         site_report = report
@@ -882,7 +876,6 @@ def _cmd_run(args, design):
         print(report_json)
     else:
         # Visual output: use residue→surface→view
-        from husks.cli.surface import emit_residue
 
         # Overwrite live emitter's last frame with authoritative final frame
         if live_emitter and live_emitter.is_tty and live_emitter._last_frame_lines > 0:
@@ -901,7 +894,6 @@ def _cmd_run(args, design):
 
 def _cmd_verify(args):
     """Verify a .husk artifact in a site by recomputing its root hash."""
-    from husks.core import recompute_root
 
     site = Path(args.site)
     if not site.is_dir():

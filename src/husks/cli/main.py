@@ -3,9 +3,12 @@
 import argparse
 import sys
 
-from husks.designs.ir import from_json, from_locke
-
+from husks.design.locke import from_json, from_locke
+from husks.core import CSE_VERSION
+from husks.setup import init
+from husks.cli.surface import emit_help
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_INTERNAL, resolve_design
+from husks.cli.contract import _flag_str, _StyledHelpAction, _NO_VALUE_ACTIONS
 from husks.cli.cmd import (
     _cmd_check, _cmd_run, _cmd_verify, _cmd_status,
     _cmd_explain, _cmd_history, _cmd_doctor, _cmd_compare,
@@ -26,51 +29,7 @@ def _get_version() -> str:
         raise RuntimeError(f"failed to get package version: {e}") from e
 
 
-# -- Styled help rendering ---------------------------------------------------
-
-_NO_VALUE_ACTIONS = (
-    argparse._StoreTrueAction,
-    argparse._StoreFalseAction,
-    argparse._StoreConstAction,
-    argparse._CountAction,
-)
-
-
-def _flag_str(action):
-    """Build the left-column display string for an argparse action."""
-    if not action.option_strings:
-        return action.metavar or action.dest
-    parts = sorted(action.option_strings, key=len)
-    s = ", ".join(parts)
-    if isinstance(action, _NO_VALUE_ACTIONS):
-        return s
-    if action.metavar:
-        meta = action.metavar
-    elif action.choices:
-        meta = "{" + ",".join(str(c) for c in action.choices) + "}"
-    else:
-        meta = action.dest.upper()
-    return f"{s} {meta}"
-
-
-class _StyledHelpAction(argparse.Action):
-    """Custom -h/--help action that renders our branded subcommand help."""
-
-    def __init__(self, option_strings, dest=argparse.SUPPRESS,
-                 default=argparse.SUPPRESS, help=None):
-        super().__init__(option_strings=option_strings, dest=dest,
-                         default=default, nargs=0, help=help)
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        _print_subcommand_help(parser)
-        parser.exit()
-
-
-def _print_subcommand_help(parser):
-    """Render branded help for a subcommand parser."""
-    from husks.cli.surface import emit_subcommand_help
-    print(emit_subcommand_help(parser))
-
+# -- Styled help rendering (moved to cli.contract) --------------------------
 
 def _sub_parser(sub, name, parents=None, **kwargs):
     """Create a subparser with styled help instead of stock argparse help.
@@ -90,7 +49,6 @@ def _sub_parser(sub, name, parents=None, **kwargs):
 
 
 def _print_help(*, animate: bool = False) -> None:
-    from husks.cli.surface import emit_help
     ver = _get_version()
     result = emit_help(ver, animate=animate)
     if result is not None:
@@ -202,13 +160,13 @@ def main():
 
     # history
     h = _sub_parser(sub, "history", parents=[common_parser], help="Show convergence across runs")
-    h.add_argument("design", nargs="?", default=None,
-                   help="Path to design file (.locke or .json). Defaults to design.locke.")
+    h.add_argument("site", help="Site directory path")
     h.add_argument("rule", nargs="?", default=None,
                    help="Rule name (omit for summary of all rules)")
-    h.add_argument("--site", help="Override site directory")
     h.add_argument("-n", type=int, default=5,
                    help="Number of recent entries to show (default: 5)")
+    h.add_argument("--json", action="store_true", dest="json_output",
+                   help="Output as JSON")
 
     # doctor
     doc = _sub_parser(sub, "doctor", parents=[common_parser], help="Diagnose the local environment")
@@ -220,6 +178,8 @@ def main():
                      help="Run external reader conformance gate")
     doc.add_argument("--live", action="store_true",
                      help="Check live oracle readiness (API key, litellm, oracle ping, dev tools)")
+    doc.add_argument("--arch", action="store_true",
+                     help="Check architecture conformance (module dependency DAG)")
     doc.add_argument("--reader", dest="reader_cmd", default=None,
                      help='Reader command for --conformance, e.g. "python my_reader.py"')
     doc.add_argument("--stamp-dir", default=None,
@@ -285,7 +245,6 @@ def main():
 
         # C40: Support --version-json for machine-readable version info
         if args.version_json:
-            from husks.core import CSE_VERSION
             import json
             version_info = {
                 "husks_version": version,
@@ -318,13 +277,17 @@ def main():
 
     # ── init ──────────────────────────────────────────────────
     if args.cmd == "init":
-        from husks.setup import init
         verbose = getattr(args, 'verbose', False)
         sys.exit(init(args.target, template=args.template, claude_code=True, force=args.force, verbose=verbose))
 
     # ── status (may or may not need a design) ────────────────
     if args.cmd == "status":
         _cmd_status(args)
+        return
+
+    # ── history (site-based) ──────────────────────────────────
+    if args.cmd == "history":
+        _cmd_history(args)
         return
 
     # ── explain (multiple modes) ─────────────────────────────
@@ -387,9 +350,6 @@ def main():
             design_name = design.get("name", "unnamed")
             args.site = f"/tmp/husks-{design_name}"
         _cmd_run(args, design)
-
-    elif args.cmd == "history":
-        _cmd_history(args, design)
 
 
 def _cli_entry():

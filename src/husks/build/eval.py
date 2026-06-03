@@ -20,7 +20,9 @@ from husks.build.site import (
     Stop, site_path, write_text, file_exists, read_text,
     fresh_store, burn, file_sig,
 )
-from husks.build.identity import _pred_identity, recipe_to_cse, VERDICT_POLICIES
+from husks.build.identity import _pred_identity, recipe_to_cse
+from husks.build.policies import first_valid, VERDICT_POLICIES, DEFAULT_VERDICT
+from husks.build.cache import cache_put_pending, cache_get
 from husks.build.seal import (
     compute_cse_seal, output_hashes, freshness_check, write_seal,
     append_history, history_file, ensure_dir, write_trial_report,
@@ -366,7 +368,6 @@ def eval_rule(S: Store, node: Node) -> None:
             recipe.get("type") == "oracle" and
             not S.get("cache-disabled") and
             usage and not usage.get("cached")):
-            from husks.build.cache import cache_put_pending
             try:
                 output_contents = {o: read_text(site_path(S, o)) for o in outputs}
                 cache_put_pending(S, recipe, inputs, output_contents)
@@ -516,7 +517,7 @@ def default_oracle_backend(
                 "tokens_in": 840,
                 "tokens_out": 320,
                 "cost_usd": 0.0008,
-                "fuel_steps": 10,
+                "fuel_steps": fuel,
                 "backend": "stub",
                 "model": "stub",
                 "config_hash": config_hash,
@@ -560,8 +561,6 @@ def eval_oracle(
     outputs: list[str],
 ) -> dict[str, Any]:
     """Evaluate an oracle recipe.  Returns usage dict."""
-    from husks.build.cache import cache_get
-
     oname: str = recipe.get("name") or "oracle"
     T.oracle_start(rule_name, oname, recipe.get("prompt"))
     t0 = time.time()
@@ -657,25 +656,6 @@ def eval_oracle(
 
 # ── Trial evaluation ──────────────────────────────────────────────
 
-def first_valid(results: list[dict[str, Any]]) -> dict[str, Any]:
-    """Default verdict function: pick the first branch without an error."""
-    valid = [r for r in results if "error" not in r]
-    if not valid:
-        raise ValueError("trial: all branches failed")
-    if len(valid) > 1:
-        rname = valid[0].get("name", "?")
-        T.trial_note(
-            rname,
-            f"first-valid: chose {valid[0]['name']} among {len(valid)} viable branches",
-        )
-    scores = {r["name"]: r.get("score", 1.0) for r in valid}
-    return {"winner": valid[0], "scores": scores}
-
-
-# Populate the registry now that first_valid is defined.
-VERDICT_POLICIES["first-valid"] = first_valid
-
-
 def eval_trial(
     S: Store,
     rule_name: str,
@@ -755,6 +735,16 @@ def eval_trial(
     else:
         winner = vresult
         scores = None
+
+    # Log if first-valid had to choose among multiple viable branches
+    if verdict_fn is first_valid or verdict_fn is DEFAULT_VERDICT:
+        valid = [r for r in results if "error" not in r]
+        if len(valid) > 1:
+            wname = winner["name"]
+            T.trial_note(
+                wname,
+                f"first-valid: chose {wname} among {len(valid)} viable branches",
+            )
 
     # Report branches with scores
     for r in results:

@@ -7,11 +7,18 @@
 
 import os
 import sys
+import json
+import textwrap
+import shutil
 from pathlib import Path
 
 from husks.core import recompute_root
 from husks.resources import skill_dir as _skill_dir
 from husks.resources import skill_is_packaged
+from husks.resources import templates_dir
+from husks.gate import selftest, _resolve_conformance
+from husks.utils.console import BOLD, DIM, CYAN, RESET
+from husks.cli.surface import emit_init
 
 
 # ── the canonical stance, versioned with the engine ─────────────────────
@@ -69,107 +76,10 @@ so the tests check the spec, not whatever the implementation happened to do.
 """
 
 
-# ── conformance resolution ─────────────────────────────────────────────
-def _resolve_conformance(override=None) -> Path:
-    """Resolve the conformance vector directory via fallback chain.
-
-    1. Explicit override (from --conformance flag)
-    2. HUSKS_CONFORMANCE_DIR env var
-    3. husks_conformance.conformance_dir() (if installed)
-    4. spec/conformance relative to repo root
-    5. Error
-    """
-    # 1. Explicit argument
-    if override is not None:
-        p = Path(override).resolve()
-        if p.exists():
-            return p
-        raise FileNotFoundError(f"Conformance directory not found: {p}")
-
-    # 2. Environment variable
-    env = os.environ.get("HUSKS_CONFORMANCE_DIR")
-    if env:
-        p = Path(env).resolve()
-        if p.exists():
-            return p
-        raise FileNotFoundError(
-            f"HUSKS_CONFORMANCE_DIR points to nonexistent path: {p}"
-        )
-
-    # 3. husks_conformance package
-    try:
-        from husks_conformance import conformance_dir
-        return conformance_dir()
-    except (ImportError, FileNotFoundError):
-        pass
-
-    # 3.5. Bundled in wheel (force-included by pyproject.toml)
-    _PKG = Path(__file__).resolve().parent
-    bundled = _PKG / "_resources" / "conformance"
-    if bundled.exists():
-        return bundled
-
-    # 4. Repo-relative fallback
-    repo = Path(__file__).resolve().parent.parents[1]  # src/husks -> src -> repo
-    candidate = repo / "spec" / "conformance"
-    if candidate.exists():
-        return candidate
-
-    raise FileNotFoundError(
-        "Conformance vectors not found. Install husks-conformance, "
-        "set HUSKS_CONFORMANCE_DIR, or pass --conformance."
-    )
-
-
-# ── selftest ────────────────────────────────────────────────────────────
-def selftest(verbose=True, conformance=None):
-    """Recompute the frozen conformance roots. Returns True iff all match."""
-    try:
-        conf = _resolve_conformance(conformance)
-    except FileNotFoundError as e:
-        print(f"  error: {e}", file=sys.stderr)
-        return False
-
-    vectors = sorted(p.stem for p in conf.glob("*.husk"))
-    if not vectors:
-        print(f"  error: no .husk vectors in {conf}", file=sys.stderr)
-        return False
-
-    all_ok = True
-    for name in vectors:
-        husk = (conf / f"{name}.husk").read_bytes()
-        root_file = conf / f"{name}.root"
-
-        if root_file.exists():
-            # positive vector: reader must reproduce the frozen root
-            want = root_file.read_text().strip()
-            site = str(conf / f"{name}.site")
-            try:
-                got = recompute_root(husk, site)
-                ok, detail = (got == want), got[:16] + "..."
-            except Exception as e:  # noqa: BLE001
-                ok, detail = False, f"error: {e}"
-        else:
-            # negative vector: reader must REJECT malformed input
-            try:
-                got = recompute_root(husk, str(conf))
-                ok, detail = False, f"accepted ({got[:16]}...)"  # accepting is failure
-            except Exception:  # noqa: BLE001
-                ok, detail = True, "correctly rejected"
-
-        all_ok &= ok
-        if verbose:
-            print(f"  {name:<26s} {'PASS' if ok else 'FAIL'}  {detail}")
-    return all_ok
-
-
 # ── template scaffolding ──────────────────────────────────────────────
-import json
-import textwrap
 
 def _load_template_file(filename: str) -> str:
     """Load a template file from examples/templates/."""
-    from husks.resources import templates_dir
     template_file = templates_dir() / filename
     return template_file.read_text()
 
@@ -251,7 +161,6 @@ def _copy_spec_files(target: Path, verbose: bool = False) -> bool:
         return True
 
     # Copy the actual spec files
-    import shutil
     (target / "spec").mkdir(parents=True, exist_ok=True)
     for fname in ["CSE-v1.md", "CSE-v2.md"]:
         src = spec_dir / fname
@@ -342,8 +251,6 @@ def init(target=".", template="core-bootstrap", claude_code=True, force=False, v
     Default: silent on success (prints nothing except errors).
     With --verbose: shows hydration-style tree and next-steps footer.
     """
-    from husks.utils.console import BOLD, DIM, CYAN, RESET
-
     target = Path(target).resolve()
     target.mkdir(parents=True, exist_ok=True)
 
@@ -398,12 +305,10 @@ def init(target=".", template="core-bootstrap", claude_code=True, force=False, v
                 if link.is_symlink() or link.is_file():
                     link.unlink()
                 else:
-                    import shutil
                     shutil.rmtree(link)
             else:
                 link = None
         if link is not None:
-            import shutil
             if skill_is_packaged():
                 shutil.copytree(skill_src, link)
             else:
@@ -432,5 +337,4 @@ def _print_init_output(
     verbose: bool = True,
 ) -> None:
     """Render init output using the three-section architecture."""
-    from husks.cli.surface import emit_init
     print(emit_init(steps, design_file, target, verbose=verbose))
