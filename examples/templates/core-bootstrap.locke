@@ -1,0 +1,35 @@
+# core-bootstrap.locke -- Husks bootstrap design in Locke surface syntax.
+#
+# Equivalent to core-bootstrap.json.  Compiles to the same CSE bytes.
+#
+# Two operators:
+#   :=  realization — value on left, label on right (deterministic)
+#   :-  composition — name on left, kind + block on right (sub-rules)
+#
+# Atoms are file references.  Strings are inline data.
+
+"core-bootstrap"  :=  public
+20                :=  fuel
+
+["CSE-v1.md"    "spec/CSE-v1.md"
+ "CSE-v2.md"    "spec/CSE-v2.md"]  :=  site-inputs
+
+[0.5 2.0]  :=  cost-tolerance
+
+# Target rule — := marks validate as the build target.
+# Its dependency (generate) is nested inside.
+
+validate := action [
+  [readers/generated_reader.py]   := inputs
+  [readers/gate-report.txt]       := free
+  [readers/VERIFIED]              := exact
+  "python3 -m husks.gate 'python3 readers/generated_reader.py' --stamp-dir readers"  := run
+
+  generate :- oracle [
+    [CSE-v1.md CSE-v2.md]           := inputs
+    [readers/generated_reader.py]   := free
+    prompts/generate-reader.txt     := prompt
+    [read-file write-file]          := tools
+    15                              := fuel
+  ]
+]

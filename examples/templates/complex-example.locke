@@ -1,0 +1,99 @@
+# complex-example.locke -- Parser pipeline with trial, cond, and nesting.
+#
+# Demonstrates every Locke construct:
+#   :=  realization (value := label) — deterministic, concrete
+#   :-  composition (name :- kind [...]) — sub-rules, tree structure
+#
+# The tree is expressed by nesting.  The target rule (package) is at the
+# top; its transitive dependencies are defined inside it.  Reading
+# top-down traces the build DAG from root to leaves.
+#
+# Atoms (bare words) are file references.  Strings are inline data.
+
+"parser-pipeline"  :=  public
+30                 :=  fuel
+
+# Site inputs map local names to source paths outside the build.
+["grammar.ebnf"   "spec/grammar.ebnf"
+ "test-suite.txt" "spec/test-suite.txt"]  :=  site-inputs
+
+[0.5 2.0]  :=  cost-tolerance
+
+# ── Target: conditionally benchmark, then package ────────────
+#
+# := on a rule marks it as the build target.  Everything it needs
+# is nested inside its block.
+
+package := action [
+  [parser/generated.py parser/VERIFIED]  := inputs
+  [dist/parser.whl]                      := exact
+  "python3 -m build --wheel -o dist/"    := run
+
+  # ── Conditional benchmark ────────────────────────────────
+  #
+  # cond checks a built-in predicate against the site.
+  # If the benchmark config exists, run the benchmark.
+  # Otherwise skip with a commit.
+
+  maybe-bench :- cond [
+    "file-exists:bench/config.json"  := predicate
+    benchmark                        := then
+    skip-bench                       := else
+  ]
+
+  benchmark :- action [
+    [parser/generated.py parser/VERIFIED]  := inputs
+    [bench/results.json]                   := free
+    "python3 bench/run.py"                 := run
+  ]
+
+  skip-bench :- commit [
+    "benchmark-skipped"  := value
+  ]
+
+  # ── Validate the generated parser ──────────────────────────
+  #
+  # Runs the test suite against the generated parser.  Produces
+  # a free-form report and an exact verification stamp.
+
+  validate :- action [
+    [parser/generated.py test-suite.txt]  := inputs
+    [parser/report.txt]                   := free
+    [parser/VERIFIED]                     := exact
+    "python3 -m pytest parser/generated.py --tb=short"  := run
+
+    # ── Trial: oracle attempt pinned against deterministic ───
+    #
+    # trial lists its branches as sub-rules.  The runtime tries
+    # each and picks the first that satisfies the parent's
+    # output contract.  Here: copy the skeleton (deterministic
+    # fallback) or ask an oracle to write the parser.
+
+    generate :- trial [
+      [grammar.ebnf test-suite.txt parser/skeleton.py]  := inputs
+      [parser/generated.py]                              := outputs
+
+      # Branch 1: deterministic fallback — just copy the skeleton
+      fallback :- action [
+        "cp parser/skeleton.py parser/generated.py"  := run
+      ]
+
+      # Branch 2: oracle writes a full parser from the spec
+      attempt :- oracle [
+        "Read grammar.ebnf and the skeleton. Write a complete parser."  := prompt
+        [read-file write-file]  := tools
+        10                      := fuel
+      ]
+    ]
+
+    # ── Scaffold: generate the skeleton from the grammar ─────
+    #
+    # Pure deterministic leaf.  No oracle, no branching.
+
+    scaffold :- action [
+      [grammar.ebnf]            := inputs
+      [parser/skeleton.py]      := outputs
+      "python3 tools/scaffold.py grammar.ebnf parser/skeleton.py"  := run
+    ]
+  ]
+]

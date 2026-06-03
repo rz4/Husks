@@ -839,7 +839,13 @@ def run(design: Design, **overrides: Any) -> dict[str, Any]:
     # Pass design source metadata for the build manifest
     if design.get("_source_path"):
         kwargs["design_source"] = design["_source_path"]
-        kwargs["design_kind"] = "json"
+        source_path = design["_source_path"]
+        if source_path.endswith(".locke"):
+            kwargs["design_kind"] = "locke"
+        elif source_path.endswith(".hy"):
+            kwargs["design_kind"] = "hy"
+        else:
+            kwargs["design_kind"] = "json"
 
     # Beta Gate A1/A2: Normalize site_inputs against design source path
     # Only normalize if design has a source path (loaded from file via CLI).
@@ -872,6 +878,12 @@ def from_json(path: str | Path) -> Design:
         design = json.load(f)
     design["_source_path"] = str(Path(path).resolve())
     return design
+
+
+def from_locke(path: str | Path) -> Design:
+    """Load a design from a ``.locke`` file."""
+    from husks.locke import from_file
+    return from_file(str(path))
 
 
 def normalize_site_inputs(

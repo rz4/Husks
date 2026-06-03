@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from husks.designs.ir import from_json
+from husks.designs.ir import from_json, from_locke
 
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_INTERNAL, resolve_design
 from husks.cli.cmd import (
@@ -134,7 +134,7 @@ def main():
     # check
     c = _sub_parser(sub, "check", help="Validate a design")
     c.add_argument("design", nargs="?", default=None,
-                   help="Path to design file (.json or .hy). Defaults to design.json.")
+                   help="Path to design file (.json, .locke, or .hy). Defaults to design.json.")
     # C25: Use mutually exclusive group for --verbose and --json
     c_output = c.add_mutually_exclusive_group()
     c_output.add_argument("--verbose", "-v", action="store_true",
@@ -145,7 +145,7 @@ def main():
     # run
     r = _sub_parser(sub, "run", help="Execute a design into a site")
     r.add_argument("design", nargs="?", default=None,
-                   help="Path to design file (.json or .hy). Defaults to design.json.")
+                   help="Path to design file (.json, .locke, or .hy). Defaults to design.json.")
     r.add_argument("--site", help="Site directory (default: /tmp/husks-<design-name>)")
     r.add_argument("--model", help="LLM model for oracle rules",
                    default="anthropic/claude-haiku-4-5-20251001")
@@ -205,7 +205,7 @@ def main():
     # history
     h = _sub_parser(sub, "history", parents=[common_parser], help="Show convergence across runs")
     h.add_argument("design", nargs="?", default=None,
-                   help="Path to design file (.json or .hy). Defaults to design.json.")
+                   help="Path to design file (.json, .locke, or .hy). Defaults to design.json.")
     h.add_argument("rule", nargs="?", default=None,
                    help="Rule name (omit for summary of all rules)")
     h.add_argument("--site", help="Override site directory")
@@ -360,6 +360,7 @@ def main():
     design_path = resolve_design(args)
     args.design = design_path
     is_hy = design_path.endswith(".hy")
+    is_locke = design_path.endswith(".locke")
 
     if args.cmd == "run" and is_hy:
         _cmd_run_hy(args)
@@ -372,7 +373,7 @@ def main():
 
     # Beta Gate F/G: Catch design loading errors and emit JSON when --json specified
     try:
-        design = from_json(design_path)
+        design = from_locke(design_path) if is_locke else from_json(design_path)
     except Exception as e:
         json_mode = getattr(args, 'json_output', False)
         if json_mode:

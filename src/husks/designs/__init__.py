@@ -20,7 +20,7 @@ build runtime.  Three sub-modules:
                     prompt-loading, volatile).
 """
 
-from husks.designs.ir import check, show, compile, run, from_json, to_json
+from husks.designs.ir import check, show, compile, run, from_json, from_locke, to_json
 from husks.designs.convergence import convergence_summary, declared_vs_traced
 
 try:
@@ -36,6 +36,7 @@ __all__ = [
     "compile",
     "run",
     "from_json",
+    "from_locke",
     "to_json",
     "convergence_summary",
     "declared_vs_traced",

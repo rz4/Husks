@@ -76,12 +76,14 @@ _STATE_SYM = {"fresh": "\u2713", "stale": "\u25b8", "missing": "\u2717",
 # ── CLI helpers ───────────────────────────────────────────────────
 
 def resolve_design(args) -> str:
-    """Return design path from args or default to design.json."""
+    """Return design path from args or default to design.json / design.locke."""
     d = getattr(args, "design", None)
     if d:
         return d
     if Path("design.json").exists():
         return "design.json"
+    if Path("design.locke").exists():
+        return "design.locke"
     print("error: no design file specified and design.json not found", file=sys.stderr)
     sys.exit(EXIT_USAGE)
 
