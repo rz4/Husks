@@ -13,7 +13,15 @@ from __future__ import annotations
 
 import json
 import time
+from collections import deque
 from typing import Any, Protocol, runtime_checkable
+
+
+# Per-rule bound on streamed action output lines retained for the final
+# frame / report.  Live listeners keep their own (smaller) tail window.
+# Beyond this, lines are counted but not stored, so a runaway command
+# cannot grow the trace without bound.
+ACTION_TAIL_MAX = 200
 
 
 # -- Listener protocol -------------------------------------------------------
@@ -51,6 +59,7 @@ class BuildTrace:
         "_node_events", "_oracle_events", "_tool_events",
         "_tool_timers",
         "_artifacts",
+        "_action_tail", "_action_counts",
     )
 
     def __init__(self) -> None:
@@ -68,6 +77,10 @@ class BuildTrace:
         self._tool_events: list[tuple[str, str, str, str | None, dict]] = []
         self._tool_timers: dict[str, float] = {}
         self._artifacts: dict[str, dict[str, str]] = {}
+        # Bounded tail of streamed action output, keyed by rule name.
+        # Each entry is (stream, line) with stream in {"stdout", "stderr"}.
+        self._action_tail: dict[str, deque[tuple[str, str]]] = {}
+        self._action_counts: dict[str, int] = {}
 
     # -- Listener management --------------------------------------------------
 
@@ -102,6 +115,8 @@ class BuildTrace:
         self._tool_events.clear()
         self._tool_timers.clear()
         self._artifacts.clear()
+        self._action_tail.clear()
+        self._action_counts.clear()
 
     # -- Internal -------------------------------------------------------------
 
@@ -226,6 +241,50 @@ class BuildTrace:
             "elapsed": el,
         })
 
+    # -- Action output (streamed) --------------------------------------------
+
+    def action_output(self, rule_name: str, stream: str, line: str) -> None:
+        """Record a single line of streamed action stdout/stderr.
+
+        *stream* is ``"stdout"`` or ``"stderr"``.  Lines are broadcast to
+        listeners live and retained in a bounded per-rule tail (capped at
+        :data:`ACTION_TAIL_MAX`) so the final frame and report can show a
+        digestible remnant without holding the whole stream.
+
+        The raw line is *not* appended to the JSONL event log; only the
+        notification carries it.  This keeps the persisted event stream
+        bounded regardless of how chatty a command is.
+        """
+        line = line.rstrip("\n")
+        count = self._action_counts.get(rule_name, 0) + 1
+        self._action_counts[rule_name] = count
+
+        tail = self._action_tail.get(rule_name)
+        if tail is None:
+            tail = deque(maxlen=ACTION_TAIL_MAX)
+            self._action_tail[rule_name] = tail
+        tail.append((stream, line))
+
+        # Broadcast to live listeners without persisting the raw line.
+        ev = {
+            "event": "action_output",
+            "rule": rule_name,
+            "stream": stream,
+            "line": line,
+            "seq": count,
+        }
+        for listener in self._listeners:
+            listener.notify(ev)
+
+    def action_tail(self, rule_name: str) -> list[tuple[str, str]]:
+        """Return the retained tail of streamed output for *rule_name*."""
+        tail = self._action_tail.get(rule_name)
+        return list(tail) if tail else []
+
+    def action_line_count(self, rule_name: str) -> int:
+        """Return the total number of output lines streamed for *rule_name*."""
+        return self._action_counts.get(rule_name, 0)
+
     # -- Oracle events --------------------------------------------------------
 
     def oracle_start(
@@ -240,7 +299,7 @@ class BuildTrace:
             "event": "oracle_start",
             "rule": rule_name,
             "oracle": label,
-            "prompt_preview": prompt[:50] if prompt else None,
+            "prompt_preview": prompt[:200] if prompt else None,
         })
 
     def oracle_done(
@@ -251,13 +310,20 @@ class BuildTrace:
         tokens_out: int = 0,
         cost_usd: float = 0.0,
         elapsed: float = 0.0,
+        fuel_steps: int = 1,
+        backend: str | None = None,
+        model: str | None = None,
+        config_hash: str | None = None,
+        prompt_hash: str | None = None,
+        tools: list[str] | None = None,
+        fuel: int | None = None,
     ) -> None:
         """Record the completion of an oracle invocation."""
         label = oracle_name or "oracle"
         self._oracle_events.append(
             (rule_name, label, tokens_in, tokens_out, cost_usd, elapsed)
         )
-        self._emit({
+        ev: dict[str, Any] = {
             "event": "oracle_done",
             "rule": rule_name,
             "oracle": label,
@@ -265,6 +331,42 @@ class BuildTrace:
             "tokens_out": tokens_out,
             "cost_usd": cost_usd,
             "elapsed": elapsed,
+            "fuel_steps": fuel_steps,
+        }
+        if backend:
+            ev["backend"] = backend
+        if model:
+            ev["model"] = model
+        if config_hash:
+            ev["config_hash"] = config_hash
+        if prompt_hash:
+            ev["prompt_hash"] = prompt_hash
+        if tools:
+            ev["tools"] = tools
+        if fuel is not None:
+            ev["fuel"] = fuel
+        self._emit(ev)
+
+    def oracle_step(
+        self,
+        rule_name: str,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        cost_usd: float = 0.0,
+        fuel_step: int = 1,
+    ) -> None:
+        """Record an incremental oracle API step (one fuel burn).
+
+        Emitted after each API round-trip within an oracle so the live
+        frame can update per-node and footer metrics in real time.
+        """
+        self._emit({
+            "event": "oracle_step",
+            "rule": rule_name,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cost_usd": cost_usd,
+            "fuel_step": fuel_step,
         })
 
     # -- Tool events ----------------------------------------------------------

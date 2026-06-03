@@ -196,7 +196,7 @@ def test_beta100_status_command(tmp_path):
     assert status_j.returncode == 0
     status_data = json.loads(status_j.stdout)
     assert status_data["name"] == "core-bootstrap"
-    assert status_data["state"] == "sealed"
+    assert status_data["status"] == "sealed"
     assert "root" in status_data
     assert "husk" in status_data
 

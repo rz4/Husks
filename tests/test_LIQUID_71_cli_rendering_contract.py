@@ -102,8 +102,8 @@ def test_check_verbose_dry(core_bootstrap_design):
     assert "oracle" in output
     assert "⚡10" in output
 
-    # Footer
-    assert "passes: checks" in output
+    # Footer: check shows "dry" (ready but not hydrated)
+    assert "dry" in output
 
     # Must NOT have old-style kind glyphs (◆ may appear in sealed/cached art)
     assert "▫" not in output
@@ -180,8 +180,8 @@ def test_run_sealed(core_bootstrap_design):
     assert "●" not in output  # Old trace bullet
     assert "════" not in output  # Old report box
 
-    # Footer shows passes
-    assert "passes:" in output or "fails:" in output
+    # Footer shows state summary
+    assert "committed" in output or "halt" in output
 
 
 def test_run_cached(core_bootstrap_design):
@@ -349,13 +349,11 @@ def test_golden_dry_check_exact(core_bootstrap_design):
     assert "□ generate" in output
     assert "oracle" in output
     assert "⚡10" in output
-    assert "passes: checks" in output
+    assert "dry" in output
 
     # Anti-patterns: must NOT contain these
     assert "FINAL STATE" not in output
     assert "════" not in output
-    assert "committed" not in output
-    assert "halted" not in output
 
 
 @pytest.mark.beta
@@ -422,8 +420,8 @@ def test_golden_final_m2_cached(core_bootstrap_design):
     assert "⚡0" in output, "M2 should show ⚡0 fuel"
     assert "$0.0000" in output, "M2 should show $0.0000 cost"
 
-    # Footer should indicate cache success
-    assert "passes: run, cache" in output or ("passes: run" in output and "cache" in output)
+    # Footer should indicate committed state
+    assert "committed" in output
 
 
 @pytest.mark.beta

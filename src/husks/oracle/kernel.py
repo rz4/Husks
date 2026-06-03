@@ -184,7 +184,11 @@ def _build_messages(C: dict[str, Any]) -> list[dict[str, Any]]:
 # ── LLM invocation ────────────────────────────────────────────────
 
 def invoke_llm(C: dict[str, Any]) -> dict[str, Any]:
-    """Call the LLM with the current context and return a parsed response."""
+    """Call the LLM with the current context and return a parsed response.
+
+    Emits an ``oracle_step`` trace event after each call so the live
+    frame can update token counts and cost in real time.
+    """
     msgs = _build_messages(C)
     tool_schemas = C.get("tool-defs", [])
     kwargs: dict[str, Any] = {
@@ -203,6 +207,18 @@ def invoke_llm(C: dict[str, Any]) -> dict[str, Any]:
     if tool_schemas:
         kwargs["tools"] = tool_schemas
     r = llm.call_messages(msgs, **kwargs)
+
+    # Emit per-step usage so the live frame updates tokens/cost in
+    # real time rather than waiting for oracle_done.
+    rule_name = C.get("rule", "agent")
+    step_meta = llm.meta(r)
+    T.oracle_step(
+        rule_name,
+        tokens_in=step_meta.get("input_tokens", 0),
+        tokens_out=step_meta.get("output_tokens", 0),
+        cost_usd=step_meta.get("cost_usd", 0.0),
+    )
+
     return parse_response(r)
 
 

@@ -128,7 +128,7 @@ def test_shared_vocabulary():
         status_result = run_husks_cli("status", ".husk", "--json", cwd=tmpdir)
         status_data = json.loads(status_result.stdout)
         assert "name" in status_data, "status missing name"
-        assert "state" in status_data, "status missing state"
+        assert "status" in status_data, "status missing status"
 
 
 def test_cache_evidence():

@@ -513,11 +513,9 @@ def test_explain_navigator_aperture_3_trace():
 
         assert result.returncode == 0
         assert "aperture:3" in result.stdout
-        # Aperture 3 should show trace section with cost
-        assert "trace:" in result.stdout, \
-            "Aperture 3 should show trace section"
-        assert "cost:" in result.stdout, \
-            "Aperture 3 should show cost"
+        # Aperture 3 shows flat provenance: recipe digest and oracle model info
+        assert "recipe:" in result.stdout, \
+            "Aperture 3 should show recipe provenance"
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

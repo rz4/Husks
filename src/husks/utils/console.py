@@ -81,6 +81,20 @@ _DIAMOND = {
         f"    {RED}\u2572 \u2571{RESET}",
         f"     {RED}\u25c6{RESET}",
     ],
+    "disconnected": [
+        f"     {DIM}\u2b20{RESET}",
+        f"    {DIM}\u2571\u00b7\u2572{RESET}",
+        f"   {DIM}\u25c6 \u00b7 \u25c6{RESET}",
+        f"    {DIM}\u2572\u00b7\u2571{RESET}",
+        f"     {DIM}\u25c6{RESET}",
+    ],
+    "white": [
+        f"     {BOLD}\u25c6{RESET}",
+        f"    {BOLD}\u2571 \u2572{RESET}",
+        f"   {BOLD}\u25c6 \u25c6 \u25c6{RESET}",
+        f"    {BOLD}\u2572 \u2571{RESET}",
+        f"     {BOLD}\u25c6{RESET}",
+    ],
 }
 
 _DIAMOND_VIS = [6, 7, 8, 7, 6]

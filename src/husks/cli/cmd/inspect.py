@@ -54,8 +54,12 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
         if history:
             last_run = history[-1]
             was_cached = last_run.get("cached", False)
-            # Phase 3: Extract trace metadata from history
-            trace_metadata = last_run
+            # Build cumulative trace metadata across all runs
+            trace_metadata = dict(last_run)  # start from last run for non-numeric fields
+            trace_metadata["tokens_in"] = sum(r.get("tokens_in", 0) or 0 for r in history)
+            trace_metadata["tokens_out"] = sum(r.get("tokens_out", 0) or 0 for r in history)
+            trace_metadata["cost_usd"] = sum(r.get("cost_usd", 0.0) or 0.0 for r in history)
+            trace_metadata["elapsed_s"] = sum(r.get("elapsed_s", 0.0) or 0.0 for r in history)
 
         # Map manifest state to CLI state
         # If fresh and was cached in last run, show as cached instead of sealed
@@ -107,12 +111,26 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
                 cache_source="local" if was_cached else None,
             )
 
+        # Extract duration and fuel from trace metadata for footer aggregation
+        duration = None
+        fuel = None
+        if trace_metadata:
+            elapsed = trace_metadata.get("elapsed_s")
+            if elapsed is not None:
+                duration = elapsed
+            fuel_consumed = trace_metadata.get("fuel_consumed")
+            if fuel_consumed is not None:
+                fuel = fuel_consumed
+
         node = CliNode(
             name=rs["name"],
             kind=rule.get("kind", "action"),
             state=state,
             children=deps.get(rs["name"], []),
             fuel_budget=rule.get("fuel"),
+            fuel=fuel,
+            duration=duration,
+            cost=trace.cost_usd if trace else None,
             stale_reason=rs.get("reason"),
             outputs=outputs,
             seal_digest=seal_digest,
@@ -149,6 +167,22 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
         with open(husk_path, 'rb') as f:
             husk_hash = hashlib.sha256(f.read()).hexdigest()
 
+    # Aggregate cumulative execution totals across ALL runs from history
+    total_cost = 0.0
+    total_fuel_used = 0
+    run_count = 0
+    for rule in rules:
+        rule_name = rule["name"]
+        all_runs = read_history(site, rule_name)
+        run_count = max(run_count, len(all_runs))
+        for run in all_runs:
+            total_cost += run.get("cost_usd", 0.0) or 0.0
+            fc = run.get("fuel_consumed")
+            if fc is not None:
+                total_fuel_used += fc
+
+    fuel_budget = manifest.get("fuel", 0)
+
     return CliResidue(
         command="status",
         design_name=design_name,
@@ -158,6 +192,10 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
         root=manifest.get("root"),
         husk_hash=husk_hash,
         target=target_name,
+        fuel_budget=fuel_budget,
+        fuel_used=total_fuel_used,
+        run_count=run_count,
+        cost=total_cost,
         nodes=nodes,
         passes=passes,
         fails=fails,
@@ -169,12 +207,11 @@ def collect_site_residue(manifest: dict, site: str) -> CliResidue:
 def _cmd_status(args):
     """Status command - show site state summary.
 
-    Hardened: Takes site as positional arg. Shows name, state, husk hash,
-    root hash, and site location. With --verbose, shows full DAG.
+    Hardened: Takes site as positional arg. Always shows diamond logo
+    with metadata. With --verbose, also shows full DAG tree.
     """
     from husks.manifest import read_manifest, compute_artifact_states
     from husks.cli.surface import emit_residue
-    from husks.utils.console import BOLD, DIM, CYAN, YELLOW, RED, RESET
 
     site = args.site
 
@@ -188,59 +225,15 @@ def _cmd_status(args):
         print(f"error: failed to read manifest from {site}: {e}", file=sys.stderr)
         sys.exit(EXIT_USAGE)
 
-    # Step 2: If --verbose, show full DAG
-    if args.verbose:
-        residue = collect_site_residue(manifest, site)
-        output = emit_residue(residue, json_mode=args.json_output, verbose=True)
+    # Step 2: Always collect residue (for logo + footer in both modes)
+    residue = collect_site_residue(manifest, site)
+
+    if args.json_output:
+        output = emit_residue(residue, json_mode=True, verbose=args.verbose)
         print(output)
     else:
-        # Step 3: Show summary only
-        name = manifest.get("name", "unknown")
-        root = manifest.get("root")
-
-        # Compute husk hash (SHA256 of the .husk file)
-        import hashlib
-        import os
-        husk_hash = None
-        husk_path = os.path.join(site, f"{name}.husk")
-        if os.path.isfile(husk_path):
-            with open(husk_path, 'rb') as f:
-                husk_hash = hashlib.sha256(f.read()).hexdigest()
-
-        # Determine state from manifest status field
-        manifest_status = manifest.get("status", "unknown")
-        if manifest_status == "committed":
-            state = f"{YELLOW}sealed{RESET}"
-            state_label = "sealed"
-        elif manifest_status == "halted":
-            state = f"{RED}failed{RESET}"
-            state_label = "failed"
-        elif root:
-            # Legacy manifests without status field
-            state = f"{YELLOW}sealed{RESET}"
-            state_label = "sealed"
-        else:
-            state = f"{DIM}dry{RESET}"
-            state_label = "dry"
-
-        if args.json_output:
-            print(json.dumps({
-                "name": name,
-                "state": state_label,
-                "husk": husk_hash,
-                "root": root,
-                "site": site,
-            }, indent=2))
-        else:
-            print()
-            print(f"  {BOLD}name{RESET}:  {name}")
-            print(f"  {BOLD}state{RESET}: {state}")
-            if husk_hash:
-                print(f"  {BOLD}husk{RESET}:  sha256:{husk_hash}")
-            if root:
-                print(f"  {BOLD}root{RESET}:  sha256:{root}")
-            print(f"  {BOLD}site{RESET}:  {site}")
-            print()
+        output = emit_residue(residue, json_mode=False, verbose=args.verbose)
+        print(output)
 
     # Step 4: Preserve exit code logic
     if args.fail_if_dirty:
@@ -308,7 +301,7 @@ def _run_interactive_pilot(state):
         q: Quit
     """
     from husks.cli.navigator import move_cursor, adjust_aperture
-    from husks.cli.view import render_dag
+    from husks.cli.surface import emit_explain
     import sys
 
     # Clear screen and hide cursor
@@ -318,9 +311,8 @@ def _run_interactive_pilot(state):
     try:
         while True:
             # Render current state (task #42)
-            output = render_dag(
+            output = emit_explain(
                 state.residue,
-                verbose=False,
                 cursor=state.cursor,
                 aperture=state.aperture,
                 controls=True
@@ -363,8 +355,7 @@ def _explain_navigate(args):
     """
     from husks.manifest import read_manifest
     from husks.cli.navigator import create_explain_state
-    from husks.cli.view import render_dag
-    from husks.cli.surface import emit_residue
+    from husks.cli.surface import emit_residue, emit_explain
     import sys
 
     site = args.site
@@ -408,9 +399,8 @@ def _explain_navigate(args):
         _run_interactive_pilot(state)
     else:
         # Deterministic single-frame render
-        output = render_dag(
+        output = emit_explain(
             state.residue,
-            verbose=False,
             cursor=state.cursor,
             aperture=state.aperture,
             controls=interactive_requested  # Show controls if interactive was requested

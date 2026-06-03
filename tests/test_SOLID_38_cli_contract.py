@@ -323,7 +323,7 @@ class TestStatusCommand:
         # Parse and verify structure
         data = json.loads(result.stdout)
         assert "name" in data
-        assert "state" in data
+        assert "status" in data
 
 
 class TestJSONPurity:
@@ -444,7 +444,7 @@ class TestSharedVocabulary:
         if result.returncode == 0 and is_valid_json(result.stdout):
             sdata = json.loads(result.stdout)
             assert "name" in sdata, "status missing name"
-            assert "state" in sdata, "status missing state"
+            assert "status" in sdata, "status missing status"
 
     def test_node_structure_consistent(self, tmp_path):
         """Node objects should have consistent structure across commands."""

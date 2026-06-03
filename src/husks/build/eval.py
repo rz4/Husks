@@ -331,6 +331,16 @@ def eval_rule(S: Store, node: Node) -> None:
 
     # 3. Stale -- fire
     burn(S, name)
+
+    # Clean slate: remove declared outputs from the site so the recipe
+    # (especially oracles with tool access) cannot read stale artifacts
+    # from a previous run.  The rule is about to reproduce them.
+    for o in outputs:
+        op = Path(site_path(S, o))
+        if op.exists() and not op.is_dir():
+            op.unlink()
+
+    _t0 = time.time()
     T.rule_start(name, stale_reason=reason)
     try:
         # Use BuildTransaction for explicit staging, validation, and promotion
@@ -379,19 +389,46 @@ def eval_rule(S: Store, node: Node) -> None:
             rd_hex = recipe_digest(recipe_to_cse(recipe))
         cost: float | None = None
         cached: bool = False
+        hist_tokens_in: int = 0
+        hist_tokens_out: int = 0
         if usage:
             if "cost_usd" in usage:
                 cost = usage["cost_usd"]
             if "cached" in usage:
                 cached = usage["cached"]
+            hist_tokens_in = usage.get("tokens_in", 0)
+            hist_tokens_out = usage.get("tokens_out", 0)
 
+        _elapsed = time.time() - _t0
         append_history(S, name, recipe, outputs, fuel_consumed=fuel_consumed,
-                       cost_usd=cost, recipe_digest_hex=rd_hex, cached=cached)
+                       cost_usd=cost, tokens_in=hist_tokens_in,
+                       tokens_out=hist_tokens_out, elapsed_s=_elapsed,
+                       recipe_digest_hex=rd_hex, cached=cached)
         S["trace"].append({"event": "fired", "rule": name, "outputs": outputs})
         T.rule_done(name, outputs=outputs, output_hashes=output_hashes(S, outputs))
     except Stop:
         raise
     except Exception as e:
+        # Harvest partial usage from trace oracle events before halting.
+        # oracle_step events fire after each API call, so the trace has
+        # accumulated tokens/cost even if the oracle never completed.
+        partial_ti = sum(ev[2] for ev in T._oracle_events if ev[0] == name)
+        partial_to = sum(ev[3] for ev in T._oracle_events if ev[0] == name)
+        partial_cost = sum(ev[4] for ev in T._oracle_events if ev[0] == name)
+        if partial_ti or partial_to or partial_cost:
+            if name not in S["usage"]["by_rule"]:
+                S["usage"]["by_rule"][name] = {
+                    "cost_usd": 0.0, "input_tokens": 0,
+                    "output_tokens": 0, "fuel_consumed": 0,
+                    "cached": False, "backend": None, "model": None,
+                    "config_hash": None, "prompt_hash": None,
+                }
+            S["usage"]["by_rule"][name]["cost_usd"] += partial_cost
+            S["usage"]["by_rule"][name]["input_tokens"] += partial_ti
+            S["usage"]["by_rule"][name]["output_tokens"] += partial_to
+            S["usage"]["total_cost_usd"] += partial_cost
+            S["usage"]["total_input_tokens"] += partial_ti
+            S["usage"]["total_output_tokens"] += partial_to
         T.rule_halted(name, str(e))
         raise
 
@@ -408,7 +445,11 @@ def eval_recipe(
         return None
     kind: str = recipe["type"]
     if kind == "action":
-        recipe["fn"](S, *recipe.get("args", ()))
+        S["_active_rule"] = rule_name
+        try:
+            recipe["fn"](S, *recipe.get("args", ()))
+        finally:
+            S.pop("_active_rule", None)
         return None
     if kind == "oracle":
         return eval_oracle(S, rule_name, recipe, inputs, outputs)
@@ -565,11 +606,13 @@ def eval_oracle(
 
     # Track per-rule usage (Beta Gate D6: include cached flag)
     # Blocker #8: Add provenance fields (backend, model, config_hash, prompt_hash)
+    fuel_steps = u.get("fuel_steps", 1)
     if rule_name not in S["usage"]["by_rule"]:
         S["usage"]["by_rule"][rule_name] = {
             "cost_usd": 0.0,
             "input_tokens": 0,
             "output_tokens": 0,
+            "fuel_consumed": 0,
             "cached": False,
             "backend": None,
             "model": None,
@@ -579,6 +622,7 @@ def eval_oracle(
     S["usage"]["by_rule"][rule_name]["cost_usd"] += cost_usd
     S["usage"]["by_rule"][rule_name]["input_tokens"] += tokens_in
     S["usage"]["by_rule"][rule_name]["output_tokens"] += tokens_out
+    S["usage"]["by_rule"][rule_name]["fuel_consumed"] += fuel_steps
     # Mark as cached if this run was cached (once cached, stays cached for this build)
     if is_cached:
         S["usage"]["by_rule"][rule_name]["cached"] = True
@@ -600,6 +644,13 @@ def eval_oracle(
         tokens_out=tokens_out,
         cost_usd=cost_usd,
         elapsed=elapsed,
+        fuel_steps=fuel_steps,
+        backend=u.get("backend"),
+        model=u.get("model"),
+        config_hash=u.get("config_hash"),
+        prompt_hash=u.get("prompt_hash"),
+        tools=recipe.get("tools"),
+        fuel=recipe.get("fuel"),
     )
     return u
 

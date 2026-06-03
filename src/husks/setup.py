@@ -353,9 +353,9 @@ def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True,
     """Scaffold a Husks project and wire it to Claude Code.
 
     Default: silent on success (prints nothing except errors).
-    With --verbose: shows diamond banner and step-by-step detail.
+    With --verbose: shows hydration-style tree and next-steps footer.
     """
-    from husks.utils.console import BOLD, DIM, CYAN, RESET, render_banner
+    from husks.utils.console import BOLD, DIM, CYAN, RESET
 
     target = Path(target).resolve()
     target.mkdir(parents=True, exist_ok=True)
@@ -364,33 +364,26 @@ def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True,
     design_file = "core-bootstrap.json" if template == "core-bootstrap" else "design.json"
     design_name = template
 
-    # ── verbose: banner ──────────────────────────────────────────────
-    if verbose:
-        banner = render_banner("dry", [
-            f"{BOLD}name{RESET}:  {design_name}",
-            f"{BOLD}state{RESET}: {DIM}init{RESET}",
-            "",
-            "",
-            f"{BOLD}site{RESET}:  {target}",
-        ])
-        print(banner)
-        print()
+    # Collect step results for rendering: list of (name, state)
+    # state: "sealed" on success, "failed" on failure
+    steps: list[tuple[str, str]] = []
 
     # 1. scaffold template files
-    if verbose:
-        print(f"  {BOLD}scaffold{RESET}")
-        print(f"  {DIM}{'─' * 58}{RESET}")
-    if not _scaffold_template(target, template, force, emit_hy, verbose=verbose):
+    if not _scaffold_template(target, template, force, emit_hy, verbose=False):
+        steps.append(("scaffold", "failed"))
+        if verbose:
+            _print_init_output(steps, design_file, target)
         return 1
+    steps.append(("scaffold", "sealed"))
 
     # 2. soundness gate
-    if verbose:
-        print(f"  {DIM}selftest{RESET}", end="", flush=True)
     if not selftest(verbose=False):
-        print("\n  error: engine selftest failed", file=sys.stderr)
+        steps.append(("selftest", "failed"))
+        if verbose:
+            _print_init_output(steps, design_file, target)
+        print("  error: engine selftest failed", file=sys.stderr)
         return 1
-    if verbose:
-        print(f"  {CYAN}ok{RESET}")
+    steps.append(("selftest", "sealed"))
 
     # 3. API key
     has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
@@ -399,16 +392,15 @@ def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True,
         if not env.exists():
             env.write_text("ANTHROPIC_API_KEY=\n")
         _ensure_gitignored(target, ".env")
-    if verbose:
-        if has_key:
-            print(f"  {DIM}api key{RESET}  {CYAN}ok{RESET}")
-        else:
-            print(f"  {DIM}api key{RESET}  not set (fill .env for live runs)")
+    steps.append(("api-key", "sealed" if has_key else "stale"))
 
     # 4. Claude Code skill hookup
     if claude_code:
         skill_src = _skill_dir()
         if not (skill_src / "SKILL.md").exists():
+            steps.append(("skill", "failed"))
+            if verbose:
+                _print_init_output(steps, design_file, target)
             print(f"  error: skill not found at {skill_src}", file=sys.stderr)
             return 1
         skills_dir = target / ".claude" / "skills"
@@ -432,24 +424,26 @@ def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True,
                     link.symlink_to(skill_src, target_is_directory=True)
                 except OSError:
                     shutil.copytree(skill_src, link)
-        if verbose:
-            print(f"  {DIM}skill{RESET}    {CYAN}ok{RESET}")
+        steps.append(("skill", "sealed"))
 
     # 5. CLAUDE.md
     claude_md = target / "CLAUDE.md"
     if not claude_md.exists() or force:
         claude_md.write_text(CLAUDE_MD)
-    if verbose:
-        print(f"  {DIM}CLAUDE.md{RESET} {CYAN}ok{RESET}")
+    steps.append(("CLAUDE.md", "sealed"))
 
-    # ── footer ───────────────────────────────────────────────────────
-    if verbose:
-        print(f"  {DIM}{'─' * 58}{RESET}")
-
-    rel = os.path.relpath(target)
-    print()
-    print(f"  {DIM}cd {rel}{RESET}")
-    print(f"  {DIM}husks check {design_file} --verbose{RESET}")
-    print(f"  {DIM}husks run {design_file} --site m1 --stub{RESET}")
-    print()
+    # ── render output ────────────────────────────────────────────────
+    _print_init_output(steps, design_file, target, verbose=verbose)
     return 0
+
+
+def _print_init_output(
+    steps: list[tuple[str, str]],
+    design_file: str,
+    target: Path,
+    *,
+    verbose: bool = True,
+) -> None:
+    """Render init output using the three-section architecture."""
+    from husks.cli.surface import emit_init
+    print(emit_init(steps, design_file, target, verbose=verbose))

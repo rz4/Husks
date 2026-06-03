@@ -46,6 +46,7 @@ def rule(
         raise TypeError("rule() missing required argument: 'name'")
     if run is not None:
         recipe = action(_make_shell_action(run, outputs))
+        recipe["cmd"] = run
     return {
         "type": "rule",
         "name": name,
@@ -89,10 +90,13 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
 
     def shell_action(S: dict) -> None:
         import subprocess as _sp
+        import selectors as _sel
         from pathlib import Path as _Path
+        from husks.utils import trace as _T
 
         site = S.get("stage", S["site"])
         live_site = _Path(S["site"])
+        rule_name = S.get("_active_rule", "")
 
         # Snapshot live site outputs before running command to enable rollback
         snapshots = {}
@@ -107,15 +111,67 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
         for o in _outputs:
             site_path(S, o, write=True)
 
+        # Emit the shell command so the live frame shows what's running.
+        if rule_name:
+            _T.action_output(rule_name, "tool", f"$ {cmd}")
+
         try:
-            result = _sp.run(
+            proc = _sp.Popen(
                 cmd,
                 shell=True,
                 cwd=site,
-                capture_output=True,
+                stdout=_sp.PIPE,
+                stderr=_sp.PIPE,
                 text=True,
-                timeout=120,
+                bufsize=1,  # line-buffered
             )
+
+            # Drain stdout and stderr concurrently, emitting each line as a
+            # trace event so the live view can render it beneath the node.
+            # selectors avoids the classic two-pipe deadlock without threads
+            # and lets us honour a wall-clock deadline.
+            out_buf: list[str] = []
+            err_buf: list[str] = []
+            streams = {
+                proc.stdout: ("stdout", out_buf),
+                proc.stderr: ("stderr", err_buf),
+            }
+            selector = _sel.DefaultSelector()
+            for pipe in streams:
+                selector.register(pipe, _sel.EVENT_READ)
+
+            import time as _time
+            deadline = _time.monotonic() + 120
+            timed_out = False
+            open_pipes = len(streams)
+            while open_pipes > 0:
+                remaining = deadline - _time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    break
+                for key, _ in selector.select(timeout=min(remaining, 0.5)):
+                    pipe = key.fileobj
+                    stream_name, buf = streams[pipe]
+                    line = pipe.readline()
+                    if line == "":  # EOF on this pipe
+                        selector.unregister(pipe)
+                        open_pipes -= 1
+                        continue
+                    buf.append(line)
+                    if rule_name:
+                        _T.action_output(rule_name, stream_name, line)
+
+            if timed_out:
+                proc.kill()
+                proc.wait()
+                selector.close()
+                raise _sp.TimeoutExpired(cmd, 120)
+
+            selector.close()
+            returncode = proc.wait()
+            stdout_text = "".join(out_buf)
+            stderr_text = "".join(err_buf)
+
             # Guard: detect symlinks created by command to bypass staging isolation
             if "stage" in S:
                 stage_dir = _Path(S["stage"])
@@ -127,15 +183,15 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
                             f"(staging isolation violation): {cmd}"
                         )
             if _outputs and not Path(site_path(S, _outputs[0], write=True)).exists():
-                content = result.stdout
-                if result.returncode != 0:
-                    content += f"\n--- STDERR (exit {result.returncode}) ---\n"
-                    content += result.stderr
+                content = stdout_text
+                if returncode != 0:
+                    content += f"\n--- STDERR (exit {returncode}) ---\n"
+                    content += stderr_text
                 write_text(site_path(S, _outputs[0], write=True), content)
-            if result.returncode != 0:
+            if returncode != 0:
                 raise RuntimeError(
-                    f"command failed (exit {result.returncode}): {cmd}\n"
-                    f"{result.stderr}"
+                    f"command failed (exit {returncode}): {cmd}\n"
+                    f"{stderr_text}"
                 )
         except Exception:
             # Rollback: restore live site outputs if command failed or violated isolation

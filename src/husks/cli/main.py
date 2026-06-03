@@ -68,76 +68,8 @@ class _StyledHelpAction(argparse.Action):
 
 def _print_subcommand_help(parser):
     """Render branded help for a subcommand parser."""
-    from husks.utils.console import BOLD, DIM, RESET
-
-    desc = parser.description or ""
-
-    positionals = []
-    optionals = []
-    subcommands = []
-
-    for action in parser._actions:
-        if action.help == argparse.SUPPRESS:
-            continue
-        if isinstance(action, _StyledHelpAction):
-            continue
-        if isinstance(action, argparse._SubParsersAction):
-            for ca in action._choices_actions:
-                subcommands.append((ca.metavar, ca.help or ""))
-            continue
-        if action.option_strings:
-            optionals.append(action)
-        else:
-            positionals.append(action)
-
-    # Compute column width from all left-column entries
-    all_lefts = [_flag_str(a) for a in positionals + optionals]
-    all_lefts += [name for name, _ in subcommands]
-    col = max((len(s) for s in all_lefts), default=14) + 2
-    col = max(col, 18)
-
-    lines = [
-        f"  {BOLD}{parser.prog}{RESET}",
-        f"  {DIM}{desc}{RESET}",
-    ]
-
-    if positionals:
-        lines.append(f"\n  {BOLD}arguments{RESET}")
-        for action in positionals:
-            fs = _flag_str(action)
-            lines.append(f"    {fs:<{col}}{DIM}{action.help or ''}{RESET}")
-
-    if optionals:
-        lines.append(f"\n  {BOLD}options{RESET}")
-        for action in optionals:
-            fs = _flag_str(action)
-            lines.append(f"    {fs:<{col}}{DIM}{action.help or ''}{RESET}")
-
-    if subcommands:
-        lines.append(f"\n  {BOLD}commands{RESET}")
-        for name, help_text in subcommands:
-            lines.append(f"    {name:<{col}}{DIM}{help_text}{RESET}")
-
-    # Build usage line
-    usage_parts = [parser.prog]
-    if subcommands:
-        usage_parts.append("<command>")
-    if optionals:
-        usage_parts.append("[options]")
-    for action in positionals:
-        name = action.metavar or action.dest
-        if action.nargs in ("?", "*"):
-            usage_parts.append(f"[{name}]")
-        elif action.nargs == "+":
-            usage_parts.append(f"<{name}> [...]")
-        else:
-            usage_parts.append(f"<{name}>")
-
-    lines.append("")
-    lines.append(f"  {DIM}{'─' * 45}{RESET}")
-    lines.append(f"  {DIM}{' '.join(usage_parts)}{RESET}")
-
-    print("\n".join(lines))
+    from husks.cli.surface import emit_subcommand_help
+    print(emit_subcommand_help(parser))
 
 
 def _sub_parser(sub, name, parents=None, **kwargs):
@@ -157,60 +89,12 @@ def _sub_parser(sub, name, parents=None, **kwargs):
     return p
 
 
-def _print_help() -> None:
-    from husks.utils.console import BOLD, DIM, CYAN, RESET, render_banner
-
+def _print_help(*, animate: bool = False) -> None:
+    from husks.cli.surface import emit_help
     ver = _get_version()
-
-    logo = render_banner("hydrating", [
-        f"{BOLD}husks{RESET} {DIM}{ver}{RESET}",
-        f"{DIM}A small build system for nondeterministic work.{RESET}",
-        "",
-        "",
-        "",
-    ])
-
-    def _group(name: str) -> str:
-        return f"\n  {BOLD}{name}{RESET}"
-
-    def _cmd(name: str, desc: str) -> str:
-        return f"    {name:<18s}{DIM}{desc}{RESET}"
-
-    lines = [
-        logo,
-        _group("design"),
-        _cmd("init", "Scaffold a new project"),
-        _cmd("check", "Validate a design"),
-        _group("build"),
-        _cmd("run", "Execute a design into a site"),
-        _cmd("status", "Inspect site state"),
-        _cmd("cache export", "Export site cache for transfer"),
-        _cmd("cache import", "Import cache into a site"),
-        _group("verify"),
-        _cmd("verify", "Recompute .husk root hash in a site"),
-        _cmd("compare", "Equivalence across sites (three-machine proof with 3+)"),
-        _cmd("doctor", "Diagnose the local environment"),
-        _group("inspect"),
-        _cmd("explain", "Navigate the residue tree"),
-        _cmd("history", "Show convergence across runs"),
-        "",
-        f"  {DIM}{'─' * 45}{RESET}",
-        f"  {DIM}--color <mode>   auto · always · never{RESET}",
-        f"  {DIM}-q, --quiet      Suppress output{RESET}",
-        f"  {DIM}--version        Print version{RESET}",
-        "",
-        f"  {DIM}husks <command> --help for details{RESET}",
-        "",
-        f"  {BOLD}Exit codes{RESET}",
-        f"    {DIM}0  Success - build committed or command succeeded{RESET}",
-        f"    {DIM}1  Build failed - halted, missing deps, or error{RESET}",
-        f"    {DIM}2  Usage error - invalid arguments or options{RESET}",
-        f"    {DIM}3  Missing dependency - LLM backend unavailable{RESET}",
-        f"    {DIM}4  Status check - artifacts are dirty or stale{RESET}",
-        f"    {DIM}5  Internal error - unexpected failure{RESET}",
-    ]
-
-    print("\n".join(lines))
+    result = emit_help(ver, animate=animate)
+    if result is not None:
+        print(result)
 
 
 def main():
@@ -385,9 +269,9 @@ def main():
 
     args = p.parse_args()
 
-    # --help / -h
+    # --help / -h (full speed, no animation)
     if args.help:
-        _print_help()
+        _print_help(animate=False)
         sys.exit(EXIT_OK)
 
     # --version or --version-json
@@ -415,7 +299,7 @@ def main():
         sys.exit(EXIT_OK)
 
     if args.cmd is None:
-        _print_help()
+        _print_help(animate=True)
         sys.exit(EXIT_USAGE)
 
     # C25: Mutually exclusive flags now handled by argparse groups

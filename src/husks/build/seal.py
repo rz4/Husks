@@ -228,6 +228,9 @@ def append_history(
     fuel_consumed: int = 1,
     satisfaction: bool | None = None,
     cost_usd: float | None = None,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+    elapsed_s: float | None = None,
     recipe_digest_hex: str | None = None,
     cached: bool = False,
 ) -> None:
@@ -255,6 +258,9 @@ def append_history(
         "traced_reads": traced_reads,
         "output_hashes": output_hashes(S, outputs),
         "cost_usd": cost_usd,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "elapsed_s": elapsed_s,
         "recipe_digest": recipe_digest_hex,
         "cached": cached,
     }

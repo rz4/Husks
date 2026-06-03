@@ -13,7 +13,21 @@ This provides:
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import NamedTuple, Optional
+
+
+class LogEntry(NamedTuple):
+    """A single line in a node's live sub-terminal pane.
+
+    *stream* classifies the line for colouring in the view:
+      - ``"stdout"`` / ``"stderr"`` -- raw action output
+      - ``"oracle"`` -- oracle prompt preview / progress
+      - ``"tool"``   -- tool dispatch
+      - ``"meta"``   -- tokens / cost / elapsed summaries
+    """
+
+    stream: str
+    text: str
 
 
 @dataclass
@@ -66,6 +80,12 @@ class CliTrace:
 
     cache_source: Optional[str] = None
     """Cache source identifier (e.g., 'local', 'imported')"""
+
+    tools: Optional[list[str]] = None
+    """Tool allowlist for the oracle"""
+
+    fuel: Optional[int] = None
+    """Fuel budget (max agentic steps)"""
 
 
 @dataclass
@@ -188,6 +208,9 @@ class CliResidue:
     oracle_calls: int = 0
     """Number of oracle calls made (Beta 100: for sealed runs)"""
 
+    run_count: int = 0
+    """Number of build runs recorded in history"""
+
     cost: float = 0.0
     """Total USD cost of oracle calls"""
 
@@ -223,6 +246,24 @@ def map_manifest_state(manifest_state: str) -> str:
         return "sealed"
     # All other manifest states map to stale
     return "stale"
+
+
+def map_display_status(status: str, command: str) -> str:
+    """Map residue status to display status.
+
+    Canonical mapping used by both JSON and visual surfaces:
+    - check + dry → checked
+    - committed → sealed
+    - halted → failed
+    - everything else passes through unchanged
+    """
+    if command == "check" and status == "dry":
+        return "checked"
+    if status == "committed":
+        return "sealed"
+    if status == "halted":
+        return "failed"
+    return status
 
 
 def map_trace_state(
