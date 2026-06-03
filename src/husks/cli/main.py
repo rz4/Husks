@@ -237,6 +237,8 @@ def main():
                      help="Compare build roots only (skip output hash checks)")
     cmp.add_argument("--hashes-only", action="store_true",
                      help="Compare output hashes only (skip root checks)")
+    cmp.add_argument("--diff", action="store_true",
+                     help="Show unified diff of generated files that differ")
 
     # verify
     v = _sub_parser(sub, "verify", parents=[common_parser], help="Recompute .husk root hash in a site")

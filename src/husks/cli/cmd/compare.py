@@ -8,7 +8,7 @@ from pathlib import Path
 
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE
 from husks.utils.console import (
-    BOLD, DIM, RESET, GREEN, RED, CYAN, W,
+    BOLD, DIM, RESET, GREEN, YELLOW, RED, CYAN, W,
     render_banner, _visible_len,
 )
 
@@ -491,14 +491,30 @@ def _cmd_compare(args):
             report_by_site[site_dir] = r["data"]
 
         show_cost = proof is not None
+        verbose = getattr(args, 'verbose', False)
 
         # -- Site cards -------------------------------------------------------
         print()
-        for idx, site in enumerate(sites):
-            rd = report_by_site.get(site)
-            print(_render_site_card(site, rd, show_cost))
-            if idx < len(sites) - 1:
-                print()
+        if verbose:
+            from husks.manifest import read_manifest
+            from husks.cli.cmd.inspect import collect_site_residue
+            from husks.cli.surface import emit_residue
+
+            for idx, site in enumerate(sites):
+                manifest = read_manifest(site)
+                if manifest:
+                    residue = collect_site_residue(manifest, site)
+                    print(emit_residue(residue, verbose=True))
+                else:
+                    print(_render_site_card(site, report_by_site.get(site), show_cost))
+                if idx < len(sites) - 1:
+                    print()
+        else:
+            for idx, site in enumerate(sites):
+                rd = report_by_site.get(site)
+                print(_render_site_card(site, rd, show_cost))
+                if idx < len(sites) - 1:
+                    print()
 
         # -- Verify section ---------------------------------------------------
         hline = '\u2500' * (W - 2)
@@ -510,30 +526,76 @@ def _cmd_compare(args):
         check_roots_flag = not getattr(args, 'hashes_only', False)
         check_hashes_flag = not getattr(args, 'roots_only', False)
 
+        # Compute husk hashes per site (SHA256 of the .husk file)
+        import hashlib
+        from husks.manifest import read_manifest
+        husk_hash_by_site: dict[str, str | None] = {}
+        for site in sites:
+            m = read_manifest(site)
+            name = m.get("name") if m else None
+            hh = None
+            if name:
+                husk_path = Path(site) / f"{name}.husk"
+                if husk_path.is_file():
+                    hh = hashlib.sha256(husk_path.read_bytes()).hexdigest()
+            husk_hash_by_site[site] = hh
+
+        # Collect pairwise results
+        pair_rows: list[tuple[str, str, bool | None, bool | None]] = []
         for cmp in comparisons:
             site_a_short = Path(cmp["site_a"]).name or cmp["site_a"]
             site_b_short = Path(cmp["site_b"]).name or cmp["site_b"]
             details = cmp["details"]
+            roots_match = (
+                details.get("root_a") == details.get("root_b")
+                if check_roots_flag and "root_a" in details
+                else None
+            )
+            hh_a = husk_hash_by_site.get(cmp["site_a"])
+            hh_b = husk_hash_by_site.get(cmp["site_b"])
+            husks_match = (
+                hh_a == hh_b
+                if hh_a is not None or hh_b is not None
+                else None
+            )
+            pair_rows.append((site_a_short, site_b_short, roots_match, husks_match))
 
-            if check_roots_flag and "root_a" in details:
-                roots_match = details.get("root_a") == details.get("root_b")
-                if roots_match:
-                    left = f"  {GREEN}\u2713{RESET} {site_a_short} \u2261 {site_b_short}"
-                    reason = "roots match"
-                else:
-                    left = f"  {RED}\u2717{RESET} {site_a_short} \u2260 {site_b_short}"
-                    reason = "roots differ"
-                print(_rpad(left, reason, W))
+        # Column layout
+        label_col = 14
+        col_w = 11
+        any_roots = any(rm is not None for _, _, rm, _ in pair_rows)
+        any_husks = any(hm is not None for _, _, _, hm in pair_rows)
 
-            if check_hashes_flag and "outputs_a" in details:
-                hashes_match = details.get("outputs_a") == details.get("outputs_b")
-                if hashes_match:
-                    left = f"  {GREEN}\u2713{RESET} {site_a_short} \u2261 {site_b_short}"
-                    reason = "hashes match"
+        # Header
+        header = " " * (label_col + 2)
+        if any_husks:
+            header += "husk".ljust(col_w)
+        if any_roots:
+            header += "root".ljust(col_w)
+        print(f"  {DIM}{header.rstrip()}{RESET}")
+
+        # Rows
+        for sa, sb, rm, hm in pair_rows:
+            both_ok = (rm is not False) and (hm is not False)
+            if both_ok:
+                pair_label = f"{GREEN}{sa} \u2261 {sb}{RESET}"
+            else:
+                pair_label = f"{RED}{sa} \u2260 {sb}{RESET}"
+            pad = label_col - _visible_len(pair_label)
+            row = f"  {pair_label}{' ' * max(pad, 1)}"
+            if any_husks:
+                if hm is not None:
+                    sym = f"{GREEN}\u2713{RESET}" if hm else f"{RED}\u2717{RESET}"
                 else:
-                    left = f"  {RED}\u2717{RESET} {site_a_short} \u2260 {site_b_short}"
-                    reason = "hashes differ"
-                print(_rpad(left, reason, W))
+                    sym = f"{DIM}-{RESET}"
+                row += sym + " " * (col_w - 1)
+            if any_roots:
+                if rm is not None:
+                    sym = f"{GREEN}\u2713{RESET}" if rm else f"{RED}\u2717{RESET}"
+                else:
+                    sym = f"{DIM}-{RESET}"
+                row += sym
+            print(row.rstrip())
 
         print(sep)
 
@@ -543,30 +605,164 @@ def _cmd_compare(args):
             print(f"  {BOLD}three-machine proof{RESET}")
             print(sep)
 
-            # Two-column check layout
-            checks = list(proof["checks"].items())
-            if checks:
-                col_w = 30
-                rows = []
-                for ck, val in checks:
-                    sym = f"{GREEN}\u2713{RESET}" if val is True else f"{RED}\u2717{RESET}"
-                    rows.append(f"{sym} {ck}")
+            checks = proof["checks"]
 
-                for i in range(0, len(rows), 2):
-                    left_cell = rows[i]
-                    right_cell = rows[i + 1] if i + 1 < len(rows) else ""
-                    if right_cell:
-                        pad = col_w - _visible_len(left_cell)
-                        print(f"  {left_cell}{' ' * max(1, pad)}{right_cell}")
-                    else:
-                        print(f"  {left_cell}")
+            # Short-name map: check key → display label
+            _label = {
+                "m1_oracle_evidence":           "called oracle",
+                "m1_paid_cost":                 "paid cost",
+                "m1_node_level_oracle_evidence": "fired nodes",
+                "m2_zero_oracle_calls":         "zero calls",
+                "m2_zero_cost":                 "zero cost",
+                "m2_has_cache_hits":            "cache hits",
+                "m2_cached_node_evidence":      "cached nodes",
+                "m2_node_level_cache_evidence":  "cached flags",
+                "m2_cached_nodes_valid":        "names valid",
+                "m3_oracle_evidence":           "called oracle",
+                "m3_paid_cost":                 "paid cost",
+                "m3_node_level_oracle_evidence": "fired nodes",
+                "m1_m2_root_identical":         "root identical",
+                "m1_m3_comparable_cost":        "comparable cost",
+                "m3_declared_equivalence":      "declared equivalence",
+            }
+
+            # Column groups (ordered)
+            m1_keys = ["m1_oracle_evidence", "m1_paid_cost",
+                        "m1_node_level_oracle_evidence"]
+            m2_keys = ["m2_zero_oracle_calls", "m2_zero_cost",
+                        "m2_has_cache_hits", "m2_cached_node_evidence",
+                        "m2_node_level_cache_evidence", "m2_cached_nodes_valid"]
+            m3_keys = ["m3_oracle_evidence", "m3_paid_cost",
+                        "m3_node_level_oracle_evidence"]
+            cross_keys = ["m1_m2_root_identical", "m1_m3_comparable_cost",
+                          "m3_declared_equivalence"]
+
+            def _sym(key):
+                if checks.get(key) is True:
+                    return f"{GREEN}\u2713{RESET}"
+                return f"{RED}\u2717{RESET}"
+
+            # Column layout
+            col_w = 20
+            indent = "    "
+
+            # Headers
+            h1 = f"{DIM}M1 \u00b7 oracle{RESET}"
+            h2 = f"{DIM}M2 \u00b7 cache{RESET}"
+            h3 = f"{DIM}M3 \u00b7 oracle{RESET}"
+            pad1 = col_w - _visible_len(h1)
+            pad2 = col_w - _visible_len(h2)
+            print(f"{indent}{h1}{' ' * pad1}{h2}{' ' * pad2}{h3}")
+
+            # Per-machine rows (pad to max column length)
+            n_rows = max(len(m1_keys), len(m2_keys), len(m3_keys))
+            for i in range(n_rows):
+                c1 = f"{_sym(m1_keys[i])} {_label[m1_keys[i]]}" if i < len(m1_keys) else ""
+                c2 = f"{_sym(m2_keys[i])} {_label[m2_keys[i]]}" if i < len(m2_keys) else ""
+                c3 = f"{_sym(m3_keys[i])} {_label[m3_keys[i]]}" if i < len(m3_keys) else ""
+                p1 = col_w - _visible_len(c1) if c1 else col_w
+                p2 = col_w - _visible_len(c2) if c2 else col_w
+                print(f"{indent}{c1}{' ' * p1}{c2}{' ' * p2}{c3}")
+
+            # Merge tier: vertical pipes then cross-machine checks
+            pipe_line = f"{indent}\u2502{' ' * (col_w - 1)}\u2502{' ' * (col_w - 1)}\u2502"
+            print(pipe_line)
+
+            # root identical: merges M2 (connector reaches col_w pipe)
+            ck = cross_keys[0]
+            entry = f"{_sym(ck)} {_label[ck]} "
+            connector_len = col_w - _visible_len(entry)
+            print(f"{indent}{entry}{'\u2500' * connector_len}\u256f{' ' * (col_w - 1)}\u2502")
+
+            # comparable cost: merges M3 (connector reaches col_w*2 pipe)
+            ck = cross_keys[1]
+            entry = f"{_sym(ck)} {_label[ck]} "
+            connector_len = col_w * 2 - _visible_len(entry)
+            print(f"{indent}{entry}{'\u2500' * connector_len}\u256f")
+
+            # declared equivalence (no connector)
+            ck = cross_keys[2]
+            print(f"{indent}{_sym(ck)} {_label[ck]}")
 
             # Violations
             if proof["violations"]:
+                print()
                 for v in proof["violations"]:
                     print(f"  {RED}\u2717{RESET} {v}")
 
             print(sep)
+
+        # -- Diff section (--diff) --------------------------------------------
+        if getattr(args, 'diff', False):
+            import difflib
+
+            # When three-machine proof passes, only diff pairs with mismatching roots
+            proof_passed = proof is not None and proof["equivalent"]
+
+            for cmp_result in comparisons:
+                if proof_passed:
+                    details_r = cmp_result["details"]
+                    if details_r.get("root_a") == details_r.get("root_b"):
+                        continue
+                details = cmp_result["details"]
+                outputs_a = details.get("outputs_a", {})
+                outputs_b = details.get("outputs_b", {})
+                all_outputs = sorted(set(outputs_a.keys()) | set(outputs_b.keys()))
+
+                site_a = cmp_result["site_a"]
+                site_b = cmp_result["site_b"]
+                sa_short = Path(site_a).name or site_a
+                sb_short = Path(site_b).name or site_b
+
+                has_diffs = False
+                for output in all_outputs:
+                    hash_a = outputs_a.get(output)
+                    hash_b = outputs_b.get(output)
+                    if hash_a == hash_b:
+                        continue
+
+                    file_a = Path(site_a) / output
+                    file_b = Path(site_b) / output
+
+                    if not file_a.exists() and not file_b.exists():
+                        continue
+
+                    if not has_diffs:
+                        print()
+                        print(f"  {BOLD}diff{RESET}  {sa_short} \u2194 {sb_short}")
+                        print(sep)
+                        has_diffs = True
+
+                    try:
+                        lines_a = file_a.read_text().splitlines(keepends=True) if file_a.exists() else []
+                        lines_b = file_b.read_text().splitlines(keepends=True) if file_b.exists() else []
+                    except (UnicodeDecodeError, OSError):
+                        # Binary or unreadable file — show hash summary only
+                        ha = hash_a[:10] if hash_a else "missing"
+                        hb = hash_b[:10] if hash_b else "missing"
+                        print(f"    {DIM}{output}{RESET}  (binary)  {ha} \u2192 {hb}")
+                        continue
+
+                    diff = difflib.unified_diff(
+                        lines_a, lines_b,
+                        fromfile=f"{sa_short}/{output}",
+                        tofile=f"{sb_short}/{output}",
+                    )
+                    for line in diff:
+                        line = line.rstrip('\n')
+                        if line.startswith('+++') or line.startswith('---'):
+                            print(f"    {BOLD}{line}{RESET}")
+                        elif line.startswith('+'):
+                            print(f"    {GREEN}{line}{RESET}")
+                        elif line.startswith('-'):
+                            print(f"    {RED}{line}{RESET}")
+                        elif line.startswith('@@'):
+                            print(f"    {CYAN}{line}{RESET}")
+                        else:
+                            print(f"    {line}")
+
+                if has_diffs:
+                    print(sep)
 
         # -- Footer -----------------------------------------------------------
         print(f"  {GREEN}equivalent{RESET}" if all_equivalent else f"  {RED}not equivalent{RESET}")
