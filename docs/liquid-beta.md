@@ -14,10 +14,10 @@ Beta 100 marks the first public-ready release of Husks, a deterministic build sy
 husks init
 
 # Check design validity
-husks check core-bootstrap.json
+husks check core-bootstrap.locke
 
 # Run the build with stub oracle (zero API cost)
-husks run core-bootstrap.json --site m1 --stub
+husks run core-bootstrap.locke --site m1 --stub
 
 # Verify outputs
 ls m1/readers/
@@ -32,7 +32,7 @@ Beta 100 enables cross-machine verification of computational equivalence:
 
 ```bash
 # Machine 1: Original realization with oracle cost
-husks run core-bootstrap.json --site m1 --stub --json > m1.json
+husks run core-bootstrap.locke --site m1 --stub --json > m1.json
 
 # Export cache from M1
 husks cache export cache.tar.gz --site m1
@@ -40,10 +40,10 @@ husks cache export cache.tar.gz --site m1
 # Machine 2: Import cache and reuse at zero cost
 mkdir m2
 husks cache import cache.tar.gz --site m2
-husks run core-bootstrap.json --site m2 --reuse-only --json > m2.json
+husks run core-bootstrap.locke --site m2 --reuse-only --json > m2.json
 
 # Machine 3: Independent re-realization
-husks run core-bootstrap.json --site m3 --stub --json > m3.json
+husks run core-bootstrap.locke --site m3 --stub --json > m3.json
 
 # Verify computational equivalence
 husks compare-runs m1.json m2.json m3.json
@@ -88,7 +88,7 @@ equivalent: true
 Initialize a new Husks project with the core-bootstrap template.
 
 **Creates:**
-- `core-bootstrap.json` - Build design
+- `core-bootstrap.locke` - Build design (Locke source)
 - `spec/` - CSE specification documents
 - `.gitignore` - Git ignore rules
 - `CLAUDE.md` - Project stance documentation
@@ -97,7 +97,7 @@ Initialize a new Husks project with the core-bootstrap template.
 ```bash
 husks init
 cd .
-husks check core-bootstrap.json
+husks check core-bootstrap.locke
 ```
 
 ### `husks check <design>`
@@ -116,13 +116,13 @@ Validate design structure and dependencies.
 **Example:**
 ```bash
 # Silent validation
-husks check core-bootstrap.json
+husks check core-bootstrap.locke
 
 # JSON output
-husks check core-bootstrap.json --json
+husks check core-bootstrap.locke --json
 
 # Check with site overlay
-husks check core-bootstrap.json --site m1
+husks check core-bootstrap.locke --site m1
 ```
 
 ### `husks run <design>`
@@ -143,16 +143,16 @@ Execute a build design, running oracles and actions.
 **Examples:**
 ```bash
 # Run with stub oracle
-husks run core-bootstrap.json --site m1 --stub
+husks run core-bootstrap.locke --site m1 --stub
 
 # Run with live oracle
-husks run core-bootstrap.json --site m1 --model anthropic/claude-haiku-4-5
+husks run core-bootstrap.locke --site m1 --model anthropic/claude-haiku-4-5
 
 # Cache-only run (M2 scenario)
-husks run core-bootstrap.json --site m2 --reuse-only
+husks run core-bootstrap.locke --site m2 --reuse-only
 
 # JSON output for comparison
-husks run core-bootstrap.json --site m1 --stub --json > m1.json
+husks run core-bootstrap.locke --site m1 --stub --json > m1.json
 ```
 
 ### `husks cache export <file>`
@@ -234,7 +234,7 @@ husks compare-runs m1.json m2.json m3.json
 
 Explore and navigate a built site's residue tree.
 
-**Purpose:** Inspect sealed builds without requiring design.json. Navigate through the dependency tree with adjustable detail levels.
+**Purpose:** Inspect sealed builds without requiring a design file. Navigate through the dependency tree with adjustable detail levels.
 
 **Required:**
 - `--site <dir>` - Site directory with manifest and build state
@@ -391,7 +391,7 @@ With `--json`, explain outputs structured data including cursor and aperture sta
 
 **Comparison with other commands:**
 
-| Command | Purpose | Requires design.json? |
+| Command | Purpose | Requires design file? |
 |---------|---------|----------------------|
 | `check` | Validate design structure | Yes |
 | `run` | Execute build | Yes |
@@ -677,7 +677,7 @@ Husks uses a unified state model across all commands (check, run, status):
 | 0 | Success (check passed, build committed, comparison valid) |
 | 1 | Build failure (halted, failed rules, validation errors) |
 | 2 | Usage error (invalid arguments, missing files) |
-| 3 | Missing dependency (litellm not installed, hy not installed) |
+| 3 | Missing dependency (litellm not installed) |
 
 ## Environment Variables
 
@@ -700,7 +700,7 @@ With live oracles, M1 and M3 produce different generated source code (non-determ
 
 Yes! Use `--stub` mode:
 ```bash
-husks run core-bootstrap.json --site m1 --stub
+husks run core-bootstrap.locke --site m1 --stub
 ```
 
 This uses a deterministic stub oracle with zero API cost.

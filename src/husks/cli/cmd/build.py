@@ -734,61 +734,6 @@ def collect_hydrated_residue(S: dict, T, design: dict) -> CliResidue:
     )
 
 
-# ── run (Hy) ──────────────────────────────────────────────────────────
-
-def _cmd_run_hy(args):
-    """Execute a .hy design file directly."""
-    design_path = str(Path(args.design).resolve())
-
-    # Suppress console trace (we use residue→surface→view instead)
-    from husks.utils import trace as T_pre
-    T_pre.clear_listeners()
-
-    # Configure oracle backend before executing the .hy file
-    if args.stub:
-        # Replace live_oracle in the module so the .hy file picks up the stub
-        import husks.oracle as _omod
-        from husks.build.eval import default_oracle_backend
-        _omod.live_oracle = default_oracle_backend
-    else:
-        from husks.oracle import set_oracle_model
-        set_oracle_model(args.model)
-
-    # Execute the .hy design
-    try:
-        import hy  # noqa: F401
-        import runpy
-        runpy.run_path(design_path, run_name="__main__")
-    except ImportError:
-        print("error: hy is not installed (pip install hy)", file=sys.stderr)
-        sys.exit(EXIT_MISSING_DEP)
-    except Exception as e:
-        print(f"error: {e}", file=sys.stderr)
-        sys.exit(EXIT_BUILD_FAIL)
-
-    # Retrieve the Store captured by build()
-    import husks.build.run as _brun
-    S = _brun._last_store
-    if S is None:
-        print("error: .hy design did not call build()", file=sys.stderr)
-        sys.exit(EXIT_BUILD_FAIL)
-
-    # Build Report
-    from husks.report import assemble, render_text, render_concise, render_json
-    from husks.utils import trace as T
-
-    report = assemble(S, T, {})
-    if args.json_output:
-        print(render_json(report))
-    elif args.verbose:
-        print(render_text(report))
-    else:
-        print(render_concise(report))
-
-    if S.get("status") == "halted" and not args.soft_fail:
-        sys.exit(EXIT_BUILD_FAIL)
-
-
 # ── check ─────────────────────────────────────────────────────────
 
 def _cmd_check(args, design):

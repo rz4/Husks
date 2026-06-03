@@ -193,7 +193,7 @@ def test_cond_seed_portability_scenario():
         # The seed design is the same
         assert S1["status"] == S2["status"] == "committed"
         # Both machines ran the same design
-        # (In a real scenario, both would have the same .hy or .json source)
+        # (In a real scenario, both would have the same .locke or .json source)
 
         # But the outputs differ (expected and valid)
         output1 = (site1 / "result.txt").read_text()

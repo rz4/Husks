@@ -12,11 +12,10 @@ decision.
 
 ## The Problem
 
-Husks designs were authored in JSON or Hy.  JSON is verbose and
+Husks designs were originally authored in JSON.  JSON is verbose and
 structurally flat — every rule is a top-level dict, dependencies are
-inferred from filename matching, shared sub-graphs are implicit.  Hy
-requires the hy+hyrule runtime.  Neither surface makes the build tree
-visible in the source.
+inferred from filename matching, shared sub-graphs are implicit.  The
+JSON surface does not make the build tree visible in the source.
 
 The goal: a minimal language that compiles to the same CSE bytes, with
 no runtime dependency, where the tree structure is expressed by nesting.

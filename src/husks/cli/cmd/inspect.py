@@ -427,7 +427,7 @@ def _cmd_explain(args):
         _explain_seal(args)          # legacy
     elif args.subject:
         subject = args.subject
-        if subject.endswith(('.json', '.hy')):
+        if subject.endswith(('.json', '.locke')):
             args.design = subject
             _explain_graph(args)
         else:

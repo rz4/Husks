@@ -842,8 +842,6 @@ def run(design: Design, **overrides: Any) -> dict[str, Any]:
         source_path = design["_source_path"]
         if source_path.endswith(".locke"):
             kwargs["design_kind"] = "locke"
-        elif source_path.endswith(".hy"):
-            kwargs["design_kind"] = "hy"
         else:
             kwargs["design_kind"] = "json"
 

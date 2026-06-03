@@ -34,32 +34,32 @@ That's it. `action` and `oracle` cover every decomposition. Actions verify; orac
 
 ## Workflow
 
-Your first tool call must be writing `design.json`. No exploring, no reading files, no running commands first.
+Your first tool call must be writing `design.locke`. No exploring, no reading files, no running commands first.
 
 1. Read the user's task description. Do NOT explore the codebase, read files, search, or run commands. Work only from what the user told you. If you need more information, ask — do not go looking. If the task does not state what would count as correct, the missing thing is the acceptance condition. Ask for it before writing the design.
 
-2. Write `design.json` immediately. This is your first and only action before check.
+2. Write `design.locke` immediately. This is your first and only action before check.
 
 3. Check the design:
 
    ```bash
-   python -m husks.cli check design.json --verbose
+   python -m husks.cli check design.locke --verbose
    ```
 
-   If `check` fails, repair `design.json` and re-check. Only show a passing design.
+   If `check` fails, repair `design.locke` and re-check. Only show a passing design.
 
 4. Ask for approval. Do not run unless the user explicitly approves or explicitly requested automatic execution in the same turn. When showing a design, state which of the user's requirements are covered by deterministic gates and which rest on the user's judgment.
 
 5. Run the design:
 
    ```bash
-   python -m husks.cli run design.json --site /tmp/husks-<name>
+   python -m husks.cli run design.locke --site /tmp/husks-<name>
    ```
 
    The run command prints a structured **Report** showing status, root, fuel, cost, delta (changed/new/unchanged nodes), and a per-node table. Use `--json` for machine-readable output:
 
    ```bash
-   python -m husks.cli run design.json --site /tmp/husks-<name> --json
+   python -m husks.cli run design.locke --site /tmp/husks-<name> --json
    ```
 
    **Backend selection:**
@@ -92,7 +92,7 @@ A husk is designed to be re-run. On the second run:
 To iterate:
 
 1. Re-run the same design against the same site. Sealed rules are free.
-2. If an oracle's output is unsatisfying, edit the prompt in `design.json` and re-run. The recipe-digest changes, so that rule (and its dependents) re-fire.
+2. If an oracle's output is unsatisfying, edit the prompt in `design.locke` and re-run. The recipe-digest changes, so that rule (and its dependents) re-fire.
 3. If a rule's output should be pinned, leave it alone — its seal protects it.
 
 Watch for the **prompt-loading signature**: if the oracle's fuel is exhausted but outputs are wrong, the prompt needs refinement, not more fuel.
@@ -170,7 +170,7 @@ Each rule has:
 The flat design you write is **not the permanent artifact**. It is an ergonomic input that the engine elaborates into a canonical s-expression (CSE). The CSE is what gets hashed, sealed, and verified:
 
 ```
-design.json  ──elaborate──▸  CSE AST  ──encode──▸  .husk bytes
+design.locke  ──elaborate──▸  CSE AST  ──encode──▸  .husk bytes
                                                     │
                                          sealed, content-addressed,
                                          verifiable without the engine
@@ -203,6 +203,6 @@ The .husk file is the residue. It can be verified by any reader that implements 
 
 ## Output Discipline
 
-Do not substitute a prose design for `design.json`. The required designning artifact is the JSON file. Prose may summarize the design only after the JSON has passed `check`.
+Do not substitute a prose design for `design.locke`. The required designning artifact is the JSON file. Prose may summarize the design only after the JSON has passed `check`.
 
 Do not run additional commands after the build to verify results outside the design. If verification is needed, it belongs inside the design as an action rule with `run`. The build is self-contained. The one post-build verification is the .husk root recomputation, which proves permanence.

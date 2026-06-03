@@ -26,9 +26,7 @@ Ranked by compound value: items near the top unblock or simplify the most downst
 
 9. **Add test for `--reuse-only` CLI contract.** The flag works in `run()` but the CLI path (error messages, JSON error shape) is untested.
 
-10. **Test `_cmd_run_hy` or remove it.** `build.py:498` implements the Hy backend path but there is zero test coverage. If Hy support is experimental, gate it behind a marker; if it's dead, delete it.
-
-11. **Test equivalence field behavior end-to-end.** `ir.py:121,347` defines it, `compare.py:275,284` uses it, but no test exercises `exact` vs `free` across a three-machine comparison.
+10. **Test equivalence field behavior end-to-end.** `ir.py:121,347` defines it, `compare.py:275,284` uses it, but no test exercises `exact` vs `free` across a three-machine comparison.
 
 12. **Cover the `verify` subcommand with a proper test.** Step 3 of the midas-loop work added `_cmd_verify` but it has no dedicated test file yet (only indirectly covered via SOLID_24 root verification).
 
@@ -83,8 +81,6 @@ Ranked by compound value: items near the top unblock or simplify the most downst
 33. **Consolidate freshness state calculation.** Both `manifest.py` and `cli/cmd/inspect.py:18` compute freshness. One canonical function.
 
 34. **Clean up the `explain` command's legacy flags.** `--graph` is `argparse.SUPPRESS` (backwards-compat no-op at `main.py:280`). If nothing uses it, delete it.
-
-35. **Remove or document `macros.hy`.** It sits in `src/husks/` with no import path from Python. Either integrate it into the Hy backend or remove it.
 
 ## Tier 7 — Build engine improvements
 

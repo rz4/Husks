@@ -18,10 +18,7 @@ from husks.build.seal import write_build_manifest
 # ── Top-level build ───────────────────────────────────────────────
 
 _last_store: Store | None = None
-"""Captured Store from the most recent ``build()`` call.
-
-Used by the CLI to retrieve results after executing a .hy design file.
-"""
+"""Captured Store from the most recent ``build()`` call."""
 
 
 def build(
@@ -40,8 +37,8 @@ def build(
 
     Name and fuel may be passed positionally or as keywords::
 
-        build("my-build", 12, node, ...)        # positional
-        build(node, :name "my-build" :fuel 12)  # keyword (Hy style)
+        build("my-build", 12, node, ...)              # positional
+        build(node, name="my-build", fuel=12)         # keyword
 
     Parameters
     ----------

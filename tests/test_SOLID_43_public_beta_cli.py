@@ -30,9 +30,9 @@ def test_public_beta_workflow():
         # Step 1: husks init
         result = run_husks_cli("init", tmpdir)
         assert result.returncode == 0, f"init failed: {result.stderr}"
-        assert Path(tmpdir, "core-bootstrap.json").exists(), "core-bootstrap.json not created"
+        assert Path(tmpdir, "core-bootstrap.locke").exists(), "core-bootstrap.locke not created"
 
-        design_file = "core-bootstrap.json"
+        design_file = "core-bootstrap.locke"
 
         # Step 2: husks check (silent on success)
         result = run_husks_cli("check", design_file, cwd=tmpdir)
@@ -103,7 +103,7 @@ def test_shared_vocabulary():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Init and prepare
         run_husks_cli("init", tmpdir)
-        design_file = "core-bootstrap.json"
+        design_file = "core-bootstrap.locke"
         run_husks_cli("run", design_file, "--stub", "--site", ".husk", cwd=tmpdir)
 
         # Collect JSON outputs
@@ -160,7 +160,7 @@ def test_verbose_json_mutual_exclusivity():
         run_husks_cli("init", tmpdir)
 
         # Try check --verbose --json
-        result = run_husks_cli("check", "core-bootstrap.json", "--verbose", "--json", cwd=tmpdir)
+        result = run_husks_cli("check", "core-bootstrap.locke", "--verbose", "--json", cwd=tmpdir)
         # Should either reject the combination or handle it gracefully
         assert result.returncode in [0, 1, 2], "Command should exit cleanly"
 
@@ -170,7 +170,7 @@ def test_visual_grammar():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Init and prepare
         run_husks_cli("init", tmpdir)
-        design_file = "core-bootstrap.json"
+        design_file = "core-bootstrap.locke"
 
         # Check verbose visual output (check is silent by default)
         result = run_husks_cli("check", design_file, "--verbose", cwd=tmpdir)

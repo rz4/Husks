@@ -8,10 +8,9 @@ Layer structure (imports flow upward only):
 
     Layer 0  core.py          permanent, stdlib-only
     Layer 1  transport.py     pure, imports core + stdlib
-    Layer 2  build.hy designs/ir.py engine, imports core/transport + stdlib
+    Layer 2  build/ designs/ir.py engine, imports core/transport + stdlib
     Layer 3  llm.py tools.py  instrument, may import anything
              trace.py cli.py
-             kernel.hy
 """
 
 import ast as python_ast
@@ -23,8 +22,7 @@ SRC_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "husks")
 
 # -- Layer definitions ---------------------------------------------------------
 
-# Modules in each layer (Python source files only; .hy files are not
-# statically analyzable but are documented as Layer 2).
+# Modules in each layer (Python source files only).
 LAYER_0 = {"core"}
 LAYER_1 = {"transport"}
 LAYER_2 = {"build", "designs"}

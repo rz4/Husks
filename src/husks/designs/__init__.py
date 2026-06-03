@@ -23,13 +23,6 @@ build runtime.  Three sub-modules:
 from husks.designs.ir import check, show, compile, run, from_json, from_locke, to_json
 from husks.designs.convergence import convergence_summary, declared_vs_traced
 
-try:
-    from husks.designs.hy import HY_AVAILABLE, hy_build_backend, hy_kernel_backend
-except Exception:
-    HY_AVAILABLE = False
-    hy_build_backend = None
-    hy_kernel_backend = None
-
 __all__ = [
     "check",
     "show",
@@ -40,7 +33,4 @@ __all__ = [
     "to_json",
     "convergence_summary",
     "declared_vs_traced",
-    "HY_AVAILABLE",
-    "hy_build_backend",
-    "hy_kernel_backend",
 ]

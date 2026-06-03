@@ -18,7 +18,7 @@ There are **three** roles, and keeping them separate is the whole point.
 
 | Role | Who plays it | What it does |
 | :--- | :--- | :--- |
-| **Author** | the Claude Code instance | reads your task, writes `design.json`, runs the CLI, reports |
+| **Author** | the Claude Code instance | reads your task, writes `design.locke`, runs the CLI, reports |
 | **Producer** | the husks `oracle` (a litellm call, default `claude-haiku-4-5`) | the one nondeterministic step — generates bytes inside a bounded workspace |
 | **Verifier** | the deterministic engine + frozen roots | seals, reuses, recomputes hashes; grades neither author nor producer on its say-so |
 
@@ -54,11 +54,6 @@ calls. Without it, `check`, `doctor --selftest`, `init`, and `--stub` runs still
 only live oracle execution requires `litellm`. The wheel also ships the
 conformance vectors and the skill.
 
-> **Hy backend (experimental).** The `--hy` flag activates the original Hy
-> kernel backend. This requires `pip install hy` and a source checkout with `.hy`
-> design files. The CLI currently only loads JSON designs; Hy design loading is
-> experimental and may not work end-to-end from the CLI.
-
 > **Contributing to Husks itself?** Use an editable checkout instead —
 > `git clone ...` then `pip install -e ".[llm]"`. Both install modes are fully
 > supported; the editable one just lets you hack on the engine in place.
@@ -93,13 +88,13 @@ re-realization (M3) from the same seed design.
 
 ```bash
 husks init
-husks check core-bootstrap.json
+husks check core-bootstrap.locke
 ```
 
 ### Machine 1: original realization
 
 ```bash
-husks run core-bootstrap.json --site m1 --stub --json > m1.json
+husks run core-bootstrap.locke --site m1 --stub --json > m1.json
 ```
 
 M1 builds the design with a stub oracle, pays synthetic oracle cost, and
@@ -116,7 +111,7 @@ husks cache export cache.tar.gz --site m1
 ```bash
 mkdir m2
 husks cache import cache.tar.gz --site m2
-husks run core-bootstrap.json --site m2 --reuse-only --json > m2.json
+husks run core-bootstrap.locke --site m2 --reuse-only --json > m2.json
 ```
 
 M2 imports M1's cache and runs with `--reuse-only`. It makes zero oracle calls,
@@ -125,7 +120,7 @@ pays zero cost, and materializes the same artifact from verified cached residue.
 ### Machine 3: independent re-realization
 
 ```bash
-husks run core-bootstrap.json --site m3 --stub --json > m3.json
+husks run core-bootstrap.locke --site m3 --stub --json > m3.json
 ```
 
 M3 starts with an empty cache and independently builds a valid artifact at

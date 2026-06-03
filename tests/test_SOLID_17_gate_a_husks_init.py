@@ -121,8 +121,8 @@ def test_husks_init_check_command():
         # Run husks init
         run_husks_cli("init", str(tmpdir))
 
-        # Run husks check (init creates core-bootstrap.json, not design.json)
-        design_path = Path(tmpdir) / "core-bootstrap.json"
+        # Run husks check (init creates core-bootstrap.locke, not design.json)
+        design_path = Path(tmpdir) / "core-bootstrap.locke"
         result = run_husks_cli("check", str(design_path), cwd=str(tmpdir))
 
         assert result.returncode == 0, (
@@ -152,8 +152,8 @@ def test_husks_init_run_stub_command():
         site = Path(tmpdir) / "site"
         site.mkdir()
 
-        # Run husks run --stub (init creates core-bootstrap.json)
-        design_path = Path(tmpdir) / "core-bootstrap.json"
+        # Run husks run --stub (init creates core-bootstrap.locke)
+        design_path = Path(tmpdir) / "core-bootstrap.locke"
         result = run_husks_cli(
             "run", str(design_path), "--stub", "--site", str(site), cwd=str(tmpdir)
         )
@@ -188,7 +188,7 @@ def test_husks_init_creates_claude_md():
 
         content = claude_md.read_text()
         assert "Husks" in content
-        assert "design.json" in content
+        assert "design.locke" in content
         assert "workflow" in content.lower() or "Workflow" in content
 
     finally:

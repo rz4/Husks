@@ -18,7 +18,7 @@ def test_beta100_public_three_machine_from_init(tmp_path):
     Beta 100 acceptance: full three-machine proof from husks init.
 
     Flow:
-    1. husks init creates core-bootstrap.json
+    1. husks init creates core-bootstrap.locke
     2. husks check validates dry conformance
     3. M1 realizes the design, pays oracle cost
     4. M1 exports cache
@@ -34,8 +34,8 @@ def test_beta100_public_three_machine_from_init(tmp_path):
     init_result = run_husks_cli("init", str(project))
     assert init_result.returncode == 0, f"init failed: {init_result.stderr}"
 
-    design = project / "core-bootstrap.json"
-    assert design.exists(), "core-bootstrap.json not created by init"
+    design = project / "core-bootstrap.locke"
+    assert design.exists(), "core-bootstrap.locke not created by init"
 
     # Step 2: Check dry conformance
     check_v = run_husks_cli("check", str(design), "--verbose", cwd=project)
@@ -165,7 +165,7 @@ def test_beta100_status_command(tmp_path):
 
     # Init and run to create a realized site
     run_husks_cli("init", str(project))
-    design = project / "core-bootstrap.json"
+    design = project / "core-bootstrap.locke"
     site = project / "site1"
 
     run_result = run_husks_cli(
@@ -208,7 +208,7 @@ def test_beta100_check_silent_on_pass(tmp_path):
     """
     project = tmp_path / "beta-demo"
     run_husks_cli("init", str(project))
-    design = project / "core-bootstrap.json"
+    design = project / "core-bootstrap.locke"
 
     # Check without flags should be silent
     check_result = run_husks_cli("check", str(design), cwd=project)
@@ -242,7 +242,7 @@ def test_beta100_init_creates_spec_files(tmp_path):
     assert (spec_dir / "CSE-v2.md").exists(), "CSE-v2.md not created"
 
     # Should create other standard files
-    assert (project / "core-bootstrap.json").exists()
+    assert (project / "core-bootstrap.locke").exists()
     assert (project / ".gitignore").exists()
     assert (project / "CLAUDE.md").exists()
 
@@ -254,7 +254,7 @@ def test_beta100_verbose_and_json_mutually_exclusive(tmp_path):
     """
     project = tmp_path / "beta-demo"
     run_husks_cli("init", str(project))
-    design = project / "core-bootstrap.json"
+    design = project / "core-bootstrap.locke"
 
     # check with both flags should fail with usage error
     result = run_husks_cli("check", str(design), "--verbose", "--json", cwd=project)

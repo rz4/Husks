@@ -23,7 +23,7 @@ CLAUDE_MD = """\
 
 This project uses **Husks** for any task that produces artifacts: code
 generation, scaffolding, content, multi-step builds. Do not run as an unbounded
-agent loop. Use the `husks` skill — decompose the task into a `design.json` build
+agent loop. Use the `husks` skill — decompose the task into a `design.locke` build
 graph, then check, show, and run it.
 
 ## Working structure
@@ -36,7 +36,7 @@ You do not decide what "done" means; the user does. You do not trust the oracle;
 a deterministic action must check it.
 
 ## Workflow
-- Write `design.json` first. No exploring or running commands before that.
+- Write `design.locke` first. No exploring or running commands before that.
 - `check` then `show` the design. **Wait for approval before `run`.**
 - Run `--stub` first when the shape is new; go live only after the stub commits.
 - On `run`: the CLI prints a structured Report (status, root, fuel, cost, delta,
@@ -209,15 +209,6 @@ def _get_core_bootstrap_design():
         _CORE_BOOTSTRAP_DESIGN = _load_core_bootstrap_design()
     return _CORE_BOOTSTRAP_DESIGN
 
-_CORE_BOOTSTRAP_HY = None
-
-def _get_core_bootstrap_hy():
-    global _CORE_BOOTSTRAP_HY
-    if _CORE_BOOTSTRAP_HY is None:
-        _CORE_BOOTSTRAP_HY = _load_template_file("core-bootstrap.hy")
-    return _CORE_BOOTSTRAP_HY
-
-
 def _write_if(path: Path, content: str, force: bool, verbose: bool = False) -> bool:
     """Write content to path if it doesn't exist or force is set. Returns True if written."""
     if path.exists() and not force:
@@ -275,12 +266,12 @@ def _copy_spec_files(target: Path, verbose: bool = False) -> bool:
     return True
 
 
-def _scaffold_core_bootstrap(target: Path, force: bool, emit_hy: bool, verbose: bool = False) -> bool:
+def _scaffold_core_bootstrap(target: Path, force: bool, verbose: bool = False) -> bool:
     """Scaffold the core-bootstrap beta seed project."""
-    # 1. Create core-bootstrap.json
+    # 1. Create core-bootstrap.locke
     _write_if(
-        target / "core-bootstrap.json",
-        json.dumps(_get_core_bootstrap_design(), indent=2) + "\n",
+        target / "core-bootstrap.locke",
+        _load_template_file("core-bootstrap.locke"),
         force, verbose=verbose,
     )
 
@@ -310,17 +301,13 @@ def _scaffold_core_bootstrap(target: Path, force: bool, emit_hy: bool, verbose: 
         """)
     _write_if(target / ".gitignore", gitignore_content, force, verbose=verbose)
 
-    # 4. Optionally create bootstrap.hy
-    if emit_hy:
-        _write_if(target / "bootstrap.hy", _get_core_bootstrap_hy(), force, verbose=verbose)
-
     return True
 
 
-def _scaffold_template(target: Path, template: str, force: bool, emit_hy: bool = False, verbose: bool = False) -> bool:
+def _scaffold_template(target: Path, template: str, force: bool, verbose: bool = False) -> bool:
     """Scaffold project files for the given template. Returns True on success."""
     if template == "core-bootstrap":
-        return _scaffold_core_bootstrap(target, force, emit_hy, verbose=verbose)
+        return _scaffold_core_bootstrap(target, force, verbose=verbose)
     elif template == "demo":
         _write_if(target / "design.json",
                   json.dumps(_get_demo_design(), indent=2) + "\n", force, verbose=verbose)
@@ -349,7 +336,7 @@ def _ensure_gitignored(target: Path, entry: str):
             f.write(("" if not lines or lines[-1] == "" else "\n") + entry + "\n")
 
 
-def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True, force=False, verbose=False):
+def init(target=".", template="core-bootstrap", claude_code=True, force=False, verbose=False):
     """Scaffold a Husks project and wire it to Claude Code.
 
     Default: silent on success (prints nothing except errors).
@@ -361,7 +348,7 @@ def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True,
     target.mkdir(parents=True, exist_ok=True)
 
     # Determine design name from template
-    design_file = "core-bootstrap.json" if template == "core-bootstrap" else "design.json"
+    design_file = "core-bootstrap.locke" if template == "core-bootstrap" else "design.json"
     design_name = template
 
     # Collect step results for rendering: list of (name, state)
@@ -369,7 +356,7 @@ def init(target=".", template="core-bootstrap", emit_hy=False, claude_code=True,
     steps: list[tuple[str, str]] = []
 
     # 1. scaffold template files
-    if not _scaffold_template(target, template, force, emit_hy, verbose=False):
+    if not _scaffold_template(target, template, force, verbose=False):
         steps.append(("scaffold", "failed"))
         if verbose:
             _print_init_output(steps, design_file, target)

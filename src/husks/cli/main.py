@@ -7,7 +7,7 @@ from husks.designs.ir import from_json, from_locke
 
 from husks.cli.helpers import EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_INTERNAL, resolve_design
 from husks.cli.cmd import (
-    _cmd_check, _cmd_run, _cmd_run_hy, _cmd_verify, _cmd_status,
+    _cmd_check, _cmd_run, _cmd_verify, _cmd_status,
     _cmd_explain, _cmd_history, _cmd_doctor, _cmd_compare,
     _cmd_cache_export, _cmd_cache_import,
 )
@@ -126,15 +126,13 @@ def main():
                    help="Target directory (default: .)")
     i.add_argument("template", nargs="?", default="core-bootstrap",
                    help="Project template (default: core-bootstrap)")
-    i.add_argument("--hy", action="store_true",
-                   help="Also emit bootstrap.hy (Hy design equivalent)")
     i.add_argument("--force", action="store_true",
                    help="Overwrite existing files")
 
     # check
     c = _sub_parser(sub, "check", help="Validate a design")
     c.add_argument("design", nargs="?", default=None,
-                   help="Path to design file (.json, .locke, or .hy). Defaults to design.json.")
+                   help="Path to design file (.locke or .json). Defaults to design.locke.")
     # C25: Use mutually exclusive group for --verbose and --json
     c_output = c.add_mutually_exclusive_group()
     c_output.add_argument("--verbose", "-v", action="store_true",
@@ -145,7 +143,7 @@ def main():
     # run
     r = _sub_parser(sub, "run", help="Execute a design into a site")
     r.add_argument("design", nargs="?", default=None,
-                   help="Path to design file (.json, .locke, or .hy). Defaults to design.json.")
+                   help="Path to design file (.locke or .json). Defaults to design.locke.")
     r.add_argument("--site", help="Site directory (default: /tmp/husks-<design-name>)")
     r.add_argument("--model", help="LLM model for oracle rules",
                    default="anthropic/claude-haiku-4-5-20251001")
@@ -179,7 +177,7 @@ def main():
     # explain
     e = _sub_parser(sub, "explain", parents=[common_parser], help="Navigate the residue tree")
     e.add_argument("subject", nargs="?", default=None,
-                   help="Design file path (.json/.hy), or rule/artifact name")
+                   help="Design file path (.json/.locke), or rule/artifact name")
     # Phase 5: Navigator mode flags
     e.add_argument("--node", help="Select node in the residue tree")
     e.add_argument("--aperture", type=int, choices=[0, 1, 2, 3], default=1,
@@ -205,7 +203,7 @@ def main():
     # history
     h = _sub_parser(sub, "history", parents=[common_parser], help="Show convergence across runs")
     h.add_argument("design", nargs="?", default=None,
-                   help="Path to design file (.json, .locke, or .hy). Defaults to design.json.")
+                   help="Path to design file (.locke or .json). Defaults to design.locke.")
     h.add_argument("rule", nargs="?", default=None,
                    help="Rule name (omit for summary of all rules)")
     h.add_argument("--site", help="Override site directory")
@@ -319,9 +317,8 @@ def main():
     # ── init ──────────────────────────────────────────────────
     if args.cmd == "init":
         from husks.setup import init
-        emit_hy = getattr(args, 'hy', False)
         verbose = getattr(args, 'verbose', False)
-        sys.exit(init(args.target, template=args.template, emit_hy=emit_hy, claude_code=True, force=args.force, verbose=verbose))
+        sys.exit(init(args.target, template=args.template, claude_code=True, force=args.force, verbose=verbose))
 
     # ── status (may or may not need a design) ────────────────
     if args.cmd == "status":
@@ -359,17 +356,7 @@ def main():
     # ── Commands that require a design ───────────────────────
     design_path = resolve_design(args)
     args.design = design_path
-    is_hy = design_path.endswith(".hy")
     is_locke = design_path.endswith(".locke")
-
-    if args.cmd == "run" and is_hy:
-        _cmd_run_hy(args)
-        return
-
-    if is_hy:
-        print(f"error: '{args.cmd}' does not support .hy designs (only 'run' does)",
-              file=sys.stderr)
-        sys.exit(EXIT_USAGE)
 
     # Beta Gate F/G: Catch design loading errors and emit JSON when --json specified
     try:

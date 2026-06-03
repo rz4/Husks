@@ -68,13 +68,6 @@ def _cmd_doctor(args):
     except Exception as ex:
         checks.append({"name": "selftest", "ok": False, "detail": str(ex)})
 
-    # 4. hy (optional dependency)
-    try:
-        import hy  # noqa: F401
-        checks.append({"name": "hy", "ok": True, "detail": "importable"})
-    except ImportError:
-        checks.append({"name": "hy", "ok": None, "detail": "not installed (optional)"})
-
     # Note: litellm, API key, git, node moved to --live mode (Beta Gate G5)
 
     if args.json_output:

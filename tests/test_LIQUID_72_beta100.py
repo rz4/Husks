@@ -501,7 +501,7 @@ def test_case9_live_end_to_end():
         init_result = run_husks_cli("init", tmpdir, timeout=30)
         assert init_result.returncode == 0
 
-        design = Path(tmpdir) / "core-bootstrap.json"
+        design = Path(tmpdir) / "core-bootstrap.locke"
 
         # M1: live oracle
         m1_json = Path(tmpdir) / "m1.json"
