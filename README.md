@@ -113,6 +113,7 @@ Add `--json` to most commands for machine-readable output.
 
 | Document | Contents |
 |----------|----------|
+| [docs/README.md](docs/README.md) | **Start here** — the documentation reading DAG (surface → philosophy → science → formal) |
 | [docs/liquid-beta.md](docs/liquid-beta.md) | Full CLI reference, JSON schema, FAQ |
 | [docs/three-machine-proof.md](docs/three-machine-proof.md) | Beta build plan with gates A-H |
 | [docs/theory.md](docs/theory.md) | Foundations, conformance, permanence argument |
