@@ -47,55 +47,34 @@ The target names completion. Reach it and the build commits; fail to and it halt
 
 There are two ways to hold a Husk, and they are not the same kind of thing.
 
-**The transport** is what you author. JSON, because it is ergonomic and every tool already speaks it. It names the target, the fuel, the rules, and for each oracle its prompt and tools:
+**The transport** is what you author. Locke — a small surface language whose *nesting is the dependency structure*, so the build tree is visible in the source instead of inferred from it. It names the target, the fuel, the rules, and for each oracle its prompt and tools:
 
-```json
-{
-  "name": "husks-demo",
-  "fuel": 30,
-  "target": "package-complete",
-  "rules": [
-    {
-      "name": "scaffold-package",
-      "kind": "oracle",
-      "inputs": [],
-      "outputs": [
-        "husks-demo/pyproject.toml",
-        "husks-demo/src/husks_demo/cli.py"
-      ],
-      "prompt": "Create a minimal Python package called husks-demo...",
-      "tools": ["read-file", "write-file"],
-      "fuel": 8
-    }
+```
+"core-bootstrap" := design
+5                := fuel
+
+validate := action [
+  readers/VERIFIED                                  := exact
+  "python3 -m husks.gate '...' --stamp-dir readers" := run
+
+  generate :- oracle [
+    [CSE-v1.md CSE-v2.md]                   := inputs
+    readers/generated_reader.py             := free
+    [read-file write-file]                  := tools
+    "Read the spec and write a CSE reader." := prompt
   ]
-}
+]
 ```
 
-This lowers deterministically into an AST. The walk that performs the lowering imposes a fixed order on everything, so two designs that mean the same thing produce the same structure — canonicalization happens here, once, where the full graph is still in view. For human eyes the AST renders as a Lisp surface form:
+`:=` realizes a value into a name; `:-` composes a child rule into its parent, so reading top-down traces the graph from target to leaves. JSON is still accepted — every tool already speaks it — but it is a flatter dialect of the same thing, the tree left implicit. Either surface lowers deterministically into one AST. The walk that performs the lowering imposes a fixed order on everything, so two designs that mean the same thing produce the same structure — canonicalization happens here, once, where the full graph is still in view.
 
-```hy
-(build "husks-demo" 30
-  (let [package
-        (rule "scaffold-package"
-          :inputs  []
-          :outputs ["husks-demo/pyproject.toml"
-                    "husks-demo/src/husks_demo/cli.py"]
-          :recipe
-          (oracle
-            :prompt "Create a minimal Python package called husks-demo..."
-            :tools  ["read-file" "write-file"]
-            :fuel   8))]
-    ;; dependent rules follow
-    ))
-```
-
-**The spine** is what survives. Underneath the JSON and the surface Lisp is the Canonical S-expression Encoding — the byte-level form that gets hashed, and the only form that matters for verification or for replay by a reader written long after this engine is gone. CSE is not for authoring. It is netstring atoms — `<length>:<bytes>`, no leading zeros — in fixed positional schemas, with no whitespace, no keywords, and no implementation-defined behavior anywhere. The conformance demo begins:
+**The spine** is what survives. Underneath the surface (Locke or JSON) is the Canonical S-expression Encoding — the byte-level form that gets hashed, and the only form that matters for verification or for replay by a reader written long after this engine is gone. CSE is not for authoring. It is netstring atoms — `<length>:<bytes>`, no leading zeros — in fixed positional schemas, with no whitespace, no keywords, and no implementation-defined behavior anywhere. The conformance demo begins:
 
 ```text
 (4:husk1:1(5:build4:demo2:10(4:rule7:combine...)))
 ```
 
-The transport is allowed to change. New input dialects, new conveniences, new languages — all fine, because they regenerate. The spine is frozen and append-only: CSE v1 is fixed forever, and a future v2 never edits it, it sits beside it. JSON is the airport announcement. The s-expression is the document.
+The transport is allowed to change. New input dialects, new conveniences, new languages — all fine, because they regenerate. The spine is frozen and append-only: CSE v1 is fixed forever, and a future v2 never edits it, it sits beside it. The surface is the airport announcement. The s-expression is the document.
 
 ---
 
@@ -146,7 +125,7 @@ Anything less is a reader that works on the easy cases and lies on the hard ones
 
 ## 7. Bootstrap validation
 
-`examples/bootstrap-core.json` turns that test on the framework itself. It has two nodes. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate, `husks_conformance.gate`, judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
+`examples/core-bootstrap/core-bootstrap.locke` turns that test on the framework itself. It has two nodes. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate, `husks.gate`, judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
 
 The shape is the whole thesis in miniature: the oracle produces, the gate verifies, and the gate is not the oracle. A model can write the verifier; it cannot grade its own verifier. The frozen roots do that — and the roots were computed by readers the model never saw. What happened the first time we ran this is at the end of the document, because it is the point of the whole exercise.
 

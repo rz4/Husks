@@ -38,20 +38,20 @@ This is the core demonstration. It proves cache reuse (M2) and independent re-re
 ```bash
 # Initialize a project
 husks init
-husks check core-bootstrap.json
+husks check core-bootstrap.locke
 
 # Machine 1: build with stub oracle
-husks run core-bootstrap.json --site m1 --stub
+husks run core-bootstrap.locke --site m1 --stub
 
 # Export M1's cache
 husks cache export cache.tar.gz --site m1
 
 # Machine 2: import cache, reuse at zero cost
 husks cache import cache.tar.gz --site m2
-husks run core-bootstrap.json --site m2 --reuse-only
+husks run core-bootstrap.locke --site m2 --reuse-only
 
 # Machine 3: independent rebuild from empty cache
-husks run core-bootstrap.json --site m3 --stub
+husks run core-bootstrap.locke --site m3 --stub
 
 # Validate the proof
 husks compare m1 m2 m3
@@ -80,29 +80,29 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[llm]" pytest
 
 # Three-machine proof (headline invariant)
-pytest tests/test_three_machine_proof.py \
-       tests/test_three_machine_cli_acceptance.py \
-       tests/test_beta_three_machine.py \
+pytest tests/test_LIQUID_69_three_machine_proof.py \
+       tests/test_LIQUID_70_three_machine_cli_acceptance.py \
+       tests/test_LIQUID_68_beta_three_machine.py \
        -v --tb=short
 
 # Full deterministic suite
 pytest tests/ -v --tb=short \
-       --ignore=tests/test_live_oracle_readiness.py
+       --ignore=tests/test_SOLID_50_live_oracle_readiness.py
 ```
 
 ## Commands
 
 ```bash
 husks init [dir]                                  # Create new project
-husks check design.json                           # Validate design
-husks run design.json --site ./s1 --stub          # Build with stub oracle
-husks run design.json --site ./s1 --reuse-only    # Cache-only (no oracle calls)
+husks check design.locke                          # Validate design
+husks run design.locke --site ./s1 --stub         # Build with stub oracle
+husks run design.locke --site ./s1 --reuse-only   # Cache-only (no oracle calls)
 husks cache export cache.tar.gz --site ./s1       # Export cache
 husks cache import cache.tar.gz --site ./s2       # Import cache
 husks compare s1 s2 s3                            # Equivalence + three-machine proof
 husks status s1                                   # Show freshness states
 husks explain --site ./s1 --interactive           # Navigate build residue
-husks history design.json [rule]                  # Convergence history
+husks history design.locke [rule]                 # Convergence history
 husks doctor --selftest                           # Conformance vectors
 husks doctor --live                               # Check live oracle readiness
 ```
