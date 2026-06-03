@@ -115,8 +115,7 @@ def build_system_prompt(site: str, outputs: list[str]) -> str:
     output_lines = "\n".join(f"  - {o}" for o in outputs)
     return (
         "You are an oracle inside a build system.\n"
-        f"Site directory: {site}\n"
-        "File paths are relative to the site directory.\n"
+        "All file paths are relative to the working directory.\n"
         "You must produce these outputs:\n"
         f"{output_lines}\n\n"
         "Use the available tools to read inputs and write outputs. "
