@@ -18,7 +18,11 @@ from husks.resources import skill_is_packaged
 from husks.resources import templates_dir
 from husks.gate import selftest, _resolve_conformance
 from husks.utils.console import BOLD, DIM, CYAN, RESET
-from husks.cli.surface import emit_init
+# NOTE: husks.cli.surface is imported lazily inside _print_init_output().
+# Importing it at module top level pulls in husks.cli/__init__ ->
+# husks.cli.main -> husks.setup, a circular import that breaks whenever
+# husks.setup is imported before husks.cli (sanctioned in layers.toml
+# [allow_deferred]).
 
 
 # ── the canonical stance, versioned with the engine ─────────────────────
@@ -337,4 +341,6 @@ def _print_init_output(
     verbose: bool = True,
 ) -> None:
     """Render init output using the three-section architecture."""
+    from husks.cli.surface import emit_init  # deferred: breaks setup<->cli cycle
+
     print(emit_init(steps, design_file, target, verbose=verbose))
