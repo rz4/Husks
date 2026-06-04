@@ -665,13 +665,15 @@ def _cmd_compare(args):
             ck = cross_keys[0]
             entry = f"{_sym(ck)} {_label[ck]} "
             connector_len = col_w - _visible_len(entry)
-            print(f"{indent}{entry}{'\u2500' * connector_len}\u256f{' ' * (col_w - 1)}\u2502")
+            hbar = "\u2500" * connector_len
+            print(f"{indent}{entry}{hbar}\u256f{' ' * (col_w - 1)}\u2502")
 
             # comparable cost: merges M3 (connector reaches col_w*2 pipe)
             ck = cross_keys[1]
             entry = f"{_sym(ck)} {_label[ck]} "
             connector_len = col_w * 2 - _visible_len(entry)
-            print(f"{indent}{entry}{'\u2500' * connector_len}\u256f")
+            hbar = "\u2500" * connector_len
+            print(f"{indent}{entry}{hbar}\u256f")
 
             # declared equivalence (no connector)
             ck = cross_keys[2]
