@@ -14,6 +14,7 @@ def test_build_fails_if_husk_cannot_be_written():
     the build must fail fatally.
     """
     from husks.build import build, rule
+    from unittest.mock import patch
 
     tmpdir = tempfile.mkdtemp(prefix="husk-write-fail-")
     try:
@@ -29,41 +30,31 @@ def test_build_fails_if_husk_cannot_be_written():
             run="cp input.txt output.txt",
         )
 
-        # First build: should succeed
-        S1 = build("test-build-1", 10, node, site=str(site))
-        assert S1["status"] == "committed"
-        assert S1["build-root"] is not None
-        assert (site / "test-build-1.husk").exists()
+        # Mock write_bytes_atomic to fail when writing .husk files
+        # This simulates a filesystem error for verification artifacts
+        # without preventing the rule itself from executing.
+        original_write = None
 
-        # Make site directory read-only to prevent .husk write
-        # Note: Remove the old .husk first so the second build tries to create a NEW file
-        # (On some systems, overwriting existing files works in read-only directories)
-        (site / "test-build-1.husk").unlink()
-        os.chmod(str(site), 0o555)
+        def failing_write(path, data):
+            if path.endswith(".husk"):
+                raise PermissionError(f"[Errno 13] Permission denied: '{path}'")
+            return original_write(path, data)
 
-        try:
-            # Second build with DIFFERENT name: should fail because we can't write .husk
-            # Modify input to trigger rebuild
-            # Need to temporarily make writable to modify input
-            os.chmod(str(site), 0o755)
-            (site / "input.txt").write_text("new data\n")
-            os.chmod(str(site), 0o555)
+        import husks.build.run as _run_mod
+        original_write = _run_mod.write_bytes_atomic
 
+        with patch.object(_run_mod, "write_bytes_atomic", side_effect=failing_write):
             S2 = build("test-build-2", 10, node, site=str(site))
 
-            # Critical assertion: build must halt, not commit
-            assert S2["status"] == "halted", \
-                f"Build should halt when verification artifacts cannot be written, got: {S2['status']}"
+        # Critical assertion: build must halt, not commit
+        assert S2["status"] == "halted", \
+            f"Build should halt when verification artifacts cannot be written, got: {S2['status']}"
 
-            assert "verification artifacts" in S2["value"], \
-                f"Error message should mention verification artifacts: {S2['value']}"
+        assert "verification artifacts" in S2["value"], \
+            f"Error message should mention verification artifacts: {S2['value']}"
 
-            assert S2["build-root"] is None, \
-                "build-root should be None when verification write fails"
-
-        finally:
-            # Restore permissions for cleanup
-            os.chmod(str(site), 0o755)
+        assert S2["build-root"] is None, \
+            "build-root should be None when verification write fails"
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

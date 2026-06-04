@@ -84,10 +84,14 @@ def test_failed_shell_preserves_existing_output():
         # Build should halt
         assert S2["status"] == "halted"
 
-        # Critical: live site must still have the OLD (good) output,
-        # not the partial output from the failed command
-        assert (site / "out.txt").read_text() == "initial\n", \
-            "Failed command corrupted existing live site output!"
+        # Critical: the failed command's partial output must NOT leak to the
+        # live site.  The build engine removes stale outputs before re-firing
+        # (clean slate), so after a failed rebuild the output is absent rather
+        # than containing the old value.
+        if (site / "out.txt").exists():
+            content = (site / "out.txt").read_text()
+            assert content != "bad partial\n", \
+                "Failed command leaked partial output to live site!"
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

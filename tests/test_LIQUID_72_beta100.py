@@ -514,7 +514,7 @@ def test_case9_live_end_to_end():
         assert m1_result.returncode == 0, f"M1 should commit: {m1_result.stderr}"
 
         # Export cache
-        cache_file = Path(tmpdir) / "cache.tgz"
+        cache_file = Path(tmpdir) / "cache.tar.gz"
         run_husks_cli(
             "cache", "export", str(cache_file),
             "--site", "m1",

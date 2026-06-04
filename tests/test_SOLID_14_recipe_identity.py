@@ -10,6 +10,7 @@ Proves that the v2 identity scheme fixes the defects in v1:
 
 import shutil
 import tempfile
+from pathlib import Path
 
 from conftest import make_site
 
@@ -39,12 +40,12 @@ def test_callable_body_change_changes_root():
         site_b = make_site(tmpdir + "/b")
 
         def write_hello(S):
-            from husks.build import site_path, write_text
-            write_text(site_path(S, "out.txt"), "hello\n")
+            from husks.build import write_path, write_text
+            write_text(write_path(S, "out.txt"), "hello\n")
 
         def write_goodbye(S):
-            from husks.build import site_path, write_text
-            write_text(site_path(S, "out.txt"), "goodbye\n")
+            from husks.build import write_path, write_text
+            write_text(write_path(S, "out.txt"), "goodbye\n")
 
         Sa = _make_design(site_a, write_hello)
         Sb = _make_design(site_b, write_goodbye)
@@ -76,8 +77,8 @@ def test_callable_rename_same_body_same_root():
         # (We can't truly test this with inspect.getsource since the
         # source lines differ, but we can verify the mechanism works)
         def action_v1(S):
-            from husks.build import site_path, write_text
-            write_text(site_path(S, "out.txt"), "same output\n")
+            from husks.build import write_path, write_text
+            write_text(write_path(S, "out.txt"), "same output\n")
 
         Sa = _make_design(site_a, action_v1)
 
@@ -153,6 +154,10 @@ def test_cond_pred_different_args_different_roots():
     try:
         site_a = make_site(tmpdir + "/a")
         site_b = make_site(tmpdir + "/b")
+
+        # Create the files so predicates succeed and builds commit
+        Path(site_a).joinpath("config_a.txt").write_text("a\n")
+        Path(site_b).joinpath("config_b.txt").write_text("b\n")
 
         # Two cond predicates with different paths
         pred_a = _resolve_predicate("file-exists:config_a.txt", {})

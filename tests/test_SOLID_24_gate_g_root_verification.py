@@ -60,8 +60,8 @@ def test_status_verifies_valid_root():
         import json
         status = json.loads(captured.getvalue())
 
-        # Verify state is sealed and root is present
-        assert status["state"] == "sealed", "committed build should show as sealed"
+        # Verify status is sealed and root is present
+        assert status["status"] == "sealed", "committed build should show as sealed"
         assert status["root"] is not None, "sealed build should have a root hash"
         assert isinstance(status["root"], str) and len(status["root"]) > 0, \
             "root should be a non-empty string"
@@ -300,13 +300,13 @@ def test_status_json_output_includes_verification_fields():
 
         # JSON output should include summary schema fields
         assert "name" in status, "JSON should include name"
-        assert "state" in status, "JSON should include state"
+        assert "status" in status, "JSON should include status"
         assert "site" in status, "JSON should include site"
         assert "root" in status, "JSON should include root"
 
-        # Root should be present and state should be sealed
+        # Root should be present and status should be sealed
         assert status["root"] is not None, "root should be present for committed build"
-        assert status["state"] == "sealed", "committed build should show as sealed"
+        assert status["status"] == "sealed", "committed build should show as sealed"
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

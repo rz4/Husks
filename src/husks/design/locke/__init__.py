@@ -99,6 +99,9 @@ from ._io import from_json, from_locke, to_json, normalize_site_inputs
 # (Note: there's also _compiler.compile which is the parse pipeline)
 compile = compile_design
 
+# Re-export internal helpers used by tests
+from ._executor import _make_shell_action, _resolve_predicate, _setup_imports
+
 __all__ = [
     # Tokenizer
     "_TT",

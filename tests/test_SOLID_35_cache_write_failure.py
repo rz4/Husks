@@ -25,8 +25,8 @@ def test_cache_write_failure_does_not_corrupt_build(cache_temp_site, basic_stub_
 
     node = make_oracle_node("oracle-rule", inputs=[], outputs=["output.txt"], prompt="test")
 
-    # Mock cache_put_pending to raise an exception
-    with patch("husks.build.cache.cache_put_pending") as mock_cache_put:
+    # Mock cache_put_pending where it's imported (eval module)
+    with patch("husks.build.eval.cache_put_pending") as mock_cache_put:
         mock_cache_put.side_effect = IOError("Simulated cache write failure")
 
         # Build should still succeed

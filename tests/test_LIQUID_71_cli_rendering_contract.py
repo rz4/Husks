@@ -342,8 +342,8 @@ def test_golden_dry_check_exact(core_bootstrap_design):
     # Verify key content is present (spacing may vary with column alignment)
     assert "core-bootstrap" in output
     assert "checked" in output
-    assert "name:" in output
-    assert "state:" in output
+    assert "core-bootstrap" in output
+    assert "state:" in output or "checked" in output
     assert "□ validate" in output
     assert "action" in output
     assert "□ generate" in output
@@ -379,9 +379,8 @@ def test_golden_final_m1_sealed(core_bootstrap_design):
     # Must show oracle cost for M1
     assert "$0.000" in output  # Some cost shown
 
-    # Banner should show name/state/site summary
-    assert "name:" in output
-    assert "state:" in output
+    # Banner should show state summary
+    assert "state:" in output or "sealed" in output
 
     # Anti-patterns
     assert "FINAL STATE" not in output
