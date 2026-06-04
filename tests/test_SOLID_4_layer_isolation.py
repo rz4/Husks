@@ -100,7 +100,7 @@ class TestTransportIsolation:
     @pytest.mark.alpha
 
     def test_only_imports_core(self):
-        path = os.path.join(SRC_DIR, "designs", "transport.py")
+        path = os.path.join(SRC_DIR, "design", "transport.py")
         imports = _husks_imports(path)
         assert imports == {"husks.core"}, (
             f"transport.py husks imports: {imports}, expected only husks.core"
@@ -109,7 +109,7 @@ class TestTransportIsolation:
     @pytest.mark.alpha
 
     def test_stdlib_only(self):
-        path = os.path.join(SRC_DIR, "designs", "transport.py")
+        path = os.path.join(SRC_DIR, "design", "transport.py")
         imports = _non_husks_imports(path)
         # json, typing, and __future__ are stdlib
         allowed_stdlib = {"json", "typing", "__future__"}
@@ -122,10 +122,10 @@ class TestTransportIsolation:
 
     def test_no_engine_imports(self):
         """transport must not import from engine or instrument layers."""
-        path = os.path.join(SRC_DIR, "designs", "transport.py")
+        path = os.path.join(SRC_DIR, "design", "transport.py")
         imports = _husks_imports(path)
         engine_instrument = {
-            "husks.build", "husks.designs", "husks.llm", "husks.tools",
+            "husks.build", "husks.design", "husks.llm", "husks.tools",
             "husks.trace", "husks.cli", "husks.kernel",
         }
         violations = imports & engine_instrument
@@ -151,7 +151,7 @@ class TestLayerBoundaries:
 
     def test_transport_never_imports_engine_or_instrument(self):
         """Transport (Layer 1) imports nothing from Layers 2-3."""
-        path = os.path.join(SRC_DIR, "designs", "transport.py")
+        path = os.path.join(SRC_DIR, "design", "transport.py")
         imports = _husks_imports(path)
         lower_layers = {f"husks.{m}" for m in (LAYER_2 | LAYER_3)}
         violations = imports & lower_layers
@@ -161,11 +161,11 @@ class TestLayerBoundaries:
 
     @pytest.mark.alpha
 
-    def test_designs_ir_does_not_import_instrument(self):
-        """designs/ir.py (Layer 2) should not directly import instrument modules
+    def test_design_executor_does_not_import_instrument(self):
+        """design/locke/_executor.py (Layer 2) should not directly import instrument modules
         at module scope. Lazy imports inside functions are acceptable
         (e.g. 'import hy' inside compile())."""
-        path = os.path.join(SRC_DIR, "designs", "ir.py")
+        path = os.path.join(SRC_DIR, "design", "locke", "_executor.py")
         # Parse only top-level imports (not inside functions)
         with open(path, "r") as f:
             source = f.read()
@@ -185,7 +185,7 @@ class TestLayerBoundaries:
         violations = {m for m in top_level_imports
                       if m in instrument_modules}
         assert violations == set(), (
-            f"designs/ir.py top-level imports from instrument layer: {violations}"
+            f"design/locke/_executor.py top-level imports from instrument layer: {violations}"
         )
 
 
@@ -262,6 +262,6 @@ class TestLayerDocumentation:
     @pytest.mark.alpha
 
     def test_transport_docstring_mentions_bijection(self):
-        import husks.designs.transport
-        assert "bijection" in husks.designs.transport.__doc__.lower() or \
-               "bijective" in husks.designs.transport.__doc__.lower()
+        import husks.design.transport
+        assert "bijection" in husks.design.transport.__doc__.lower() or \
+               "bijective" in husks.design.transport.__doc__.lower()

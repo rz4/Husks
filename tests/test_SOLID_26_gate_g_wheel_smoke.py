@@ -302,7 +302,7 @@ def test_wheel_includes_resources():
             # Check core modules
             assert any('husks/cli' in f for f in files_in_wheel), "Missing husks.cli module"
             assert any('husks/build' in f for f in files_in_wheel), "Missing husks.build module"
-            assert any('husks/designs' in f for f in files_in_wheel), "Missing husks.designs module"
+            assert any('husks/design' in f for f in files_in_wheel), "Missing husks.design module"
 
             print("\n✓ Wheel manifest check: PASS")
             print(f"  Conformance files: {len(conformance_files)}")

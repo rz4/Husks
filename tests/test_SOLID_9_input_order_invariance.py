@@ -14,7 +14,7 @@ import os
 import tempfile
 
 from husks.core import recompute_root
-from husks.designs import ir
+from husks.design import from_json, run
 from husks.utils import reset as reset_trace
 
 import pytest
@@ -55,8 +55,8 @@ def _run_and_compare(input_order):
         with open(dpath, "w") as f:
             json.dump(design, f)
 
-        d = ir.from_json(dpath)
-        S = ir.run(d, site=site)
+        d = from_json(dpath)
+        S = run(d, site=site)
 
         assert S["status"] == "committed", f"build did not commit: {S['value']}"
 
