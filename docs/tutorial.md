@@ -133,13 +133,13 @@ produces sealed outputs.
 ### Export cache from M1
 
 ```bash
-husks cache export cache.tar.gz --site m1
+husks cache export m1 cache.tar.gz
 ```
 
 ### Machine 2: cached reuse at zero cost
 
 ```bash
-husks cache import cache.tar.gz --site m2
+husks cache import cache.tar.gz m2
 husks run core-bootstrap.locke --site m2 --reuse-only
 ```
 

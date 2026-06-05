@@ -182,14 +182,15 @@ merge := action [
 Multiple bindings, then the body that uses them.  One definition, one
 node in the CSE tree, multiple references.
 
-### Step 7: `cond` as rule evaluation
+### Step 7: `cond` as conditional execution
 
-Conditions don't use synthetic predicate strings.  The predicate *is* a
-rule — did it produce its outputs?  The build DAG is the control flow:
+The predicate can be a bare rule reference (did it produce its outputs?)
+or a builtin string (`file-exists:<path>`, `file-nonempty:<path>`,
+`exit-zero:<command>`).  Either way, the build DAG is the control flow:
 
 ```
 evaluation :- cond [
-  validate                        # rule to evaluate
+  "file-exists:seed.txt" := predicate
 
   benchmark :- action [...]       # then: on success
   skip :- halt [                  # else: on failure
@@ -198,8 +199,8 @@ evaluation :- cond [
 ]
 ```
 
-Three positional parts: the predicate rule (bare reference), the then
-branch, the else branch.
+Three parts: the predicate (declared or positional bare reference), the
+then branch, the else branch.
 
 ---
 
@@ -226,10 +227,12 @@ Top-level declarations:
 
 | Form | Example |
 |------|---------|
-| Build name | `"core-bootstrap" := public` |
+| Build name | `"core-bootstrap" := design` (synonym: `public`) |
 | Fuel budget | `20 := fuel` |
-| Site inputs | `["a" "path/a" "b" "path/b"] := site-inputs` |
-| Cost tolerance | `[0.5 2.0] := cost-tolerance` |
+| Site inputs (bare) | `gate.py := site` (identity mapping) |
+| Site inputs (dir) | `spec := site [CSE-v1.md CSE-v2.md]` (prefix: `spec/`) |
+| Site inputs (legacy) | `["a" "path/a" "b" "path/b"] := site-inputs` |
+| Cost tolerance | `[0.5 2.0] := tolerance` (synonym: `cost-tolerance`) |
 | Target rule | `validate := action [...]` |
 
 Rule kinds:
@@ -271,5 +274,6 @@ CseValue tree
 
 ## Invariant
 
-`core-bootstrap.locke` produces byte-identical CSE output to
-`core-bootstrap.json`.  This is tested in `tests/test_locke.py`.
+`core-bootstrap.locke` is the canonical design source.  The JSON surface
+is still accepted but is no longer shipped as a parallel fixture.
+The Locke parser and resolver are tested in `tests/L5-locke/`.

@@ -33,10 +33,10 @@ re-realization (M3) from the same seed design.
 husks run core-bootstrap.locke --site m1 --stub
 
 # Export cache from M1
-husks cache export cache.tar.gz --site m1
+husks cache export m1 cache.tar.gz
 
 # Machine 2: Import cache and reuse at zero cost
-husks cache import cache.tar.gz --site m2
+husks cache import cache.tar.gz m2
 husks run core-bootstrap.locke --site m2 --reuse-only
 
 # Machine 3: Independent re-realization
@@ -209,34 +209,36 @@ Evidence (informational):
 JSON output includes `proof.satisfied` and `proof.checks` with a
 `required` flag on each check.
 
-### `husks cache export <file>`
+### `husks cache export <site> <file>`
 
 Export build cache to a portable tarball.
 
-**Required:**
-- `--site <dir>` - Site with cache to export
+**Arguments:**
+- `<site>` - Site directory with cache to export
+- `<file>` - Output tarball path (must end with `.tar.gz`)
 
 **Options:**
 - `--json` - JSON status output
 
 **Example:**
 ```bash
-husks cache export cache.tar.gz --site m1
+husks cache export m1 cache.tar.gz
 ```
 
-### `husks cache import <file>`
+### `husks cache import <file> <site>`
 
 Import cache from a tarball into a site.
 
-**Required:**
-- `--site <dir>` - Target site for import
+**Arguments:**
+- `<file>` - Tarball to import
+- `<site>` - Target site directory
 
 **Options:**
 - `--json` - JSON status output
 
 **Example:**
 ```bash
-husks cache import cache.tar.gz --site m2
+husks cache import cache.tar.gz m2
 ```
 
 ### `husks doctor`
@@ -483,7 +485,7 @@ Cache key = `seal(recipe, input_hashes)`
 
 **Export:**
 ```bash
-husks cache export cache.tar.gz --site m1
+husks cache export m1 cache.tar.gz
 ```
 Creates tarball with:
 - `.cache/` directory structure
@@ -493,7 +495,7 @@ Creates tarball with:
 
 **Import:**
 ```bash
-husks cache import cache.tar.gz --site m2
+husks cache import cache.tar.gz m2
 ```
 Merges imported cache into target site:
 - Existing entries: Kept (merge mode)
@@ -581,23 +583,32 @@ Yes. Create a `.locke` or `.json` design:
 {
   "name": "my-design",
   "fuel": 50,
-  "target": "my-target",
+  "target": "validate",
   "site_inputs": {
     "input.txt": "path/to/input.txt"
   },
   "rules": [
     {
-      "name": "my-rule",
+      "name": "generate",
       "kind": "oracle",
       "inputs": ["input.txt"],
       "outputs": ["output.txt"],
       "prompt": "Your prompt here",
       "tools": ["read-file", "write-file"],
       "fuel": 20
+    },
+    {
+      "name": "validate",
+      "kind": "action",
+      "inputs": ["output.txt"],
+      "outputs": ["result.txt"],
+      "run": "python3 check.py output.txt"
     }
   ]
 }
 ```
+
+The target must be an action (use `--unsafe` to override).
 
 See `examples/` for more designs.
 

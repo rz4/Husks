@@ -9,28 +9,28 @@
 #   Lists are delimited by [].
 #
 # Operators
-#   :=  Declare a term.  value := term
-#   :-  Compose residue.  name :- rule [context]
+#   :=  Realization.   value := term        Concrete, deterministic.
+#   :-  Composition.   name :- kind [...]   Structural, compositional.
 #
 # Terms are right-sided by convention so a human scanning the file reads
 # structure before semantics -- the opposite of most languages.
 #
-# Design preamble (each declared once)
-#   := design     Public slug of the experiment.
-#   := fuel       Total budget of oracle steps.
+# Design preamble (each declared once, first occurrence wins)
+#   := design     Public slug of the experiment (synonym: public).
+#   := fuel       Total build budget -- maximum oracle invocations.
 #   := tolerance  Float pair [min max], acceptable compute drift M1..Mn.
-#   := site       Quarantined directory for the build.
+#   := site       Declare site inputs from the design directory.
 #                 Bare form:  file := site          (identity mapping)
 #                 List form:  dir  := site [f1 f2]  (prefix mapping: dir/f1, dir/f2)
 #
-# Rules
-#   := action [context]   Deterministic gate.
+# Rules (value := kind [...] marks the target; name :- kind [...] is a dependency)
+#   action [context]   Deterministic gate.
 #     := inputs   Files the action reads.
 #     := run      Shell command to execute.
 #     := free     Output files without equivalence constraint.
 #     := exact    Output files requiring exact-match verification.
 #
-#   := oracle [context]   Nondeterministic step (LLM call).
+#   oracle [context]   Nondeterministic step (LLM call).
 #     := inputs   Files the oracle reads.
 #     := free     Output files without equivalence constraint.
 #     := exact    Output files requiring exact-match verification.
@@ -41,11 +41,11 @@
 # The target of a design must be an action (use --unsafe to override).
 #
 # Context blocks may nest rules and use:
-#   cond   Conditional execution gated on a predicate.
-#   let    Bind predecessor rules before subsequent ones.
-#   trial  Verified branch across a matrix of action/oracle calls.
-#
-# External designs can be composed via the husk term.
+#   cond   Conditional on a predicate (builtin string or rule reference).
+#   let    Shared sub-tree binding visible to all siblings.
+#   trial  Try multiple branches, pick the best.
+#   commit Terminal success (value).
+#   halt   Terminal failure (reason).
 
 
 

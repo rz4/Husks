@@ -106,7 +106,9 @@ husks verify ./M1
 **5. Run the three-machine proof** (independent re-realization):
 
 ```bash
-husks run core-bootstrap.locke --site ./M2 --cache-from ./M1
+husks cache export M1 cache.tar.gz
+husks cache import cache.tar.gz M2
+husks run core-bootstrap.locke --site ./M2 --reuse-only
 husks run core-bootstrap.locke --site ./M3
 husks compare M1 M2 M3
 ```
@@ -175,8 +177,8 @@ but it cannot grade its own output -- that's what the sealed Merkle DAG is for.
 | `husks verify <site>` | Recompute the `.husk` root hash |
 | `husks compare <s1> <s2> [s3]` | Equivalence check across sites |
 | `husks history <site> [rule]` | Convergence analysis across runs |
-| `husks cache export <file>` | Pack cache for transfer |
-| `husks cache import <file>` | Unpack cache into a site |
+| `husks cache export <site> <file>` | Pack cache for transfer |
+| `husks cache import <file> <site>` | Unpack cache into a site |
 | `husks doctor` | Diagnose the local environment |
 
 Every command supports `--json` for machine-readable output.

@@ -61,6 +61,7 @@ validate := action [
     [CSE-v1.md CSE-v2.md]                   := inputs
     readers/generated_reader.py             := free
     [read-file write-file]                  := tools
+    4                                       := fuel
     "Read the spec and write a CSE reader." := prompt
   ]
 ]
@@ -90,9 +91,9 @@ Note what is **not** in there: the model, the cost, the token counts, the wall-c
 
 The seal does not key on the oracle's output, because the output cannot be predicted — that is what makes it an oracle. Sealing freezes the *first* residue an event produced. Rerunning does not re-enter the event; it reuses the husk. The only act that re-fires a sealed oracle is editing its recipe, and editing the recipe is precisely what changes the seal.
 
-Nodes hash their seal, their outputs, and their children's digests, so a build is a Merkle DAG and its root is one hash over the whole thing. A `let`-shared subtree is hashed once, so shared structure is identical by construction — the diamond is one digest, not two that happen to match. Clone a repo and you inherit the sealed residue; the expensive calls are already paid for.
+A node's Merkle digest hashes its name, seal, output bindings, and children's digests — `(node, name, seal, outputs, children)` — so a build is a Merkle DAG and its root is one hash over the whole thing. A `let`-shared subtree is hashed once, so shared structure is identical by construction — the diamond is one digest, not two that happen to match. Clone a repo and you inherit the sealed residue; the expensive calls are already paid for.
 
-Call a husk *permanent* in this operational sense: its root is reproducible from the bytes and inputs alone, by any conforming reader, with no access to the engine that produced it. That is a property you can test, not a quality you assert — and here is the test the whole design exists to pass. Throw the engine away. A small reader in a language that did not exist when the husk was sealed, given only the bytes and the inputs, must arrive at the same root. The repo ships two independent readers — `core.py` in Python and `verify.mjs` in JavaScript — and a frozen conformance vector. They agree on the root. If they ever stopped agreeing, the permanence claim would be false; they don't, so as far as it has been tested, it holds.
+Call a husk *permanent* in this operational sense: its root is reproducible from the bytes and inputs alone, by any conforming reader, with no access to the engine that produced it. That is a property you can test, not a quality you assert — and here is the test the whole design exists to pass. Throw the engine away. A small reader in a language that did not exist when the husk was sealed, given only the bytes and the inputs, must arrive at the same root. The repo ships two independent verification paths — `kernel.py` (the Python permanence layer, `recompute_root`) and `verify.mjs` (a standalone JavaScript reader) — and a set of frozen conformance vectors. They agree on the root. If they ever stopped agreeing, the permanence claim would be false; they don't, so as far as it has been tested, it holds.
 
 ```bash
 node spec/conformance/verify.mjs spec/conformance/demo.husk \
@@ -125,7 +126,7 @@ Anything less is a reader that works on the easy cases and lies on the hard ones
 
 ## 7. Bootstrap validation
 
-`examples/core-bootstrap/core-bootstrap.locke` turns that test on the framework itself. It has two nodes. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate (`gate.py`, standalone) judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
+`examples/core-bootstrap/core-bootstrap.locke` turns that test on the framework itself. It has two rules. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate (`gate.py`, standalone) judges that reader against the six frozen conformance vectors: three positive roots that must match and three malformed inputs that must be rejected. Optionally it cross-checks against the independent JavaScript reader. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
 
 The shape is the whole thesis in miniature: the oracle produces, the gate verifies, and the gate is not the oracle. A model can write the verifier; it cannot grade its own verifier. The frozen roots do that — and the roots were computed by readers the model never saw. What happened the first time we ran this is at the end of the document, because it is the point of the whole exercise.
 
@@ -189,7 +190,7 @@ Concrete gaps in what the engine can express or execute today.
 
 A husk has object permanence when its verifier can be produced as residue, the producing event discarded, and the result confirmed by a reader that is not it. The cross-language readers and the frozen root are the first form of that proof. The sharpest form is harder: hand a model nothing but the spec, have it write a CSE reader from cold, and check whether that reader — which has never seen the engine, the shipped readers, or the answer — arrives at the same root hashes the bedrock already holds.
 
-We ran it. A small, cheap model, given only CSE v1 and v2, wrote a netstring parser, a seal preimage, and a Merkle node digest, and reproduced both frozen roots — `demo` at `9977239d…` and an adversarial fixture, built to break lazy parsers, at `5382838c…`. It rejected two malformed husks and agreed with the independent JavaScript reader. Judged by readers that are not it. Three cents, one call, twenty-five seconds.
+We ran it. A small, cheap model, given only CSE v1 and v2, wrote a netstring parser, a seal preimage, and a Merkle node digest, and reproduced the frozen roots — `demo` at `9977239d…` and an adversarial fixture, built to break lazy parsers, at `5382838c…`. It rejected the malformed husks and agreed with the independent JavaScript reader. Judged by readers that are not it. Three cents, one call, twenty-five seconds.
 
 It did not pass on the first run, and that is the part worth reading. The first cold reader disagreed by a definite hash, and the disagreement located a real hole: the spec described how the *elaborator* orders a node's children, and a faithful reader implemented that as a verification rule, which it is not. A second gap surfaced next — whether a digest enters a parent form as a hex string or as raw bytes. Both were holes a careful independent implementer would also have fallen into. We closed them in CSE v2 and ran again, cold. Then it clicked into the bedrock.
 
