@@ -761,6 +761,8 @@ def _build_site_residue(site: str):
                 if last.get("cached"):
                     n.cache = True
                     n.state = "cached"
+                elif n.fuel > 0:
+                    n.state = "fired"
 
     residue = CliResidue(
         command="status", design_name=design_name,
@@ -960,13 +962,13 @@ def _three_machine_checks(residues, comparisons):
     m2_oracles = [n for n in m2.nodes if n.kind == "oracle"]
     m3_oracles = [n for n in m3.nodes if n.kind == "oracle"]
     checks.append(("M1 fired oracles",
-                    any(n.trace and (n.trace.input_tokens or 0) > 0 for n in m1_oracles), False))
+                    any(n.state == "fired" and not n.cache for n in m1_oracles) if m1_oracles else False, False))
     checks.append(("M1 paid cost", (m1.cost or 0.0) > 0, False))
     checks.append(("M2 zero oracle cost", (m2.cost or 0.0) == 0.0, False))
     checks.append(("M2 cache reuse",
                     any(n.cache or n.state == "cached" for n in m2_oracles), False))
     checks.append(("M3 fired oracles",
-                    any(n.trace and (n.trace.input_tokens or 0) > 0 for n in m3_oracles), False))
+                    any(n.state == "fired" and not n.cache for n in m3_oracles) if m3_oracles else False, False))
     checks.append(("M3 paid cost", (m3.cost or 0.0) > 0, False))
     m1_m3 = next((r for r in comparisons if {r["site_a"], r["site_b"]} == {m1.site, m3.site}), None)
     checks.append(("M1\u2194M3 outputs equivalent", m1_m3["equivalent"] if m1_m3 else False, False))

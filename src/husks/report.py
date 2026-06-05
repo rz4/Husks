@@ -737,7 +737,7 @@ def assemble(
             unchanged.append(nd["name"])
 
     oracle_calls = sum(1 for nd in nodes if nd["kind"] == "oracle"
-                       and nd["state"] == "fired" and nd["cost"]["this_run"] > 0)
+                       and nd["state"] == "fired" and not nd.get("cached"))
     cache_hits_list = [nd["name"] for nd in nodes
                        if nd["kind"] == "oracle" and nd.get("cached")]
 

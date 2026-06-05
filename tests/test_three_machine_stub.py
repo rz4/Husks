@@ -22,20 +22,30 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = str(REPO_ROOT / "src")
 
-# Minimal design: single action rule that touches deterministic output.
-# Action rules without a "run" key use the default touch action,
-# which creates empty output files deterministically.
+# Design with an oracle rule followed by an action rule.
+# The oracle exercises the stub/cache/refire phenomenon;
+# the action consumes oracle output deterministically.
 MINIMAL_DESIGN = """\
 {
   "name": "stub-proof",
   "fuel": 10,
-  "target": "w",
+  "target": "validate",
   "rules": [
     {
-      "name": "w",
+      "name": "generate",
+      "kind": "oracle",
+      "inputs": [],
+      "outputs": ["output.txt"],
+      "prompt": "Write output.",
+      "tools": ["write-file"],
+      "fuel": 5
+    },
+    {
+      "name": "validate",
       "kind": "action",
-      "outputs": ["out.txt"],
-      "inputs": []
+      "inputs": ["output.txt"],
+      "outputs": ["result.txt"],
+      "run": "cp output.txt result.txt"
     }
   ]
 }
@@ -105,4 +115,16 @@ def test_three_machine_stub_proof(design_file, tmp_path):
     assert "proof" in out, f"No proof section in compare output: {out}"
     assert out["proof"]["satisfied"] is True, (
         f"Three-machine proof not satisfied: {out['proof']}"
+    )
+
+    # Verify oracle-specific evidence checks
+    checks = {c["label"]: c["ok"] for c in out["proof"]["checks"]}
+    assert checks.get("M1 fired oracles") is True, (
+        f"M1 should show fired oracles: {checks}"
+    )
+    assert checks.get("M2 cache reuse") is True, (
+        f"M2 should show cache reuse: {checks}"
+    )
+    assert checks.get("M3 fired oracles") is True, (
+        f"M3 should show fired oracles: {checks}"
     )
