@@ -1,104 +1,76 @@
-# Husks CLI Beta 100
+# Husks CLI Reference
 
-**Status:** Beta 100 sealed
-**Date:** 2026-05-31
+**Status:** Rock-hard
+**Date:** 2026-06-05
 
 ## Overview
 
-Beta 100 marks the first public-ready release of Husks, a deterministic build system for nondeterministic (LLM-powered) work. This release demonstrates **computational state equivalence** through a three-machine proof: independent realizations of the same design produce verifiably equivalent build artifacts under the design's declared acceptance relation.
+Husks is a deterministic build system for nondeterministic (LLM-powered) work. This release demonstrates **computational state equivalence** through a three-machine proof: independent realizations of the same design produce verifiably equivalent build artifacts under the design's declared acceptance relation.
 
 ## Quick Start
 
 ```bash
-# Initialize a new Husks project
-husks init
-
 # Check design validity
 husks check core-bootstrap.locke
 
 # Run the build with stub oracle (zero API cost)
 husks run core-bootstrap.locke --site m1 --stub
 
-# Verify outputs
-ls m1/readers/
+# Verify the .husk artifact
+husks verify m1
 
-# Explore the build residue interactively
-husks explain --site m1 --interactive
+# Inspect the build residue
+husks status --site m1
 ```
 
 ## The Three-Machine Proof
 
-Beta 100 enables cross-machine verification of computational equivalence:
+The core reproduction path. Proves cache reuse (M2) and independent
+re-realization (M3) from the same seed design.
 
 ```bash
 # Machine 1: Original realization with oracle cost
-husks run core-bootstrap.locke --site m1 --stub --json > m1.json
+husks run core-bootstrap.locke --site m1 --stub
 
 # Export cache from M1
 husks cache export cache.tar.gz --site m1
 
 # Machine 2: Import cache and reuse at zero cost
-mkdir m2
 husks cache import cache.tar.gz --site m2
-husks run core-bootstrap.locke --site m2 --reuse-only --json > m2.json
+husks run core-bootstrap.locke --site m2 --reuse-only
 
 # Machine 3: Independent re-realization
-husks run core-bootstrap.locke --site m3 --stub --json > m3.json
+husks run core-bootstrap.locke --site m3 --stub
 
 # Verify computational equivalence
-husks compare-runs m1.json m2.json m3.json
-
-# Inspect individual machines (optional)
-husks explain --site m1 --node generate --aperture 3  # M1: paid oracle cost
-husks explain --site m2 --node generate --aperture 3  # M2: cached reuse
-husks explain --site m3 --node generate --aperture 3  # M3: independent realization
+husks compare m1 m2 m3
 ```
 
 **Expected result (stub path — deterministic identity):**
 ```
-✓ Three-machine proof validated
+── Three-Machine Proof ──
+  ✓ M1↔M2↔M3 husk identical          (required)
+  ✓ M1↔M2 root identical              (required)
+  · M1 fired oracles                   (evidence)
+  · M1 paid cost                       (evidence)
+  · M2 zero oracle cost                (evidence)
+  · M2 cache reuse                     (evidence)
+  · M3 fired oracles                   (evidence)
+  · M3 paid cost                       (evidence)
+  · M1↔M3 outputs equivalent           (evidence)
 
-M1: oracle_calls=1, cost=$0.000800 (paid oracle cost)
-M2: oracle_calls=0, cost=$0.000000, cache_hits=1 (zero-cost reuse)
-M3: oracle_calls=1, cost=$0.000800 (independent re-realization)
-
-All three: same root (deterministic identity via stub oracle)
+proof satisfied
 ```
 
 **Expected result (live path — validator-bounded acceptance):**
-```
-✓ Three-machine proof validated
 
-M1: oracle_calls=1, cost=$0.0330, root=7e32a9...
-M2: oracle_calls=0, cost=$0.0000, cache_hits=1, root=7e32a9... (same as M1)
-M3: oracle_calls=1, cost=$0.0307, root=4d175e... (differs from M1)
-
-M1/M2: root identical (cache determinism)
-M3: VERIFIED digest matches M1 (behavioral acceptance)
-     generated_reader.py differs (free output, expected)
-     cost ratio 0.93 within tolerance [0.5, 2.0]
-
-equivalent: true
-```
+With live oracles, M1 and M3 produce different generated source code
+(non-deterministic), resulting in different roots. Equivalence is proved via
+validator-bounded acceptance: both readers pass the conformance gate and produce
+identical `VERIFIED` digests, proving behavioral equivalence without requiring
+identical source. See Section 4 of the white paper.
 
 ## Core Commands
-
-### `husks init`
-
-Initialize a new Husks project with the core-bootstrap template.
-
-**Creates:**
-- `core-bootstrap.locke` - Build design (Locke source)
-- `spec/` - CSE specification documents
-- `.gitignore` - Git ignore rules
-- `CLAUDE.md` - Project stance documentation
-
-**Example:**
-```bash
-husks init
-cd .
-husks check core-bootstrap.locke
-```
 
 ### `husks check <design>`
 
@@ -136,9 +108,10 @@ Execute a build design, running oracles and actions.
 - `--stub` - Use stub oracle (zero API cost, deterministic)
 - `--model <name>` - LLM model (default: anthropic/claude-haiku-4-5)
 - `--reuse-only` - Fail if cache miss (requires prior cache import)
-- `--json` - JSON report output (compare-runs compatible)
+- `--json` - JSON report output
 - `--verbose` - Detailed execution trace
 - `--soft-fail` - Exit 0 even on build failure
+- `--backend <name>` - Oracle backend: `litellm` (default) or `claude-code`
 
 **Examples:**
 ```bash
@@ -151,9 +124,90 @@ husks run core-bootstrap.locke --site m1 --model anthropic/claude-haiku-4-5
 # Cache-only run (M2 scenario)
 husks run core-bootstrap.locke --site m2 --reuse-only
 
-# JSON output for comparison
-husks run core-bootstrap.locke --site m1 --stub --json > m1.json
+# JSON output
+husks run core-bootstrap.locke --site m1 --stub --json
 ```
+
+### `husks verify <site>`
+
+Recompute the `.husk` root hash from sealed artifacts.
+
+**Purpose:** Proves the `.husk` file is self-verifying — any future reader
+with SHA-256 and the site files can reproduce the root hash. The engine
+that built it can be discarded.
+
+**Options:**
+- `--json` - JSON output
+
+**Example:**
+```bash
+husks verify m1
+```
+
+### `husks status --site <dir>`
+
+Inspect a built site's state and freshness.
+
+**Required:**
+- `--site <dir>` - Site directory with manifest and build state
+
+**Options:**
+- `--json` - JSON output
+- `--verbose` - Show per-node detail
+
+**Example:**
+```bash
+husks status --site m1
+husks status --site m1 --json
+```
+
+### `husks history --site <dir>`
+
+Show convergence history across runs for a site.
+
+**Required:**
+- `--site <dir>` - Site directory
+
+**Options:**
+- `--json` - JSON output
+
+**Example:**
+```bash
+husks history --site m1
+```
+
+### `husks compare <sites...>`
+
+Compare equivalence across two or more sites. With three sites, runs
+the full three-machine proof.
+
+**Arguments:**
+- `<sites...>` - Two or more site directories
+
+**Options:**
+- `--json` - Machine-readable JSON output
+- `--roots-only` - Compare only root hashes
+- `--hashes-only` - Compare only husk hashes
+
+**Example:**
+```bash
+husks compare m1 m2 m3
+```
+
+**Three-machine proof checks (3 sites):**
+
+Required:
+- M1↔M2↔M3: husk hash identical
+- M1↔M2: root hash identical (cache determinism)
+
+Evidence (informational):
+- M1: fired oracles, paid cost
+- M2: zero oracle cost, cache reuse
+- M3: fired oracles, paid cost
+- M1↔M3: outputs equivalent
+
+JSON output includes `proof.satisfied` and `proof.checks` with a
+`required` flag on each check.
 
 ### `husks cache export <file>`
 
@@ -167,17 +221,7 @@ Export build cache to a portable tarball.
 
 **Example:**
 ```bash
-husks cache export cache.tar.gz --site m1 --json
-```
-
-**Output:**
-```json
-{
-  "status": "exported",
-  "site": "m1",
-  "file": "cache.tar.gz",
-  "entries": 1
-}
+husks cache export cache.tar.gz --site m1
 ```
 
 ### `husks cache import <file>`
@@ -189,218 +233,27 @@ Import cache from a tarball into a site.
 
 **Options:**
 - `--json` - JSON status output
-- `--replace` - Replace existing cache (default: merge)
 
 **Example:**
 ```bash
-husks cache import cache.tar.gz --site m2 --json
+husks cache import cache.tar.gz --site m2
 ```
 
-**Output:**
-```json
-{
-  "status": "imported",
-  "site": "m2",
-  "file": "cache.tar.gz",
-  "entries": 1,
-  "merge": true
-}
-```
+### `husks doctor`
 
-### `husks compare-runs <reports...>`
+Diagnose the local environment.
 
-Validate three-machine proof by comparing JSON reports.
-
-**Arguments:**
-- `<reports...>` - Two or more JSON report files
-
-**Options:**
-- `--json` - Machine-readable JSON output
+**Includes:**
+- `--selftest` - Recompute frozen conformance roots from bundled vectors
 
 **Example:**
 ```bash
-husks compare-runs m1.json m2.json m3.json
+husks doctor --selftest
 ```
 
-**Checks:**
-- M1: `oracle_calls > 0`, `cost > 0`
-- M2: `oracle_calls = 0`, `cost = 0`, `cache_hits > 0`
-- M3: `oracle_calls > 0`, comparable cost to M1 (within declared `cost_tolerance`)
-- M1/M2: Same `root` (cache determinism)
-- M3: Validator-bounded acceptance — `exact` outputs (conformance digest) match M1; `free` outputs (generated source, gate report) may differ
-- Cost: M3/M1 ratio within seed-declared tolerance (default `[0.5, 2.0]`)
+## Visual Output Format
 
-### `husks explain --site <dir>`
-
-Explore and navigate a built site's residue tree.
-
-**Purpose:** Inspect sealed builds without requiring a design file. Navigate through the dependency tree with adjustable detail levels.
-
-**Required:**
-- `--site <dir>` - Site directory with manifest and build state
-
-**Options:**
-- `--node <name>` - Select specific node (default: target)
-- `--aperture <0-3>` - Detail level (default: 1)
-  - `0` - Node only (name, kind, state)
-  - `1` - Node + outputs (primary output with hash)
-  - `2` - Node + outputs + seal (recipe, input/output hashes)
-  - `3` - Node + outputs + seal + trace (backend, model, tokens, cost, logs)
-- `--interactive` - Enable interactive navigation (requires TTY)
-- `--json` - JSON output with cursor/aperture metadata
-
-**Examples:**
-
-```bash
-# Inspect site residue at target node
-husks explain --site m1
-
-# Select specific node with full trace
-husks explain --site m1 --node generate --aperture 3
-
-# Interactive navigation
-husks explain --site m1 --interactive
-
-# JSON output for programmatic access
-husks explain --site m1 --node generate --aperture 2 --json
-```
-
-**Interactive Controls:**
-
-When `--interactive` is specified in a TTY environment, explain enters interactive pilot mode:
-
-- `↑/↓` - Move cursor up/down through nodes
-- `←/→` - Decrease/increase aperture (0-3)
-- `q` - Quit
-
-**Non-TTY fallback:** When run in non-TTY environments (pipes, CI), explain renders once deterministically, even if `--interactive` is specified.
-
-**Example Output (aperture 1):**
-
-```
-────────────────────────────────────────
- core-bootstrap.husk              root:36a407c
- site:m1                   cursor:validate
- aperture:1
-────────────────────────────────────────
-▶■ validate                  action
-      out:readers/gate-report.txt@7f6aec
-      out:readers/VERIFIED@e3b0c4
-    └─ ■ generate            oracle
-      out:readers/generated_reader.py@09e95b
-────────────────────────────────────────
- ↑↓ move   ←→ aperture   q quit
-```
-
-**Example Output (aperture 3):**
-
-```
-────────────────────────────────────────
- core-bootstrap.husk              root:36a407c
- site:m1                   cursor:generate
- aperture:3
-────────────────────────────────────────
- □ validate                  action
-    └─ ▶■ generate           oracle     ⚡10     $0.0008
-      out:readers/generated_reader.py@09e95b
-      seal:
-        digest: 36a407
-        recipe: f5e2a1
-        inputs: 2
-        outputs: 1
-      trace:
-        backend: stub
-        model: stub
-        input_tokens: 840
-        output_tokens: 320
-        elapsed: 0.01s
-        cost: $0.0008
-────────────────────────────────────────
- ↑↓ move   ←→ aperture   q quit
-```
-
-**Cached nodes (M2 scenario):**
-
-When exploring a site with cache reuse, cached nodes show the `◆` glyph and cache provenance:
-
-```bash
-husks explain --site m2 --node generate --aperture 3
-```
-
-```
-────────────────────────────────────────
- core-bootstrap.husk              root:36a407c
- site:m2                   cursor:generate
- aperture:3
-────────────────────────────────────────
- □ validate                  action
-    └─ ▶◆ generate           oracle     cached     ⚡0     $0.0000
-      out:readers/generated_reader.py@09e95b
-      seal:
-        digest: 36a407
-        recipe: f5e2a1
-        inputs: 2
-        outputs: 1
-      cache: local
-────────────────────────────────────────
- ↑↓ move   ←→ aperture   q quit
-```
-
-**JSON Output:**
-
-With `--json`, explain outputs structured data including cursor and aperture state:
-
-```json
-{
-  "command": "status",
-  "design_name": "core-bootstrap",
-  "status": "sealed",
-  "site": "m1",
-  "cse_path": "core-bootstrap.husk",
-  "root": "36a407c...",
-  "cursor": "generate",
-  "aperture": 2,
-  "order": ["validate", "generate"],
-  "nodes": [
-    {
-      "name": "generate",
-      "kind": "oracle",
-      "state": "sealed",
-      "outputs": [
-        {
-          "path": "readers/generated_reader.py",
-          "sha256": "09e95b..."
-        }
-      ],
-      "seal_digest": "36a407...",
-      "recipe_digest": "f5e2a1...",
-      "fuel": 10,
-      "cost": 0.0008
-    }
-  ]
-}
-```
-
-**Use Cases:**
-
-1. **Post-build inspection:** Explore what was built without needing the design file
-2. **Cache verification:** Inspect cached nodes to verify reuse
-3. **Seal debugging:** Examine recipe and input hashes to understand staleness
-4. **Provenance audit:** Review oracle traces (backend, model, tokens, cost)
-5. **Interactive debugging:** Navigate dependency tree to find failed or stale nodes
-
-**Comparison with other commands:**
-
-| Command | Purpose | Requires design file? |
-|---------|---------|----------------------|
-| `check` | Validate design structure | Yes |
-| `run` | Execute build | Yes |
-| `status` | Show freshness states | No (--site mode) |
-| `explain` | Navigate residue tree | No (--site mode) |
-
-## Visual Output Format (Beta 100)
-
-Husks beta 100 introduces a bounded CSE block rendering:
+Husks renders a bounded CSE block:
 
 ```
 ────────────────────────────────────────────────────────────
@@ -440,7 +293,6 @@ Each node shows:
   - `◆` cached (reused from cache)
   - `△` stale (inputs changed, needs rebuild)
   - `✕` failed (execution error)
-  - `◉` running (in progress, verbose mode only)
 
 - **Name:** Rule name
 - **Kind:** oracle/action/trial
@@ -469,7 +321,7 @@ Bottom line shows pass/fail categories:
 
 ## JSON Report Schema (beta-1)
 
-The JSON report follows the beta-1 schema for compare-runs compatibility:
+The JSON report follows the beta-1 schema:
 
 ```json
 {
@@ -544,7 +396,7 @@ The JSON report follows the beta-1 schema for compare-runs compatibility:
 
 ## Core-Bootstrap Design
 
-The default `husks init` template demonstrates CSE bootstrapping:
+The default template demonstrates CSE bootstrapping:
 
 **Goal:** Generate a CSE reader from specs, then validate it compiles.
 
@@ -640,21 +492,21 @@ Creates tarball with:
 - `.cache/` directory structure
 - All cached outputs and metadata
 - Preserves seal hashes for lookup
+- Deterministic archive (pinned mtime, uid/gid, sort order)
 
 **Import:**
 ```bash
 husks cache import cache.tar.gz --site m2
 ```
 Merges imported cache into target site:
-- Existing entries: Kept (merge mode) or replaced (--replace)
+- Existing entries: Kept (merge mode)
 - New entries: Added to cache
-- No validation: Trust imported content
 
 **Security note:** Only import caches from trusted sources. Imported cache entries are used verbatim without re-validation.
 
 ## State Vocabulary
 
-Husks uses a unified state model across all commands (check, run, status):
+Husks uses a unified state model across all commands:
 
 | State | Glyph | Meaning |
 |-------|-------|---------|
@@ -663,12 +515,11 @@ Husks uses a unified state model across all commands (check, run, status):
 | `cached` | ◆ | Reused from cache with explicit evidence |
 | `stale` | △ | Recipe/inputs changed or outputs missing |
 | `failed` | ✕ | Execution failed with diagnosis |
-| `running` | ◉ | Currently executing (verbose frames only) |
 
 **Kind vocabulary:**
 - `oracle` - LLM-powered generative rule
 - `action` - Deterministic shell command
-- `trial` - Non-committing exploration (not in beta 100)
+- `trial` - Speculative fork with verdict function
 
 ## Exit Codes
 
@@ -688,31 +539,32 @@ Husks uses a unified state model across all commands (check, run, status):
 
 ### Why does M2 run the validate action?
 
-Actions are **not cached** in beta 100. Only oracle outputs are cached. The validate action runs on M2, but the generate oracle is cached, so M2 pays zero oracle cost.
+Actions are not cached. Only oracle outputs are cached. The validate action
+runs on M2, but the generate oracle is cached, so M2 pays zero oracle cost.
 
 ### Why do M1 and M3 have the same root in stub mode but different roots in live mode?
 
-The stub oracle is **deterministic**: same inputs → same outputs. M1 and M3 both use stub mode with identical inputs, so they produce byte-identical outputs, resulting in the same build root hash. This proves **deterministic identity**.
+The stub oracle is **deterministic**: same inputs → same outputs. M1 and M3
+both use stub mode with identical inputs, so they produce byte-identical
+outputs, resulting in the same build root hash. This proves **deterministic
+identity**.
 
-With live oracles, M1 and M3 produce different generated source code (non-deterministic), resulting in different roots. This is expected and correct — Section 4 of the white paper states the seed/cache split prevents "independent re-realization from being mistaken for deterministic identity." Equivalence on the live path is proved via **validator-bounded acceptance**: both readers pass the conformance gate and produce identical `VERIFIED` digests, proving behavioral equivalence without requiring identical source.
+With live oracles, M1 and M3 produce different generated source code
+(non-deterministic), resulting in different roots. This is expected and
+correct — Section 4 of the white paper states the seed/cache split prevents
+"independent re-realization from being mistaken for deterministic identity."
+Equivalence on the live path is proved via **validator-bounded acceptance**:
+both readers pass the conformance gate and produce identical `VERIFIED`
+digests, proving behavioral equivalence without requiring identical source.
 
-### Can I run beta 100 without an API key?
+### Can I run without an API key?
 
-Yes! Use `--stub` mode:
+Yes. Use `--stub` mode:
 ```bash
 husks run core-bootstrap.locke --site m1 --stub
 ```
 
 This uses a deterministic stub oracle with zero API cost.
-
-### How do I verify computational equivalence with live oracles?
-
-Live oracles are non-deterministic, so M1 and M3 will have different `root` hashes. Equivalence is proved via **validator-bounded acceptance**, not root identity:
-
-1. The seed design declares per-output equivalence: `exact` (must match) or `free` (may differ)
-2. The conformance gate (`husks.gate`) stamps `VERIFIED` with a behavioral digest — a SHA-256 of the reader's correct outputs on frozen vectors
-3. `compare-runs` enforces: M1/M2 root identity (cache determinism), M3 `exact` outputs match M1 (acceptance), cost within declared tolerance
-4. The `convergence` block reports M1/M3 root divergence observationally — it never fails the proof
 
 ### What's the difference between --stub and live oracles?
 
@@ -726,7 +578,7 @@ Live oracles are non-deterministic, so M1 and M3 will have different `root` hash
 
 ### Can I use my own design instead of core-bootstrap?
 
-Yes! Core-bootstrap is the default template for testing and proofs, but you can create custom designs:
+Yes. Create a `.locke` or `.json` design:
 
 ```json
 {
@@ -750,81 +602,13 @@ Yes! Core-bootstrap is the default template for testing and proofs, but you can 
 }
 ```
 
-See `examples/json_designs/` for more examples.
-
-### How do I inspect a built site without the design file?
-
-Use `husks explain` with the `--site` flag:
-
-```bash
-husks explain --site m1
-```
-
-This loads the site manifest directly and renders the dependency tree with cursor at the target node. You can navigate interactively:
-
-```bash
-husks explain --site m1 --interactive
-```
-
-Or select a specific node with full trace details:
-
-```bash
-husks explain --site m1 --node generate --aperture 3
-```
-
-### What are aperture levels in explain?
-
-Aperture controls the detail level for the selected node:
-
-- **Aperture 0:** Node only (name, kind, state) - minimal view
-- **Aperture 1:** Node + outputs (primary output with hash) - default view
-- **Aperture 2:** Node + outputs + seal (recipe digest, input/output hashes)
-- **Aperture 3:** Node + outputs + seal + trace (backend, model, tokens, cost, logs)
-
-Use `←/→` arrow keys in interactive mode to adjust aperture on the fly.
-
-### When should I use explain vs status?
-
-Both commands can inspect built sites, but they serve different purposes:
-
-| Use Case | Command |
-|----------|---------|
-| Check freshness states (stale detection) | `status` |
-| Navigate dependency tree | `explain` |
-| Inspect seal/trace details | `explain --aperture 2-3` |
-| Verify cache reuse | `explain --node <name> --aperture 3` |
-| CI/automated checks | `status --json` or `explain --json` |
-| Interactive debugging | `explain --interactive` |
-
-## Known Limitations (Beta 100)
-
-1. **No live verbose frames:** Task 9 deferred - verbose mode doesn't show live progress updates
-2. **Actions not cached:** Only oracle outputs are cached
-3. **No incremental builds:** Changing one input invalidates entire dependency chain
-4. **No parallel execution:** Rules run sequentially in dependency order
-5. **Single-target builds:** Multi-target designs not supported in CLI
-
-## Next Steps
-
-- **Beta 101:** Live verbose frames with streaming updates
-- **Beta 102:** Action output caching
-- **Beta 103:** Incremental builds (partial invalidation)
-- **Beta 104:** Parallel rule execution
-- **Beta 105:** Multi-target CLI support
+See `examples/` for more designs.
 
 ## References
 
 - **CSE Specification:** `spec/CSE-v1.md`, `spec/CSE-v2.md`
 - **Bootstrap Reader:** `src/husks/_resources/bootstrap_reader.py`
-- **CLI Source:** `src/husks/cli/`
-- **Report Schema:** `src/husks/report.py`
-- **Cache Implementation:** `src/husks/build/cache.py`
-
-## License
-
-Husks is released under the MIT License. See LICENSE for details.
-
----
-
-**Husks Beta 100** - Deterministic builds for nondeterministic work.
-Generated: 2026-05-31
+- **CLI Source:** `src/husks/cli.py`
+- **Report/Manifest:** `src/husks/report.py`
+- **Build Engine:** `src/husks/engine.py`
+- **Architecture:** [architecture.md](architecture.md)
