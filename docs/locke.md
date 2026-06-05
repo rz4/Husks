@@ -101,7 +101,7 @@ validate := action [
   [readers/generated_reader.py]  := inputs
   [readers/gate-report.txt]      := free
   [readers/VERIFIED]             := exact
-  "python3 -m husks.gate '...'"  := run
+  "python3 gate.py '...'"  := run
 ]
 ```
 
@@ -116,7 +116,7 @@ tree structural — child rules are nested inside their parents:
 validate := action [
   [readers/generated_reader.py]  := inputs
   [readers/VERIFIED]             := exact
-  "python3 -m husks.gate '...'"  := run
+  "python3 gate.py '...'"  := run
 
   generate :- oracle [
     [CSE-v1.md CSE-v2.md]          := inputs
@@ -259,10 +259,10 @@ AST (DeclNode, RuleNode, LetNode, BindNode)
     |  resolve (flatten tree, merge free/exact, resolve files)
     v
 Flat design dict (same shape as JSON)
-    |  elaborate()          <-- existing transport.py
+    |  elaborate()          <-- forms.py
     v
 CseValue tree
-    |  core.encode()        <-- existing core.py
+    |  kernel.encode()      <-- kernel.py
     v
 .husk CSE bytes
 ```

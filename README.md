@@ -44,36 +44,109 @@ husks doctor
 **1. Write a design** in [Locke](docs/locke.md) or JSON:
 
 ```
-# hello.locke
+# core-bootstrap.locke -- Generates a CSE reader from the frozen spec.
+#
 
-design hello :- [
-  fuel := 10
-  target := greet
+#- Design fixture
+"core-bootstrap"       := design
+                    5  := fuel
+             [0.5 2.0] := tolerance
 
-  greet :- oracle [
-    prompt := "Write a greeting to out.txt"
-    outputs := [out.txt]
-  ]
-]
+#- Site inputs: spec files + standalone gate script
+[CSE-v1.md spec/CSE-v1.md
+ CSE-v2.md spec/CSE-v2.md
+ gate.py   gate.py] := site-inputs
+
+#- Deterministic validation gate
+validate := action [
+  readers/generated_reader.py := inputs
+
+  readers/gate-report.txt     := free   # output
+  readers/VERIFIED            := exact  # output
+
+  "python3 gate.py 'python3 readers/generated_reader.py' --stamp-dir readers" := run
+
+  #- Nondeterministic generator
+  generate :- oracle [
+    [CSE-v1.md CSE-v2.md]         := inputs
+    readers/generated_reader.py   := free
+    [read-file write-file]        := tools
+    4                             := fuel
+
+    """Read CSE-v1.md (the frozen spec) and CSE-v2.md (clarifications).
+    Implement a dependency-free CSE reader in a single Python file
+    at readers/generated_reader.py.
+
+    Write only readers/generated_reader.py.""" := prompt
+
+]]
 ```
 
 **2. Check the design** (no model calls, validates structure):
 
 ```bash
-husks check hello.locke
+husks check core-bootstrap.locke
 ```
 
 **3. Run the build** (fires the oracle, seals the result):
 
 ```bash
-husks run hello.locke --site ./site --model anthropic/claude-haiku-4-5-20251001
+husks run core-bootstrap.locke --site ./M1 --model anthropic/claude-haiku-4-5-20251001
 ```
 
 **4. Inspect the site:**
 
 ```bash
-husks status ./site
-husks verify ./site
+husks status ./M1
+husks verify ./M1
+```
+
+**5. Run the three-machine proof** (independent re-realization):
+
+```bash
+husks run core-bootstrap.locke --site ./M2 --cache-from ./M1
+husks run core-bootstrap.locke --site ./M3
+husks compare M1 M2 M3
+```
+
+```
+     ◆    design: core-bootstrap
+    ╱ ╲   state:  sealed
+   ◆ ◆ ◆  husk:   0bb90a01b978767c...
+    ╲ ╱   root:   182e3015da5cc7d4...
+     ◆    site:   M1
+
+  status
+  ───────────────────────────────────────────────────────────────────────────────
+  ■ validate          action                                                 0.1s
+  └─ ■ generate       oracle            15.3kin · 3.1kout · $0.0306 · 25.1s · ⚡3
+  ───────────────────────────────────────────────────────────────────────────────
+  sealed                                15.3kin · 3.1kout · $0.0306 · 25.2s · ⚡4
+
+  ...
+
+  equivalence
+  ───────────────────────────────────────────────────────────────────────────────
+  ✓ M1 ≡ M2
+  ✗ M1 ≡ M3
+  ✗ M2 ≡ M3
+  ───────────────────────────────────────────────────────────────────────────────
+  ✗ not equivalent
+
+  three-machine proof
+  ───────────────────────────────────────────────────────────────────────────────
+  ✓ M1↔M2↔M3 husk identical
+  ✓ M1↔M2 root identical
+  evidence
+  ✓ M1 fired oracles
+  ✓ M1 paid cost
+  ✓ M2 zero oracle cost
+  ✓ M2 cache reuse
+  ✓ M3 fired oracles
+  ✓ M3 paid cost
+  ✗ M1↔M3 outputs equivalent
+  ───────────────────────────────────────────────────────────────────────────────
+  ✓ proof satisfied
 ```
 
 ## How it works

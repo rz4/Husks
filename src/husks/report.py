@@ -566,6 +566,7 @@ class CliResidue:
     passes: list[str] = field(default_factory=list)
     fails: list[str] = field(default_factory=list)
     error_message: Optional[str] = None
+    site_inputs: dict[str, str] = field(default_factory=dict)
 
 
 # ── §8 State mapping helpers ────────────────────────────────────

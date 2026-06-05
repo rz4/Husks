@@ -6,11 +6,10 @@
                     5  := fuel
              [0.5 2.0] := tolerance
 
-#- Quarantined site, from "spec" accept these files to site.
-spec/ := site [
-  CSE-v1.md
-  CSE-v2.md
-]
+#- Site inputs: spec files + standalone gate script
+[CSE-v1.md spec/CSE-v1.md
+ CSE-v2.md spec/CSE-v2.md
+ gate.py   gate.py] := site-inputs
 
 #- Deterministic validation gate
 validate := action [
@@ -19,7 +18,7 @@ validate := action [
   readers/gate-report.txt     := free   # output
   readers/VERIFIED            := exact  # output
 
-  "python3 -m husks.gate 'python3 readers/generated_reader.py' --stamp-dir readers" := run
+  "python3 gate.py 'python3 readers/generated_reader.py' --stamp-dir readers" := run
 
   #- Nondeterministic generator
   generate :- oracle [

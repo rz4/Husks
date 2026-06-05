@@ -243,12 +243,9 @@ husks cache import cache.tar.gz --site m2
 
 Diagnose the local environment.
 
-**Includes:**
-- `--selftest` - Recompute frozen conformance roots from bundled vectors
-
 **Example:**
 ```bash
-husks doctor --selftest
+husks doctor
 ```
 
 ## Visual Output Format

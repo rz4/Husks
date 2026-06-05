@@ -55,7 +55,7 @@ There are two ways to hold a Husk, and they are not the same kind of thing.
 
 validate := action [
   readers/VERIFIED                                  := exact
-  "python3 -m husks.gate '...' --stamp-dir readers" := run
+  "python3 gate.py '...' --stamp-dir readers" := run
 
   generate :- oracle [
     [CSE-v1.md CSE-v2.md]                   := inputs
@@ -125,7 +125,7 @@ Anything less is a reader that works on the easy cases and lies on the hard ones
 
 ## 7. Bootstrap validation
 
-`examples/core-bootstrap/core-bootstrap.locke` turns that test on the framework itself. It has two nodes. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate, `husks.gate`, judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
+`examples/core-bootstrap/core-bootstrap.locke` turns that test on the framework itself. It has two nodes. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate (`gate.py`, standalone) judges that reader against the five criteria above. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
 
 The shape is the whole thesis in miniature: the oracle produces, the gate verifies, and the gate is not the oracle. A model can write the verifier; it cannot grade its own verifier. The frozen roots do that — and the roots were computed by readers the model never saw. What happened the first time we ran this is at the end of the document, because it is the point of the whole exercise.
 
@@ -177,7 +177,7 @@ Concrete gaps in what the engine can express or execute today.
 
 4. **No remote or distributed execution.** The site directory is a local filesystem path. The oracle backend, tool sandbox, and seal I/O all assume local disk. There is no mechanism for running rules on different machines or sharing sealed artifacts across builds. Partial mitigation: read-only imports (`"imports"` in a design) allow referencing external files and directories via symlinks, but the external paths must still be on the local filesystem.
 
-5. **No artifact caching across sites.** Freshness checks compare against `.traces/<rule>.seal` in the current site. If you run the same design against a fresh site directory, every rule re-fires even if the inputs and recipe are identical to a previous build elsewhere.
+5. **No automatic cross-site caching.** Freshness checks compare against `.traces/<rule>.seal` in the current site. Running the same design against a fresh site re-fires every rule. Manual transfer is supported — `husks cache export` and `husks cache import` move sealed residue between sites — but there is no automatic shared cache.
 
 6. **Actions can't fail gracefully.** An action rule runs a shell command or Python callable. If it returns a nonzero exit code, the build halts. There is no retry, no fallback, no way to express "try this action, and if it fails, do something else" without `trial`.
 

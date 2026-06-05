@@ -572,7 +572,7 @@ def _resolve_targets(design: Design) -> list[str] | None:
     return None
 
 
-def check(design: Design) -> list[str]:
+def check(design: Design, *, unsafe: bool = False) -> list[str]:
     """Validate a design IR.  Returns list of error strings (empty = ok)."""
     errors: list[str] = []
     for field in design:
@@ -735,12 +735,21 @@ def check(design: Design) -> list[str]:
                 if local_name in rule_outputs:
                     errors.append(f"import '{local_name}' collides with a rule output name")
 
+    rules_by_name: dict[str, dict] = {r["name"]: r for r in rules if r.get("name")}
+
     targets = _resolve_targets(design)
     if targets is None: errors.append("design has no target (must provide 'target' or 'targets')")
     elif len(targets) == 0: errors.append("'targets' list is empty")
     else:
         for t in targets:
-            if t not in names: errors.append(f"target '{t}' does not match any rule name")
+            if t not in names:
+                errors.append(f"target '{t}' does not match any rule name")
+            else:
+                target_rule = rules_by_name[t]
+                if target_rule.get("kind") == "oracle" and not unsafe:
+                    errors.append(
+                        f"target '{t}' is an oracle — root must be an action "
+                        f"(use --unsafe to override)")
     return errors
 
 
@@ -985,7 +994,8 @@ def setup_imports(site: str, imports: dict[str, str]) -> list[str]:
 
 def run(design: Design, **overrides: Any) -> dict[str, Any]:
     """Check, compile, and execute a design.  Returns the Store."""
-    errs = check(design)
+    unsafe = overrides.pop("unsafe", False)
+    errs = check(design, unsafe=unsafe)
     if errs: raise ValueError("design check failed:\n  " + "\n  ".join(errs))
     from husks.engine import build
 

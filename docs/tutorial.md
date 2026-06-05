@@ -8,7 +8,7 @@ model touches anything, the runtime fires only what is stale, and every claim
 the system makes is a claim about sealed residue you can recompute yourself.
 
 > Install is a single `pip install` from the GitHub URL — no checkout required.
-> Setup is one command after that: `husks doctor --selftest`.
+> Setup is one command after that: `husks doctor`.
 
 ---
 
@@ -50,7 +50,7 @@ pip install "husks[llm] @ git+https://github.com/rz4/Husks.git"
 ```
 
 That's the whole install. The `[llm]` extra pulls in `litellm` for live oracle
-calls. Without it, `check`, `doctor --selftest`, and `--stub` runs still work —
+calls. Without it, `check`, `doctor`, and `--stub` runs still work —
 only live oracle execution requires `litellm`. The wheel also ships the
 conformance vectors and the skill.
 
@@ -62,24 +62,55 @@ conformance vectors and the skill.
 
 ## 3. Confirm the engine is sound
 
-Recompute the frozen conformance roots. One command, no model, no network:
+Verify the install and check that dependencies are available:
 
 ```bash
-husks doctor --selftest
+husks doctor
 ```
 
-Expected: every positive vector reproduces its frozen root (`demo` ->
-`9977239d...`, `adversarial` -> `5382838c...`) and every malformed vector is
-**correctly rejected**, with exit code 0. This mirrors the level-0 conformance
-gate and reads the vectors bundled in the install. If anything here is not green,
-stop — the permanence property is what the rest of this rests on.
+Expected: exit code 0. If anything here is not green, stop — fix the
+environment before proceeding.
 
 (`python -m pytest tests/ -q` runs the full suite, but that needs a source
-checkout; `doctor --selftest` is the install-level soundness check.)
+checkout; `doctor` is the install-level soundness check.)
 
 ---
 
-## 4. Run the three-machine proof
+## 4. Copy the example design and check your workspace
+
+Copy the bundled `core-bootstrap` example into a fresh working directory:
+
+```bash
+cp -r "$(python -c 'import husks; print(husks.__path__[0])')/../examples/core-bootstrap" my-project
+cd my-project
+```
+
+Use `husks tree` to see what's in the directory — designs, sites, and source
+files — and confirm every required input is present:
+
+```bash
+husks tree
+```
+
+Expected output:
+
+```
+  core-bootstrap.locke  ✓
+
+  gate.py
+  spec/
+    CSE-v1.md
+    CSE-v2.md
+```
+
+The green **✓** next to the design means all of its `site-inputs` exist on
+disk. If any source file were missing you would see a red **✗** with the
+missing paths listed. Fix those before proceeding — the build will fail
+without them.
+
+---
+
+## 5. Run the three-machine proof
 
 This is the core reproduction path. It proves cache reuse (M2) and independent
 re-realization (M3) from the same seed design.
@@ -161,7 +192,7 @@ husks status --site m3   # M3: independent realization
 
 ---
 
-## 5. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |

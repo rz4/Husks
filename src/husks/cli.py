@@ -40,6 +40,7 @@ GREEN  = "\033[32m" if _IS_TTY else ""
 YELLOW = "\033[33m" if _IS_TTY else ""
 RED    = "\033[31m" if _IS_TTY else ""
 CYAN   = "\033[36m" if _IS_TTY else ""
+BLUE   = "\033[34m" if _IS_TTY else ""
 CLEAR_DOWN = "\033[J" if _IS_TTY else ""
 
 # Right bound for visual layout
@@ -126,7 +127,7 @@ def resolve_design(args) -> str:
         return "design.locke"
     if Path("design.json").exists():
         return "design.json"
-    print("error: no design file specified and design.locke not found", file=sys.stderr)
+    print("husks: no design file. Pass a .locke or .json path, or create design.locke in cwd.", file=sys.stderr)
     sys.exit(EXIT_USAGE)
 
 
@@ -298,8 +299,17 @@ def _emit_visual(residue, *, verbose: bool = False) -> str:
     footer = render_footer(left_text=left, right_text=right)
     if residue.command == "status" and not verbose:
         return render_output(preamble=preamble, footer=footer)
-    trace = render_motif_tree(residue.nodes, verbose=verbose)
-    return render_output(preamble=preamble, trace=trace, footer=footer)
+    trace_lines = []
+    if residue.site_inputs and residue.command == "check":
+        trace_lines.append(f"  {DIM}site inputs:{RESET}")
+        for local, source in sorted(residue.site_inputs.items()):
+            if local == source:
+                trace_lines.append(f"    {DIM}{local}{RESET}")
+            else:
+                trace_lines.append(f"    {DIM}{local} \u2190 {source}{RESET}")
+        trace_lines.append("")
+    trace_lines.extend(render_motif_tree(residue.nodes, verbose=verbose))
+    return render_output(preamble=preamble, trace=trace_lines, footer=footer)
 
 
 def _diamond_stage(residue) -> str:
@@ -357,6 +367,8 @@ def _emit_json(residue) -> str:
               "fuel_budget": residue.fuel_budget, "fuel_used": residue.fuel_used,
               "cost": residue.cost, "nodes": [], "passes": residue.passes,
               "fails": residue.fails}
+    if residue.site_inputs:
+        output["site_inputs"] = residue.site_inputs
     for node in residue.nodes:
         nd = {"name": node.name, "kind": node.kind, "state": node.state,
               "cached": node.cache}
@@ -397,6 +409,7 @@ def emit_help(version: str) -> str:
         _group("cache"), _cmd("cache export", "Pack cache for transfer"),
         _cmd("cache import", "Unpack cache into site"),
         _group("diagnostics"), _cmd("doctor", "Diagnose the local environment"),
+        _cmd("tree", "Show working directory overview"),
         "", f"  {DIM}--color <mode>   auto \u00b7 always \u00b7 never{RESET}",
         f"  {DIM}-q, --quiet      Suppress output{RESET}",
         f"  {DIM}--version        Print version{RESET}"]
@@ -429,9 +442,13 @@ def collect_dry_residue(design: dict):
     if target_name:
         idx = next((i for i, n in enumerate(nodes) if n.name == target_name), 0)
         if idx > 0: nodes.insert(0, nodes.pop(idx))
+    si = design.get("site_inputs", {})
+    if isinstance(si, list):
+        si = {s: s for s in si}
     return CliResidue(command="check", design_name=design.get("name", "unknown"),
                       status="dry", target=target_name,
-                      fuel_budget=design.get("fuel", 0), nodes=nodes, passes=["checks"])
+                      fuel_budget=design.get("fuel", 0), nodes=nodes, passes=["checks"],
+                      site_inputs=si)
 
 
 def collect_hydrated_residue(S: dict, design: dict):
@@ -574,6 +591,8 @@ def _cmd_run(args, design):
     from husks.locke import run as locke_run
     from husks.config import load_config, oracle_config_from_toml
     overrides = {}
+    if args.unsafe:
+        overrides["unsafe"] = True
     if args.site:
         overrides["site"] = args.site
     if args.reuse_only:
@@ -584,7 +603,7 @@ def _cmd_run(args, design):
             overrides["oracle_backend"] = run_oracle
             overrides["oracle_backend_name"] = getattr(args, "backend", "litellm")
         except ImportError:
-            print("error: oracle module not available", file=sys.stderr)
+            print("husks run: oracle module not available. Install with: pip install 'husks[llm]'", file=sys.stderr)
             sys.exit(EXIT_MISSING_DEP)
 
         # Load .husks.toml and build oracle config
@@ -600,14 +619,14 @@ def _cmd_run(args, design):
             print(json.dumps({"status": "error", "error_type": "setup_failure",
                               "error": str(e)}))
         else:
-            print(f"error: {e}", file=sys.stderr)
+            print(f"husks run: {e}", file=sys.stderr)
         sys.exit(EXIT_BUILD_FAIL)
     except Exception as e:
         if args.json_output:
             print(json.dumps({"status": "error", "error_type": "unexpected",
                               "error": str(e)}))
         else:
-            print(f"error: {e}", file=sys.stderr)
+            print(f"husks run: {e}", file=sys.stderr)
         sys.exit(EXIT_BUILD_FAIL)
 
     # Report
@@ -632,7 +651,7 @@ def _cmd_verify(args):
     from husks.report import read_manifest
     site = Path(args.site)
     if not site.is_dir():
-        print(f"error: site not found: {site}", file=sys.stderr)
+        print(f"husks: site not found: {site}", file=sys.stderr)
         sys.exit(EXIT_USAGE)
     name = getattr(args, "name", None)
     if name:
@@ -640,12 +659,12 @@ def _cmd_verify(args):
     else:
         husks = list(site.glob("*.husk"))
         if len(husks) == 0:
-            print(f"error: no .husk files in {site}", file=sys.stderr); sys.exit(EXIT_BUILD_FAIL)
+            print(f"husks verify: no .husk files in {site}", file=sys.stderr); sys.exit(EXIT_BUILD_FAIL)
         if len(husks) > 1:
-            print(f"error: multiple .husk files; use --name", file=sys.stderr); sys.exit(EXIT_USAGE)
+            print(f"husks verify: multiple .husk files in {site}; use --name to pick one.", file=sys.stderr); sys.exit(EXIT_USAGE)
         hp = husks[0]
     if not hp.is_file():
-        print(f"error: husk not found: {hp}", file=sys.stderr); sys.exit(EXIT_BUILD_FAIL)
+        print(f"husks verify: husk not found: {hp}", file=sys.stderr); sys.exit(EXIT_BUILD_FAIL)
     try:
         root = recompute_root(hp.read_bytes(), str(site))
     except Exception as exc:
@@ -756,7 +775,7 @@ def _cmd_status(args):
     site = args.site
     residue, manifest = _build_site_residue(site)
     if residue is None:
-        print(f"error: no manifest in {site}/.traces/", file=sys.stderr)
+        print(f"husks: no manifest in {site}/.traces/ — has this site been built?", file=sys.stderr)
         sys.exit(EXIT_BUILD_FAIL)
     output = emit_residue(residue, json_mode=getattr(args, "json_output", False),
                           verbose=getattr(args, "verbose", False))
@@ -850,7 +869,7 @@ def _cmd_history(args):
     else:
         manifest = read_manifest(site)
         if not manifest:
-            print(f"error: no manifest in {site}/.traces/", file=sys.stderr); sys.exit(EXIT_BUILD_FAIL)
+            print(f"husks: no manifest in {site}/.traces/ — has this site been built?", file=sys.stderr); sys.exit(EXIT_BUILD_FAIL)
         convergence = {}
         for r in manifest.get("rules", []):
             convergence[r["name"]] = convergence_summary(r["name"], site, n=n)
@@ -859,7 +878,7 @@ def _cmd_history(args):
         else:
             residue, _ = _build_site_residue(site)
             if residue is None:
-                print(f"error: no manifest in {site}/.traces/", file=sys.stderr)
+                print(f"husks: no manifest in {site}/.traces/ — has this site been built?", file=sys.stderr)
                 sys.exit(EXIT_BUILD_FAIL)
             residue.command = "history"
             from husks.report import map_display_status
@@ -879,7 +898,7 @@ def _cmd_compare(args):
     from husks.report import compare_artifacts, read_history
     sites = args.sites
     if len(sites) < 2:
-        print("error: compare needs at least 2 sites", file=sys.stderr); sys.exit(EXIT_USAGE)
+        print("husks compare: need at least 2 site directories.", file=sys.stderr); sys.exit(EXIT_USAGE)
     check_roots = not getattr(args, "hashes_only", False)
     check_hashes = not getattr(args, "roots_only", False)
     json_mode = getattr(args, "json_output", False)
@@ -889,7 +908,7 @@ def _cmd_compare(args):
     for site in sites:
         r, _ = _build_site_residue(site)
         if r is None:
-            print(f"error: no manifest in {site}/.traces/", file=sys.stderr)
+            print(f"husks: no manifest in {site}/.traces/ — has this site been built?", file=sys.stderr)
             sys.exit(EXIT_BUILD_FAIL)
         residues.append(r)
 
@@ -967,7 +986,7 @@ def _render_compare_visual(residues, comparisons, proof_checks, proof_satisfied=
         preamble = render_preamble(
             design_name=res.design_name, display_status=ds,
             diamond_stage=diamond, husk_hash=res.husk_hash,
-            root=res.root, site=f"{roles[i]}  {res.site}",
+            root=res.root, site=(roles[i] if roles[i] == res.site else f"{roles[i]}  {res.site}"),
             stage_label="status")
         tree = render_motif_tree(res.nodes, verbose=True)
         left = _footer_left(res)
@@ -1013,14 +1032,6 @@ def _render_compare_visual(residues, comparisons, proof_checks, proof_satisfied=
 
 def _cmd_doctor(args):
     json_mode = getattr(args, "json_output", False)
-    if getattr(args, "selftest", False):
-        from husks.kernel import selftest
-        ok = selftest()
-        if json_mode:
-            print(json.dumps({"selftest": ok}))
-        else:
-            print("selftest: pass" if ok else "selftest: FAIL")
-        sys.exit(EXIT_OK if ok else EXIT_BUILD_FAIL)
     # Basic environment checks
     checks = []
     try:
@@ -1053,10 +1064,10 @@ def _cmd_cache_export(args):
     from husks.engine import cache_export as _export
     site = args.site
     if not Path(site).is_dir():
-        print(f"error: site not found: {site}", file=sys.stderr); sys.exit(EXIT_USAGE)
+        print(f"husks: site not found: {site}", file=sys.stderr); sys.exit(EXIT_USAGE)
     export_path = args.file
     if not export_path.endswith(".tar.gz"):
-        print("error: export path must end with .tar.gz", file=sys.stderr); sys.exit(EXIT_USAGE)
+        print("husks cache export: path must end with .tar.gz", file=sys.stderr); sys.exit(EXIT_USAGE)
     S = fresh_store(site, fuel=1)
     count = _export(S, export_path)
     if getattr(args, "json_output", False):
@@ -1073,9 +1084,9 @@ def _cmd_cache_import(args):
     site = args.site
     import_path = args.file
     if not Path(import_path).is_file():
-        print(f"error: file not found: {import_path}", file=sys.stderr); sys.exit(EXIT_USAGE)
+        print(f"husks cache import: file not found: {import_path}", file=sys.stderr); sys.exit(EXIT_USAGE)
     if not import_path.endswith(".tar.gz"):
-        print("error: import path must end with .tar.gz", file=sys.stderr); sys.exit(EXIT_USAGE)
+        print("husks cache import: path must end with .tar.gz", file=sys.stderr); sys.exit(EXIT_USAGE)
     merge = not getattr(args, "no_merge", False)
     S = fresh_store(site, fuel=1)
     count = _import(S, import_path, merge=merge)
@@ -1085,6 +1096,144 @@ def _cmd_cache_import(args):
     elif getattr(args, "verbose", False):
         print(f"  imported {BOLD}{count}{RESET} entries {DIM}\u2192 {site}{RESET}")
     sys.exit(EXIT_OK)
+
+
+# ── §8a Tree command ─────────────────────────────────────────────
+
+def _cmd_tree(args):
+    """Show working directory overview: designs, sites, native files."""
+    import os
+    from husks.report import read_manifest
+
+    cwd = Path(".")
+
+    # ── Discover designs ──────────────────────────────────────
+    designs: list[tuple[str, dict]] = []
+    for pattern in ("*.locke", "*.json"):
+        for p in sorted(cwd.glob(pattern)):
+            try:
+                from husks.locke import from_file, from_json as lk_from_json
+                d = from_file(str(p)) if p.suffix == ".locke" else lk_from_json(str(p))
+                designs.append((p.name, d))
+            except Exception:
+                continue
+
+    # ── Discover sites ────────────────────────────────────────
+    sites: list[tuple[str, dict]] = []
+    dry_sites: list[str] = []
+    for manifest_path in sorted(cwd.glob("*/.traces/build.manifest.json")):
+        site_dir = manifest_path.parent.parent.name
+        manifest = read_manifest(str(manifest_path.parent.parent))
+        if manifest:
+            sites.append((site_dir, manifest))
+    built_site_names = {name for name, _ in sites}
+    for cache_dir in sorted(cwd.glob("*/.cache")):
+        site_dir = cache_dir.parent.name
+        if site_dir not in built_site_names:
+            dry_sites.append(site_dir)
+
+    # ── Compute husk hashes per design ─────────────────────────
+    import hashlib as _hl
+    # design_name -> list of husk hashes (one per site that has the .husk file)
+    husk_hashes: dict[str, list[str]] = {}
+    for dir_name, manifest in sites:
+        dname = manifest.get("name", "")
+        if not dname:
+            continue
+        hp = cwd / dir_name / f"{dname}.husk"
+        if hp.is_file():
+            h = _hl.sha256(hp.read_bytes()).hexdigest()
+            husk_hashes.setdefault(dname, []).append(h)
+    # A design is a three-machine contender if 3+ sites share the same husk hash
+    from collections import Counter
+    three_machine_contenders: set[str] = set()
+    for dname, hashes in husk_hashes.items():
+        counts = Counter(hashes)
+        if counts.most_common(1)[0][1] >= 3:
+            three_machine_contenders.add(dname)
+
+    # ── Build input usage map ─────────────────────────────────
+    # Maps source path -> list of design names that reference it
+    input_usage: dict[str, list[str]] = {}
+    for design_name, design in designs:
+        si = design.get("site_inputs", {})
+        if isinstance(si, list):
+            si = {s: s for s in si}
+        for _local, source in si.items():
+            input_usage.setdefault(source, []).append(design_name)
+
+    # ── Discover native files ─────────────────────────────────
+    design_files = {name for name, _ in designs}
+    site_dirs = {name for name, _ in sites} | set(dry_sites)
+    skip_dirs = site_dirs | {".git", "__pycache__", ".traces"}
+
+    native_files: list[str] = []
+    for dirpath, dirnames, filenames in os.walk("."):
+        # Prune hidden dirs and skip dirs
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in skip_dirs]
+        dirnames.sort()
+        rel_dir = os.path.relpath(dirpath, ".")
+        for f in sorted(filenames):
+            if f.startswith("."):
+                continue
+            rel = os.path.join(rel_dir, f) if rel_dir != "." else f
+            if rel in design_files:
+                continue
+            native_files.append(rel)
+
+    # ── Print designs ─────────────────────────────────────────
+    if designs:
+        for name, design in designs:
+            si = design.get("site_inputs", {})
+            if isinstance(si, list):
+                si = {s: s for s in si}
+            if si and all(Path(source).exists() for source in si.values()):
+                mark = f"{GREEN}\u2713{RESET}"
+            elif si:
+                missing = [s for s in si.values() if not Path(s).exists()]
+                mark = f"{RED}\u2717{RESET} {DIM}missing {', '.join(missing)}{RESET}"
+            else:
+                mark = ""
+            dname = design.get("name", "")
+            if dname in three_machine_contenders:
+                mark = f"{CYAN}\u25c8{RESET} {mark}" if mark else f"{CYAN}\u25c8{RESET}"
+            print(f"  {BOLD}{name}{RESET}  {mark}")
+        print()
+
+    # ── Print sites ───────────────────────────────────────────
+    if sites or dry_sites:
+        for dir_name, manifest in sites:
+            status = manifest.get("status", "unknown")
+            root = manifest.get("root", "")
+            root_short = root[:12] + "\u2026" if len(root) > 12 else root
+            sc = STATE_COLORS.get(status, DIM)
+            print(f"  {BOLD}{dir_name}/{RESET}  {sc}{status}{RESET}  {DIM}{root_short}{RESET}")
+        for dir_name in dry_sites:
+            print(f"  {BOLD}{dir_name}/{RESET}  {DIM}dry{RESET}")
+        print()
+
+    # ── Print native file tree ────────────────────────────────
+    if native_files:
+        printed_dirs: set[str] = set()
+        for rel in native_files:
+            parts = rel.split(os.sep)
+            # Print directory headers
+            if len(parts) > 1:
+                dir_path = os.sep.join(parts[:-1])
+                if dir_path not in printed_dirs:
+                    printed_dirs.add(dir_path)
+                    print(f"  {BOLD}{dir_path}/{RESET}")
+
+            filename = parts[-1]
+            indent = "    " if len(parts) > 1 else "  "
+            ref_count = len(input_usage.get(rel, []))
+            if ref_count == 1:
+                color = GREEN
+            elif ref_count > 1:
+                color = BLUE
+            else:
+                color = DIM
+            print(f"{indent}{color}{filename}{RESET}")
 
 
 # ── §8 Main ─────────────────────────────────────────────────────
@@ -1113,6 +1262,7 @@ def main():
     r.add_argument("--stub", action="store_true")
     r.add_argument("--backend", choices=["litellm", "claude-code"], default="litellm")
     r.add_argument("--reuse-only", action="store_true")
+    r.add_argument("--unsafe", action="store_true")
     r.add_argument("--soft-fail", action="store_true")
     r_out = r.add_mutually_exclusive_group()
     r_out.add_argument("--verbose", "-v", action="store_true")
@@ -1152,13 +1302,13 @@ def main():
     ca = sub.add_parser("cache")
     ca_sub = ca.add_subparsers(dest="cache_cmd")
     ca_exp = ca_sub.add_parser("export")
+    ca_exp.add_argument("site")
     ca_exp.add_argument("file")
-    ca_exp.add_argument("--site", default=".")
     ca_exp.add_argument("--verbose", "-v", action="store_true")
     ca_exp.add_argument("--json", action="store_true", dest="json_output")
     ca_imp = ca_sub.add_parser("import")
     ca_imp.add_argument("file")
-    ca_imp.add_argument("--site", default=".")
+    ca_imp.add_argument("site")
     ca_imp.add_argument("--no-merge", action="store_true")
     ca_imp.add_argument("--verbose", "-v", action="store_true")
     ca_imp.add_argument("--json", action="store_true", dest="json_output")
@@ -1166,9 +1316,11 @@ def main():
     # doctor
     doc = sub.add_parser("doctor")
     doc.add_argument("--json", action="store_true", dest="json_output")
-    doc.add_argument("--selftest", action="store_true")
 
-    args = p.parse_args()
+    # tree
+    sub.add_parser("tree")
+
+    args, unknown = p.parse_known_args()
 
     if args.help:
         print(emit_help("hardened")); sys.exit(EXIT_OK)
@@ -1176,6 +1328,17 @@ def main():
         print("husks (hardened)"); sys.exit(EXIT_OK)
     if args.cmd is None:
         print(emit_help("hardened")); sys.exit(EXIT_USAGE)
+
+    # Catch unrecognized arguments with contextual hints
+    if unknown:
+        # Common mistake: positional site arg instead of --site
+        if args.cmd == "run" and len(unknown) == 1 and not unknown[0].startswith("-"):
+            site_guess = unknown[0]
+            print(f"husks run: '{site_guess}' is not a flag. Did you mean --site {site_guess}?", file=sys.stderr)
+            print(f"  husks run <design> --site {site_guess}", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+        print(f"husks {args.cmd}: unrecognized arguments: {' '.join(unknown)}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
 
     # Design-loading commands
     if args.cmd in ("check", "run"):
@@ -1188,7 +1351,7 @@ def main():
             if getattr(args, "json_output", False):
                 print(json.dumps({"status": "error", "error": str(e)}))
             else:
-                print(f"error loading design: {e}", file=sys.stderr)
+                print(f"husks {args.cmd}: cannot load design: {e}", file=sys.stderr)
             sys.exit(EXIT_USAGE)
         if args.cmd == "check":
             _cmd_check(args, design)
@@ -1210,9 +1373,11 @@ def main():
         elif getattr(args, "cache_cmd", None) == "import":
             _cmd_cache_import(args)
         else:
-            print("usage: husks cache {export,import}", file=sys.stderr); sys.exit(EXIT_USAGE)
+            print("husks cache: specify 'export' or 'import'.", file=sys.stderr); sys.exit(EXIT_USAGE)
     elif args.cmd == "doctor":
         _cmd_doctor(args)
+    elif args.cmd == "tree":
+        _cmd_tree(args)
 
 
 def _cli_entry():
@@ -1228,7 +1393,7 @@ def _cli_entry():
         if verbose:
             import traceback; traceback.print_exc()
         else:
-            print(f"error: {type(e).__name__}: {e}", file=sys.stderr)
+            print(f"husks: {type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(EXIT_INTERNAL)
 
 

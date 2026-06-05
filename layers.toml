@@ -67,8 +67,8 @@
 # ── Special modules ───────────────────────────────────────────────
 
 [isolated]
-# The gate reader depends on core only (zero cross-dependencies by design)
-"husks.gate" = 0
+# The gate is now a standalone script (examples/core-bootstrap/gate.py)
+# with zero husks dependencies.
 
 [pure_infra]
 # Utilities with zero husks.* imports (exempt from layer index)
