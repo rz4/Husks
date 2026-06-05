@@ -130,6 +130,7 @@ Not part of the conceptual descent; consult as needed.
 | [EXPLORE.md](EXPLORE.md) | Exploration backlog, ranked by compound value. |
 | [TESTS.md](TESTS.md) | Test-suite map: CSE GENESIS / SOLID ALPHA / LIQUID BETA phases and naming. |
 | [phase-0-complete.md](phase-0-complete.md) · [phase-1-complete.md](phase-1-complete.md) · [phase-2-complete.md](phase-2-complete.md) | Rearchitecture phase records (what each cycle-cut accomplished). |
+| [hardening.md](hardening.md) | Layer-by-layer hardening notes, delta vs liquid beta, progress table. |
 
 ---
 
