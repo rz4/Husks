@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from engine import (
+from husks.engine import (
     build, rule, action, oracle, cond, commit, halt,
     node_to_cse, compute_build_root,
 )
-from seal import site_path, write_text, Stop
+from husks.seal import site_path, write_text, Stop
 from conftest import _write_action
 
 
@@ -134,7 +134,7 @@ class TestBuild:
         # With fuel=1, the oracle fires (fuel->0), seals succeed.
         # But it should commit since there's no halt node.
         # Let's do something different: just verify discard works directly
-        from engine import cache_put_pending, cache_discard_pending
+        from husks.engine import cache_put_pending, cache_discard_pending
         S2 = build("b", 5, halt("fail"), site=str(tmp_path / "site2"))
         assert S2["status"] == "halted"
 

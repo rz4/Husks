@@ -876,12 +876,12 @@ def _resolve_predicate(spec: str | Callable,
         prefix, arg = spec.split(":", 1)
         if prefix == "file-exists":
             def _fe(S):
-                from seal import site_path
+                from husks.seal import site_path
                 return os.path.exists(site_path(S, arg))
             _fe._husks_pred_spec = spec; return _fe
         if prefix == "file-nonempty":
             def _fne(S):
-                from seal import site_path
+                from husks.seal import site_path
                 p = site_path(S, arg)
                 return os.path.exists(p) and os.path.getsize(p) > 0
             _fne._husks_pred_spec = spec; return _fne
@@ -896,7 +896,7 @@ def _resolve_predicate(spec: str | Callable,
 def _make_touch_action(outputs: list[str]):
     """Create an action that writes "ok\n" to declared outputs that don't exist."""
     def touch(S):
-        from seal import site_path, write_text
+        from husks.seal import site_path, write_text
         for o in outputs:
             p = Path(site_path(S, o, write=True))
             if not p.exists():
@@ -908,7 +908,7 @@ def _make_touch_action(outputs: list[str]):
 
 def compile_design(design: Design) -> tuple[str, int, list[dict], dict[str, Any]]:
     """Lower design IR to (name, fuel, terminal_nodes, kwargs) for build()."""
-    from engine import (
+    from husks.engine import (
         rule, action, oracle, trial as trial_recipe,
         cond as cond_node, commit as commit_node, halt as halt_node,
         _make_shell_action,
@@ -978,7 +978,7 @@ def compile_design(design: Design) -> tuple[str, int, list[dict], dict[str, Any]
 
 def setup_imports(site: str, imports: dict[str, str]) -> list[str]:
     """Create symlinks in the site for each declared import."""
-    from seal import setup_links
+    from husks.seal import setup_links
     return setup_links(site, imports)
 
 
@@ -986,7 +986,7 @@ def run(design: Design, **overrides: Any) -> dict[str, Any]:
     """Check, compile, and execute a design.  Returns the Store."""
     errs = check(design)
     if errs: raise ValueError("design check failed:\n  " + "\n  ".join(errs))
-    from engine import build
+    from husks.engine import build
 
     name, fuel, terminals, kwargs = compile_design(design)
     kwargs.update(overrides)

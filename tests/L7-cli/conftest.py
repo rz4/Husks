@@ -1,15 +1,8 @@
 """conftest.py -- Fixtures for L7 CLI tests."""
 
 import json
-import sys
-from pathlib import Path
 
 import pytest
-
-# Add @site/src to path so `import cli` works.
-_src = str(Path(__file__).resolve().parent.parent.parent / "src")
-if _src not in sys.path:
-    sys.path.insert(0, _src)
 
 
 @pytest.fixture

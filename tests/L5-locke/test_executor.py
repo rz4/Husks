@@ -2,7 +2,7 @@
 
 import os
 import pytest
-from locke import (
+from husks.locke import (
     compile_design, _resolve_predicate, _make_touch_action,
     tokenize, parse, resolve, check, run,
 )
@@ -55,7 +55,7 @@ class TestResolvePredicate:
 
 class TestMakeTouchAction:
     def test_touch_creates_files(self, tmp_site):
-        from seal import fresh_store
+        from husks.seal import fresh_store
         S = fresh_store(str(tmp_site), fuel=5)
         fn = _make_touch_action(["a.txt", "b.txt"])
         fn(S)
@@ -63,7 +63,7 @@ class TestMakeTouchAction:
         assert (tmp_site / "b.txt").read_text() == "ok\n"
 
     def test_touch_skips_existing(self, tmp_site):
-        from seal import fresh_store
+        from husks.seal import fresh_store
         S = fresh_store(str(tmp_site), fuel=5)
         (tmp_site / "a.txt").write_text("original")
         fn = _make_touch_action(["a.txt"])

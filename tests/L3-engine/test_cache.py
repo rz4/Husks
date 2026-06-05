@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from engine import (
+from husks.engine import (
     cache_key, cache_dir, cache_get, cache_put, cache_put_pending,
     cache_promote_pending, cache_discard_pending,
     cache_list, cache_clear, cache_export, cache_import,
     oracle,
 )
-from seal import site_path, write_text, fresh_store
+from husks.seal import site_path, write_text, fresh_store
 
 
 def _oracle_recipe(prompt="test"):
@@ -90,9 +90,9 @@ class TestCachePutGet:
         cache_put(tmp_store, recipe, inputs, {"out.txt": "original"})
         # Tamper with cached content
         cdir = cache_dir(tmp_store, cache_key(
-            __import__("kernel").recipe_digest(
-                __import__("forms").recipe_to_cse(recipe)),
-            {i: __import__("seal").file_sig(site_path(tmp_store, i)).decode()
+            __import__("husks.kernel", fromlist=["recipe_digest"]).recipe_digest(
+                __import__("husks.forms", fromlist=["recipe_to_cse"]).recipe_to_cse(recipe)),
+            {i: __import__("husks.seal", fromlist=["file_sig"]).file_sig(site_path(tmp_store, i)).decode()
              for i in sorted(inputs)}
         ))
         outputs_file = Path(cdir) / "outputs.json"

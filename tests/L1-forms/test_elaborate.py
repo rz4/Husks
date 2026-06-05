@@ -1,8 +1,8 @@
 """test_elaborate.py -- Flat-design elaboration tests."""
 
 import pytest
-from kernel import encode, parse
-from forms import elaborate, ast_to_json, json_to_ast
+from husks.kernel import encode, parse
+from husks.forms import elaborate, ast_to_json, json_to_ast
 
 
 # ── Demo flat design (matches spec/conformance/demo.husk) ────────

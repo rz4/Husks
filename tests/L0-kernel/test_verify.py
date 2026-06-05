@@ -1,7 +1,7 @@
 """Conformance vector tests -- golden vectors pass, malformed rejected, verify predicate."""
 
 import pytest
-from kernel import recompute_root, verify, parse, _extract_build, _recompute_node
+from husks.kernel import recompute_root, verify, parse, _extract_build, _recompute_node
 
 
 class TestConformanceVectors:

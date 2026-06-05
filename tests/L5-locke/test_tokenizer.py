@@ -1,7 +1,7 @@
 """test_tokenizer.py -- Lexer and token tests."""
 
 import pytest
-from locke import tokenize, _TT, Token
+from husks.locke import tokenize, _TT, Token
 
 
 class TestTokenTypes:

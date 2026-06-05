@@ -16,8 +16,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
-from kernel import ABSENT, CSE_VERSION, atom, content_hash, compute_seal, recipe_digest
-from forms import recipe_to_cse
+from husks.kernel import ABSENT, CSE_VERSION, atom, content_hash, compute_seal, recipe_digest
+from husks.forms import recipe_to_cse
 
 # ── Type aliases ──────────────────────────────────────────────────
 

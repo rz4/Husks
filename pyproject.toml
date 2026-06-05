@@ -18,10 +18,10 @@ dependencies = [
 claude-code = ["claude-code-sdk"]
 
 [project.scripts]
-husks = "cli:main"
+husks = "husks.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/husks"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

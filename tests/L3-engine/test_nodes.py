@@ -2,7 +2,7 @@
 
 import pytest
 
-from engine import rule, action, oracle, trial, cond, commit, halt, _ACTION_ARG_TYPES
+from husks.engine import rule, action, oracle, trial, cond, commit, halt, _ACTION_ARG_TYPES
 
 
 class TestRule:

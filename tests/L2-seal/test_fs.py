@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from seal import (
+from husks.seal import (
     ensure_dir, read_text, write_text, write_bytes_atomic,
     file_exists, file_sig,
 )
-from kernel import ABSENT
+from husks.kernel import ABSENT
 
 
 class TestEnsureDir:

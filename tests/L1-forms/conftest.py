@@ -1,15 +1,8 @@
-"""L1-forms test configuration -- sys.path setup and shared helpers."""
+"""L1-forms test configuration -- shared helpers."""
 
-import os
-import sys
 from pathlib import Path
 
 import pytest
-
-# Add src/ to sys.path so `import kernel` and `import forms` work.
-_SITE_SRC = str(Path(__file__).resolve().parent.parent.parent / "src")
-if _SITE_SRC not in sys.path:
-    sys.path.insert(0, _SITE_SRC)
 
 # Conformance vector root (repo-level spec/conformance/).
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent

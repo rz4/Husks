@@ -1,8 +1,8 @@
 """test_bijection.py -- CSE<->JSON round-trip for all form types."""
 
 import pytest
-from kernel import encode, parse, NIL
-from forms import ast_to_json, json_to_ast, to_json_str, from_json_str, round_trip
+from husks.kernel import encode, parse, NIL
+from husks.forms import ast_to_json, json_to_ast, to_json_str, from_json_str, round_trip
 
 
 # ── Atom round-trips ─────────────────────────────────────────────

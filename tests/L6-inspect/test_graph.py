@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from report import extract_edges, render_graph
+from husks.report import extract_edges, render_graph
 
 
 # ── Edge extraction ─────────────────────────────────────────────
@@ -125,7 +125,7 @@ class TestRenderWithSite:
     def test_overlays_states(self, tmp_site, write_manifest, write_seal):
         """When site is provided, freshness states overlay on nodes."""
         (tmp_site / "out.txt").write_text("data")
-        from report import file_hash
+        from husks.report import file_hash
         h = file_hash(str(tmp_site / "out.txt"))
         rules = [
             {"name": "dep", "kind": "action", "outputs": ["dep.txt"]},

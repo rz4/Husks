@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from oracle import (
+from husks.oracle import (
     parse_response, _build_messages, _truncate, _rebind, _allowed,
     _dispatch_context, step, agent, MAX_TOOL_OUTPUT,
 )

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from kernel import recompute_root
+from husks.kernel import recompute_root
 
 # ── Type aliases ─────────────────────────────────────────────────
 

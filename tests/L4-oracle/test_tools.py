@@ -3,7 +3,7 @@
 import os
 import pytest
 from pathlib import Path
-from oracle import sandbox, dispatch, read_file, write_file, list_dir, tree, schemas
+from husks.oracle import sandbox, dispatch, read_file, write_file, list_dir, tree, schemas
 
 
 # ── sandbox() ────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ class TestWriteFileSandbox:
         assert "Error" in out
 
     def test_rejects_oversized(self, tmp_site):
-        from oracle import MAX_WRITE_SIZE
+        from husks.oracle import MAX_WRITE_SIZE
         big = "x" * (MAX_WRITE_SIZE + 1)
         out = write_file("big.txt", big, site_root=tmp_site)
         assert "exceeds max" in out

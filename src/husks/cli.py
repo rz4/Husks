@@ -284,7 +284,7 @@ def emit_residue(residue, *, json_mode: bool = False,
 
 
 def _emit_visual(residue, *, verbose: bool = False) -> str:
-    from report import map_display_status
+    from husks.report import map_display_status
     display_status = map_display_status(residue.status, residue.command)
     diamond_stage = _diamond_stage(residue)
     stage_label = STAGE_MAP.get(residue.command, residue.command)
@@ -349,7 +349,7 @@ def _footer_right(residue) -> str:
 
 
 def _emit_json(residue) -> str:
-    from report import map_display_status
+    from husks.report import map_display_status
     status_display = map_display_status(residue.status, residue.command)
     output = {"command": residue.command, "name": residue.design_name,
               "site": residue.site, "status": status_display,
@@ -412,7 +412,7 @@ def emit_help(version: str) -> str:
 
 def collect_dry_residue(design: dict):
     """Build CliResidue for check command (no execution)."""
-    from report import CliResidue, CliNode
+    from husks.report import CliResidue, CliNode
     rules = design.get("rules", [])
     deps = {}
     for rule in rules:
@@ -436,8 +436,8 @@ def collect_dry_residue(design: dict):
 
 def collect_hydrated_residue(S: dict, design: dict):
     """Build CliResidue from completed build Store."""
-    from report import CliResidue, CliNode, CliTrace, CliOutput, map_trace_state, read_history
-    from seal import file_sig, site_path as _site_path
+    from husks.report import CliResidue, CliNode, CliTrace, CliOutput, map_trace_state, read_history
+    from husks.seal import file_sig, site_path as _site_path
     import hashlib as _hl
 
     rules = design.get("rules", [])
@@ -552,7 +552,7 @@ def collect_hydrated_residue(S: dict, design: dict):
 # ── §7 Commands ──────────────────────────────────────────────────
 
 def _cmd_check(args, design):
-    from locke import check_categorized
+    from husks.locke import check_categorized
     result = check_categorized(design)
     if not result["ok"]:
         if args.json_output:
@@ -571,7 +571,7 @@ def _cmd_check(args, design):
 
 
 def _cmd_run(args, design):
-    from locke import run as locke_run
+    from husks.locke import run as locke_run
     overrides = {}
     if args.site:
         overrides["site"] = args.site
@@ -579,7 +579,7 @@ def _cmd_run(args, design):
         overrides["cache_reuse_only"] = True
     if not args.stub and not args.reuse_only:
         try:
-            from oracle import run_oracle
+            from husks.oracle import run_oracle
             overrides["oracle_backend"] = run_oracle
             overrides["oracle_backend_name"] = getattr(args, "backend", "litellm")
             overrides["oracle_model"] = args.model
@@ -606,7 +606,7 @@ def _cmd_run(args, design):
     # Report
     report_json_path = getattr(args, 'report_json', None)
     if report_json_path or args.json_output:
-        from report import assemble, render_json
+        from husks.report import assemble, render_json
         report = assemble(S, S.get("trace", []), design)
         if report_json_path:
             Path(report_json_path).write_text(render_json(report))
@@ -621,8 +621,8 @@ def _cmd_run(args, design):
 
 
 def _cmd_verify(args):
-    from kernel import recompute_root
-    from report import read_manifest
+    from husks.kernel import recompute_root
+    from husks.report import read_manifest
     site = Path(args.site)
     if not site.is_dir():
         print(f"error: site not found: {site}", file=sys.stderr)
@@ -682,7 +682,7 @@ def _cmd_verify(args):
 def _build_site_residue(site: str):
     """Build a CliResidue for a site from its manifest and history.  Returns (residue, manifest) or None."""
     import hashlib as _hl
-    from report import (read_manifest, compute_rule_states, CliResidue, CliNode,
+    from husks.report import (read_manifest, compute_rule_states, CliResidue, CliNode,
                         CliTrace as _CliTrace, read_history, map_manifest_state)
     manifest = read_manifest(site)
     if not manifest:
@@ -826,7 +826,7 @@ def _render_history_node(node, nodes_by_name, convergence, lines, prefix,
 
 
 def _cmd_history(args):
-    from report import convergence_summary, read_manifest
+    from husks.report import convergence_summary, read_manifest
     site = args.site
     rule = getattr(args, "rule", None)
     n = getattr(args, "n", 5)
@@ -855,7 +855,7 @@ def _cmd_history(args):
                 print(f"error: no manifest in {site}/.traces/", file=sys.stderr)
                 sys.exit(EXIT_BUILD_FAIL)
             residue.command = "history"
-            from report import map_display_status
+            from husks.report import map_display_status
             display_status = map_display_status(residue.status, "status")
             diamond_stage = _diamond_stage(residue)
             preamble = render_preamble(
@@ -869,7 +869,7 @@ def _cmd_history(args):
 
 
 def _cmd_compare(args):
-    from report import compare_artifacts, read_history
+    from husks.report import compare_artifacts, read_history
     sites = args.sites
     if len(sites) < 2:
         print("error: compare needs at least 2 sites", file=sys.stderr); sys.exit(EXIT_USAGE)
@@ -953,7 +953,7 @@ def _render_compare_visual(residues, comparisons, proof_checks, proof_satisfied=
     roles = ["M1", "M2", "M3"] if len(residues) == 3 else [f"S{i+1}" for i in range(len(residues))]
 
     # Render each site card.
-    from report import map_display_status
+    from husks.report import map_display_status
     for i, res in enumerate(residues):
         ds = map_display_status(res.status, "status")
         diamond = _diamond_stage(res)
@@ -1007,7 +1007,7 @@ def _render_compare_visual(residues, comparisons, proof_checks, proof_satisfied=
 def _cmd_doctor(args):
     json_mode = getattr(args, "json_output", False)
     if getattr(args, "selftest", False):
-        from kernel import selftest
+        from husks.kernel import selftest
         ok = selftest()
         if json_mode:
             print(json.dumps({"selftest": ok}))
@@ -1017,17 +1017,17 @@ def _cmd_doctor(args):
     # Basic environment checks
     checks = []
     try:
-        import kernel  # noqa: F401
+        import husks.kernel  # noqa: F401
         checks.append({"name": "kernel", "ok": True, "detail": "importable"})
     except Exception as e:
         checks.append({"name": "kernel", "ok": False, "detail": str(e)})
     try:
-        import locke  # noqa: F401
+        import husks.locke  # noqa: F401
         checks.append({"name": "locke", "ok": True, "detail": "importable"})
     except Exception as e:
         checks.append({"name": "locke", "ok": False, "detail": str(e)})
     try:
-        import report  # noqa: F401
+        import husks.report  # noqa: F401
         checks.append({"name": "report", "ok": True, "detail": "importable"})
     except Exception as e:
         checks.append({"name": "report", "ok": False, "detail": str(e)})
@@ -1042,8 +1042,8 @@ def _cmd_doctor(args):
 
 
 def _cmd_cache_export(args):
-    from seal import fresh_store
-    from engine import cache_export as _export
+    from husks.seal import fresh_store
+    from husks.engine import cache_export as _export
     site = args.site
     if not Path(site).is_dir():
         print(f"error: site not found: {site}", file=sys.stderr); sys.exit(EXIT_USAGE)
@@ -1061,8 +1061,8 @@ def _cmd_cache_export(args):
 
 
 def _cmd_cache_import(args):
-    from seal import fresh_store
-    from engine import cache_import as _import
+    from husks.seal import fresh_store
+    from husks.engine import cache_import as _import
     site = args.site
     import_path = args.file
     if not Path(import_path).is_file():
@@ -1175,7 +1175,7 @@ def main():
         design_path = resolve_design(args)
         args.design = design_path
         try:
-            from locke import from_file, from_json as lk_from_json
+            from husks.locke import from_file, from_json as lk_from_json
             design = from_file(design_path) if design_path.endswith(".locke") else lk_from_json(design_path)
         except Exception as e:
             if getattr(args, "json_output", False):

@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from oracle import (
+from husks.oracle import (
     OracleBackend, RealizedCost, register, get_backend, _BACKENDS,
     build_system_prompt, site_of, readonly_roots_of, DEFAULT_TOOLS,
     run_oracle, _raise_unless_stop, _resolve_config,

@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from report import (
+from husks.report import (
     validate_manifest_schema, validate_seal_schema,
     read_manifest, read_seal, read_trial_report,
     file_hash, compute_rule_state, compute_rule_states,

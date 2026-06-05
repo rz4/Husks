@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from seal import (
+from husks.seal import (
     fresh_store, burn, Stop,
     resolve_site_inputs, setup_links,
 )

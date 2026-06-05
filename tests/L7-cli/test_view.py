@@ -2,13 +2,13 @@
 
 import json
 import pytest
-from cli import (
+from husks.cli import (
     render_output, render_preamble, render_motif_tree, render_footer,
     emit_residue, emit_help, _emit_json, _diamond_stage, _footer_left, _footer_right,
     render_history_tree,
     STAGE_MAP,
 )
-from report import CliResidue, CliNode, CliTrace, CliOutput
+from husks.report import CliResidue, CliNode, CliTrace, CliOutput
 
 
 # ── Fixtures ──────────────────────────────────────────────────

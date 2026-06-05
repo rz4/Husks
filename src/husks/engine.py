@@ -19,14 +19,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
 
-from kernel import (
+from husks.kernel import (
     atom, CseValue, compute_node_digest, encode, recipe_digest, CSE_VERSION,
 )
-from forms import (
+from husks.forms import (
     recipe_to_cse, _pred_identity, _fn_behavior_digest,
     first_valid, VERDICT_POLICIES, DEFAULT_VERDICT,
 )
-from seal import (
+from husks.seal import (
     Store, Node, Recipe, Stop,
     site_path, write_text, read_text, ensure_dir, file_exists, file_sig,
     fresh_store, burn, write_seal, write_build_manifest, write_trial_report,

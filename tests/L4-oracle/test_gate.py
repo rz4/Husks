@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from oracle import (
+from husks.oracle import (
     _Gate, CC_TOOL_MAP, UsageTracker,
     compute_config_hash, compute_prompt_hash, DEFAULT_MODEL,
 )
@@ -84,7 +84,7 @@ class TestToolMap:
         assert CC_TOOL_MAP["tree"] == "Glob"
 
     def test_all_default_tools_mapped(self):
-        from oracle import DEFAULT_TOOLS
+        from husks.oracle import DEFAULT_TOOLS
         for t in DEFAULT_TOOLS:
             assert t in CC_TOOL_MAP
 

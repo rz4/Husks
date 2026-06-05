@@ -1,7 +1,7 @@
 """test_validation.py -- Design validation tests."""
 
 import pytest
-from locke import check, check_categorized, _resolve_targets, show, from_json, to_json, normalize_site_inputs
+from husks.locke import check, check_categorized, _resolve_targets, show, from_json, to_json, normalize_site_inputs
 
 
 # ── Helpers ──────────────────────────────────────────────────────

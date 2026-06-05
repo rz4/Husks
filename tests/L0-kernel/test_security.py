@@ -1,7 +1,7 @@
 """Security validation tests -- path/name injection prevention."""
 
 import pytest
-from kernel import _validate_rule_name, _validate_husk_path
+from husks.kernel import _validate_rule_name, _validate_husk_path
 
 
 class TestValidateRuleName:

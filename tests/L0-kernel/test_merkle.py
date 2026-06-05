@@ -1,7 +1,7 @@
 """Merkle DAG tests -- node digest determinism, sensitivity, multi-target root."""
 
 import hashlib
-from kernel import compute_node_digest, atom, recompute_root, parse, _extract_build, _recompute_node
+from husks.kernel import compute_node_digest, atom, recompute_root, parse, _extract_build, _recompute_node
 
 
 class TestNodeDigest:

@@ -4,14 +4,14 @@ import json
 import sys
 import pytest
 from pathlib import Path
-from cli import (
+from husks.cli import (
     collect_dry_residue, collect_hydrated_residue,
     _cmd_doctor, _cmd_status, _cmd_history, _cmd_compare, _cmd_verify,
     _cmd_cache_export, _cmd_cache_import,
     main, _cli_entry, resolve_design,
     EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_MISSING_DEP,
 )
-from report import CliResidue, CliNode
+from husks.report import CliResidue, CliNode
 from conftest import _write_manifest, _write_seal, _write_history
 
 
@@ -22,7 +22,7 @@ class TestAssembleRoundTrip:
 
     def test_engine_events_to_report(self, tmp_site, minimal_design):
         """Engine node_done/rule_start/artifact events produce non-empty assemble() output."""
-        from report import assemble
+        from husks.report import assemble
         site = str(tmp_site)
         S = {
             "site": site, "status": "committed", "build-root": "root123",
@@ -57,7 +57,7 @@ class TestAssembleRoundTrip:
 
     def test_sealed_node_produces_report_node(self, tmp_site, minimal_design):
         """Engine sealed + node_done(reused) produces a report node."""
-        from report import assemble
+        from husks.report import assemble
         site = str(tmp_site)
         S = {
             "site": site, "status": "committed", "build-root": "root123",
@@ -74,7 +74,7 @@ class TestAssembleRoundTrip:
 
     def test_halted_node_has_diagnosis(self, tmp_site, minimal_design):
         """Engine rule-halted + node_done(failed) produces diagnosis."""
-        from report import assemble
+        from husks.report import assemble
         site = str(tmp_site)
         S = {
             "site": site, "status": "halted", "build-root": None,
@@ -210,7 +210,7 @@ class TestCmdDoctor:
 class TestCmdStatus:
     def test_basic(self, tmp_site, write_manifest, write_seal, capsys):
         (tmp_site / "out.txt").write_text("data")
-        from report import file_hash
+        from husks.report import file_hash
         h = file_hash(str(tmp_site / "out.txt"))
         write_manifest(tmp_site)
         write_seal(tmp_site, "w", outputs={"out.txt": h})
@@ -231,7 +231,7 @@ class TestCmdStatus:
 
     def test_husk_hash_when_sealed(self, tmp_site, write_manifest, write_seal, capsys):
         (tmp_site / "out.txt").write_text("data")
-        from report import file_hash
+        from husks.report import file_hash
         h = file_hash(str(tmp_site / "out.txt"))
         write_manifest(tmp_site)
         write_seal(tmp_site, "w", outputs={"out.txt": h})
@@ -272,7 +272,7 @@ class TestCmdStatus:
         """Verbose status shows full DAG tree with per-node expense."""
         (tmp_site / "out.txt").write_text("data")
         (tmp_site / "dep.txt").write_text("dep-data")
-        from report import file_hash
+        from husks.report import file_hash
         h_out = file_hash(str(tmp_site / "out.txt"))
         h_dep = file_hash(str(tmp_site / "dep.txt"))
         rules = [
@@ -371,7 +371,7 @@ class TestCmdHistory:
 class TestCmdCompare:
     def test_identical_sites(self, tmp_site, write_manifest, write_seal, capsys):
         (tmp_site / "out.txt").write_text("data")
-        from report import file_hash
+        from husks.report import file_hash
         h = file_hash(str(tmp_site / "out.txt"))
         write_manifest(tmp_site)
         write_seal(tmp_site, "w", outputs={"out.txt": h})
@@ -393,7 +393,7 @@ class TestCmdCompare:
     def test_visual_shows_site_cards(self, tmp_site, write_manifest, write_seal, write_history, capsys):
         """Compare renders each site like status verbose."""
         (tmp_site / "out.txt").write_text("data")
-        from report import file_hash
+        from husks.report import file_hash
         h = file_hash(str(tmp_site / "out.txt"))
         write_manifest(tmp_site)
         write_seal(tmp_site, "w", outputs={"out.txt": h})
@@ -414,7 +414,7 @@ class TestCmdCompare:
 
     def test_three_machine_proof(self, tmp_path, capsys):
         """Three sites triggers proof checks."""
-        from report import file_hash
+        from husks.report import file_hash
         husk_data = b"identical-husk-content"
         sites = []
         for label in ["m1", "m2", "m3"]:
@@ -451,7 +451,7 @@ class TestCmdCompare:
 
     def test_three_machine_json(self, tmp_path, capsys):
         """Three-machine proof in JSON mode includes proof field."""
-        from report import file_hash
+        from husks.report import file_hash
         husk_data = b"identical-husk-content"
         sites = []
         for label in ["m1", "m2", "m3"]:
@@ -513,8 +513,8 @@ class TestCmdVerify:
         """Verify fails when recomputed root != manifest root."""
         (tmp_site / "test.husk").write_bytes(b"fake")
         write_manifest(tmp_site, root="manifest_root_that_will_not_match")
-        import kernel
-        monkeypatch.setattr(kernel, "recompute_root", lambda _b, _s: "recomputed_abc123")
+        import husks.kernel
+        monkeypatch.setattr(husks.kernel, "recompute_root", lambda _b, _s: "recomputed_abc123")
         args = _make_args(site=str(tmp_site), name=None, json_output=False, verbose=True)
         with pytest.raises(SystemExit) as exc:
             _cmd_verify(args)
@@ -526,8 +526,8 @@ class TestCmdVerify:
         """Verify JSON mode reports errors on mismatch."""
         (tmp_site / "test.husk").write_bytes(b"fake")
         write_manifest(tmp_site, root="wrong_root")
-        import kernel
-        monkeypatch.setattr(kernel, "recompute_root", lambda _b, _s: "recomputed_abc123")
+        import husks.kernel
+        monkeypatch.setattr(husks.kernel, "recompute_root", lambda _b, _s: "recomputed_abc123")
         args = _make_args(site=str(tmp_site), name=None, json_output=True)
         with pytest.raises(SystemExit) as exc:
             _cmd_verify(args)
@@ -542,8 +542,8 @@ class TestCmdVerify:
         site.mkdir()
         (site / ".traces").mkdir()
         (site / "test.husk").write_bytes(b"fake")
-        import kernel
-        monkeypatch.setattr(kernel, "recompute_root", lambda _b, _s: "some_root_hash")
+        import husks.kernel
+        monkeypatch.setattr(husks.kernel, "recompute_root", lambda _b, _s: "some_root_hash")
         args = _make_args(site=str(site), name=None, json_output=False, verbose=True)
         with pytest.raises(SystemExit) as exc:
             _cmd_verify(args)
@@ -567,8 +567,8 @@ class TestCmdVerify:
 class TestCmdCacheExport:
     def _populate_cache(self, site):
         """Write a minimal servable cache entry."""
-        from seal import fresh_store
-        from engine import cache_put
+        from husks.seal import fresh_store
+        from husks.engine import cache_put
         S = fresh_store(str(site), fuel=1)
         recipe = {"type": "oracle", "prompt": "go", "tools": []}
         cache_put(S, recipe, [], {"out.txt": "hello"})
@@ -622,8 +622,8 @@ class TestCmdCacheExport:
 class TestCmdCacheImport:
     def _export_from(self, site):
         """Populate cache and export to tarball, return path."""
-        from seal import fresh_store
-        from engine import cache_put, cache_export
+        from husks.seal import fresh_store
+        from husks.engine import cache_put, cache_export
         S = fresh_store(str(site), fuel=1)
         recipe = {"type": "oracle", "prompt": "go", "tools": []}
         cache_put(S, recipe, [], {"out.txt": "hello"})
@@ -735,14 +735,14 @@ class TestMainArgparse:
 class TestCliEntry:
     def test_keyboard_interrupt(self, monkeypatch):
         def _raise(*a, **kw): raise KeyboardInterrupt()
-        monkeypatch.setattr("cli.main", _raise)
+        monkeypatch.setattr("husks.cli.main", _raise)
         with pytest.raises(SystemExit) as exc:
             _cli_entry()
         assert exc.value.code == 130
 
     def test_unexpected_error(self, monkeypatch):
         def _raise(*a, **kw): raise RuntimeError("boom")
-        monkeypatch.setattr("cli.main", _raise)
+        monkeypatch.setattr("husks.cli.main", _raise)
         monkeypatch.setattr(sys, "argv", ["husks"])
         with pytest.raises(SystemExit) as exc:
             _cli_entry()

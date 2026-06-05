@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from seal import (
+from husks.seal import (
     write_seal, read_seal, seal_file, freshness_check,
     clear_fired_seals, output_hashes, compute_cse_seal,
     history_file, append_history,

@@ -1,7 +1,7 @@
 """CSE codec tests -- encode, parse, roundtrip, rejection."""
 
 import pytest
-from kernel import encode, parse, NIL
+from husks.kernel import encode, parse, NIL
 
 
 class TestEncode:

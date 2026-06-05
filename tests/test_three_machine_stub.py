@@ -45,7 +45,7 @@ MINIMAL_DESIGN = """\
 def _run_cli(*args, check=True, **kwargs):
     """Run the husks CLI as a subprocess with PYTHONPATH=src."""
     env = {**os.environ, "PYTHONPATH": SRC_DIR}
-    cmd = [sys.executable, "-c", "from cli import main; main()", *args]
+    cmd = [sys.executable, "-c", "from husks.cli import main; main()", *args]
     result = subprocess.run(
         cmd, env=env,
         capture_output=True, text=True,

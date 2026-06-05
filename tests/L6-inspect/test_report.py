@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from report import (
+from husks.report import (
     assemble, render_text, render_concise, render_json,
     validate_report_schema,
     CliOutput, CliTrace, CliNode, CliResidue,
@@ -279,7 +279,7 @@ class TestCompareArtifacts:
     def test_identical(self, tmp_site, write_manifest, write_seal):
         """Same site compared to itself should be equivalent."""
         (tmp_site / "out.txt").write_text("data")
-        from report import file_hash
+        from husks.report import file_hash
         h = file_hash(str(tmp_site / "out.txt"))
         write_manifest(tmp_site)
         write_seal(tmp_site, "w", outputs={"out.txt": h})

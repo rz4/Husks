@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from seal import site_path, read_path, write_path
+from husks.seal import site_path, read_path, write_path
 
 
 class TestSitePath:
@@ -36,7 +36,7 @@ class TestSitePath:
         link = Path(tmp_site) / "linked"
         os.symlink(str(ext), str(link))
 
-        from seal import fresh_store
+        from husks.seal import fresh_store
         S = fresh_store(tmp_site, fuel=5, readonly_dirs=[str(ext)])
         # Should succeed - resolves into a readonly dir
         p = site_path(S, "linked/data.txt")

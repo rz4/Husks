@@ -2,7 +2,7 @@
 
 import os
 import pytest
-from locke import (
+from husks.locke import (
     tokenize, parse, resolve, from_file,
     DeclNode, RuleNode, LetNode, BindNode,
 )

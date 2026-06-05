@@ -4,8 +4,8 @@ import hashlib
 import inspect
 
 import pytest
-from kernel import encode, NIL
-from forms import (
+from husks.kernel import encode, NIL
+from husks.forms import (
     recipe_to_cse, _fn_behavior_digest, _pred_identity,
     first_valid, verdict_identity, DEFAULT_VERDICT,
 )

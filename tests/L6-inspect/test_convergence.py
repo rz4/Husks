@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from report import (
+from husks.report import (
     read_history, _trend, convergence_summary, declared_vs_traced,
 )
 

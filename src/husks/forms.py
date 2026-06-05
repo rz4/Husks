@@ -12,7 +12,7 @@ import inspect
 import json
 from typing import Any, Callable
 
-from kernel import CseValue, NIL, encode, parse
+from husks.kernel import CseValue, NIL, encode, parse
 
 # ── Atom helpers ─────────────────────────────────────────────────
 
