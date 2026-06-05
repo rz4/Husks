@@ -206,6 +206,33 @@ class TestCmdDoctor:
         assert "checks" in data
         assert all(c["ok"] for c in data["checks"])
 
+    def test_arch_clean(self, capsys):
+        args = _make_args(json_output=True, selftest=False, arch=True)
+        _cmd_doctor(args)
+        data = json.loads(capsys.readouterr().out)
+        assert "arch" in data
+        # The shipped package must satisfy its own layer contract.
+        assert data["arch"]["status"] == "ok", data["arch"]
+        assert data["arch"]["violations"] == []
+        assert data["arch"]["unassigned"] == []
+
+    def test_arch_detects_violation(self, tmp_path, monkeypatch):
+        # A layers.toml that puts two import-related modules on the same
+        # layer must be reported as a strict-lower violation.
+        from husks import cli as _cli
+        bad = tmp_path / "layers.toml"
+        bad.write_text(
+            "[layers]\n"
+            '"husks.kernel" = 0\n'
+            '"husks.forms" = 0\n'
+        )
+        monkeypatch.setattr(_cli, "_find_layers_toml", lambda: bad)
+        report = _cli._arch_check()
+        assert report["status"] == "violations"
+        assert any(v["module"] == "husks.forms"
+                   and v["imports"] == "husks.kernel"
+                   for v in report["violations"])
+
 
 class TestCmdStatus:
     def test_basic(self, tmp_site, write_manifest, write_seal, capsys):
@@ -729,7 +756,10 @@ class TestMainArgparse:
             main()
         assert exc.value.code == 0
         out = capsys.readouterr().out
-        assert "hardened" in out
+        assert out.startswith("husks ")
+        # A resolved version, not a placeholder.
+        assert "hardened" not in out
+        assert any(ch.isdigit() for ch in out)
 
     def test_no_command(self, monkeypatch, capsys):
         monkeypatch.setattr(sys, "argv", ["husks"])

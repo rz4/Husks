@@ -1,8 +1,5 @@
 # Husks CLI Reference
 
-**Status:** Rock-hard
-**Date:** 2026-06-05
-
 ## Overview
 
 Husks is a deterministic build system for nondeterministic (LLM-powered) work. This release demonstrates **computational state equivalence** through a three-machine proof: independent realizations of the same design produce verifiably equivalent build artifacts under the design's declared acceptance relation.

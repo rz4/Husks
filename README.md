@@ -17,14 +17,17 @@ fires again -- bounded by fuel, sandboxed to declared outputs, and independently
 verifiable.
 
 The result is a `.husk` file: a content-addressed snapshot of the entire build.
-Two machines that run the same design must produce the same root hash. A third
-machine can verify this without re-running anything. That's the
+Two machines that run the same design produce the same root hash wherever the
+work is deterministic or a sealed result is reused. Where an oracle fires live,
+they produce equivalent residue under a relation the design declares, not an
+identical hash, because the event is not reproducible. A third machine verifies
+either claim without re-running anything. That's the
 [three-machine proof](docs/three-machine-proof.md).
 
 ## Install
 
 ```bash
-pip install git+https://github.com/rzamora-lbnl/Husks.git
+pip install git+https://github.com/rz4/Husks.git
 ```
 
 Verify the installation:
@@ -189,7 +192,7 @@ Full docs live in [`docs/`](docs/README.md), organized as a reading DAG from
 surface usage down to the formal wire format:
 
 - [Tutorial](docs/tutorial.md) -- driving Husks from Claude Code
-- [CLI reference](docs/liquid-beta.md) -- commands, schema, FAQ
+- [CLI reference](docs/cli.md) -- commands, schema, FAQ
 - [Locke language](docs/locke.md) -- the design surface syntax
 - [Theory](docs/theory.md) -- the residue stance
 - [Three-machine proof](docs/three-machine-proof.md) -- independent re-realization

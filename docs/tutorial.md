@@ -46,16 +46,16 @@ Into a virtual environment, straight from GitHub:
 python -m venv .venv
 source .venv/bin/activate
 pip install -U pip                                          # PEP 508 direct refs
-pip install "husks[llm] @ git+https://github.com/rz4/Husks.git"
+pip install "husks @ git+https://github.com/rz4/Husks.git"
 ```
 
-That's the whole install. The `[llm]` extra pulls in `litellm` for live oracle
-calls. Without it, `check`, `doctor`, and `--stub` runs still work;
-only live oracle execution requires `litellm`. The wheel also ships the
-conformance vectors and the skill.
+That's the whole install. `litellm` comes with it and powers live oracle
+calls. `check`, `doctor`, and `--stub` runs need no API key; only live
+oracle execution does. The wheel also ships the conformance vectors and the
+skill.
 
 > **Contributing to Husks itself?** Use an editable checkout instead:
-> `git clone ...` then `pip install -e ".[llm]"`. Both install modes are fully
+> `git clone ...` then `pip install -e .`. Both install modes are fully
 > supported; the editable one just lets you hack on the engine in place.
 
 ---
@@ -201,7 +201,6 @@ husks status m3   # M3: independent realization
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
 | `pip install "husks @ git+..."` rejects the spec | old pip without PEP 508 direct-reference support | `pip install -U pip`, retry |
-| `No module named litellm` on a live run | installed without the `[llm]` extra | reinstall with `pip install "husks[llm] @ git+..."` |
 | `AuthenticationError` / 401 from the oracle | no key in env | fill `.env`, then `set -a && source .env` |
 | Claude Code doesn't use Husks | skill not loaded | `claude doctor`; confirm `.claude/skills/husks/SKILL.md` exists; restart session |
 | `check` rejects the design | missing `target`/output, oracle fuel/tools, or undeclared input | read the error; the skill repairs and re-checks |
@@ -214,5 +213,5 @@ husks status m3   # M3: independent realization
 
 For the engine internals, see [`architecture.md`](architecture.md). For the
 permanence argument, see [`theory.md`](theory.md). For the full CLI reference,
-see [`liquid-beta.md`](liquid-beta.md). For the CSE wire format specs, see
+see [`cli.md`](cli.md). For the CSE wire format specs, see
 `spec/CSE-v1.md` and `spec/CSE-v2.md`.

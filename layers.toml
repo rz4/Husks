@@ -1,35 +1,41 @@
 # layers.toml — Module layer assignment
 #
 # This file defines the DAG structure of the Husks codebase.
-# - Every module is assigned a single layer index (0..6)
+# - Every module is assigned a single layer index (0..7)
 # - Imports must target a strictly lower layer
 # - The import linter (husks doctor --arch) enforces this contract
+#
+# Indices match the L0..L7 descent in docs/README.md: a reader enters at
+# the L7 surface (cli) and descends toward the L0 kernel, following the
+# same arrows the code's imports point down.
 
 # ── Layer assignments ─────────────────────────────────────────────
 
 [layers]
-# L0 — Kernel (CSE forms, codec, Merkle)
+# L0 — Kernel (CSE codec, Merkle)
 "husks.kernel" = 0
-"husks.forms" = 0
 
-# L1 — Sealing + FS
-"husks.seal" = 1
+# L1 — Forms (build vocabulary over the kernel)
+"husks.forms" = 1
 
-# L2 — Engine + Oracle
-"husks.engine" = 2
-"husks.oracle" = 2
+# L2 — Sealing + FS
+"husks.seal" = 2
 
-# L3 — Surface language
-"husks.locke" = 3
+# L3 — Engine + Oracle
+"husks.engine" = 3
+"husks.oracle" = 3
 
 # L4 — Config
 "husks.config" = 4
 
-# L5 — Inspection
-"husks.report" = 5
+# L5 — Surface language
+"husks.locke" = 5
 
-# L6 — CLI
-"husks.cli" = 6
+# L6 — Inspection
+"husks.report" = 6
+
+# L7 — CLI
+"husks.cli" = 7
 
 # ── Special modules ───────────────────────────────────────────────
 

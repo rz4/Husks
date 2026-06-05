@@ -33,13 +33,13 @@ flowchart TD
 
     FRONT["README<br/><i>what Husks is, install, the proof</i>"]:::surface
     TUT["tutorial.md<br/><i>Author / Producer / Verifier roles</i>"]:::surface
-    CLI["liquid-beta.md<br/><i>commands, schema, FAQ</i>"]:::surface
+    CLI["cli.md<br/><i>commands, schema, FAQ</i>"]:::surface
     LOCKE["locke.md<br/><i>surface syntax → CSE</i>"]:::surface
 
     STANCE["theory.md<br/><i>the residue stance</i>"]:::philos
     WP["white_paper.pdf<br/><i>the synthesized argument</i>"]:::philos
 
-    PROOF["three-machine-proof.md<br/><i>independent re-realization, gates A–H</i>"]:::science
+    PROOF["three-machine-proof.md<br/><i>independent re-realization, gates A–G</i>"]:::science
     CONF["spec/conformance<br/><i>two readers, one language</i>"]:::science
 
     CSE["spec/CSE-v2.md<br/><i>the canonical bytes</i>"]:::formal
@@ -72,8 +72,8 @@ The public face. Friendly, task-oriented, no theory required.
 | :-- | :-- | :-- |
 | [`../README.md`](../README.md) | What is Husks? How do I install it and run the proof? | (start here) |
 | [tutorial.md](tutorial.md) | How do I drive it from Claude Code? What are the three roles? | README |
-| [liquid-beta.md](liquid-beta.md) | What does each command do? What's the JSON/Locke schema? | tutorial |
-| [locke.md](locke.md) | What is the Locke design language and why does it look like that? | liquid-beta |
+| [cli.md](cli.md) | What does each command do? What's the JSON/Locke schema? | tutorial |
+| [locke.md](locke.md) | What is the Locke design language and why does it look like that? | cli |
 
 If all you want is to build something, you can stop here.
 
@@ -97,7 +97,7 @@ the same language.
 
 | Document | Answers | Read after |
 | :-- | :-- | :-- |
-| [three-machine-proof.md](three-machine-proof.md) | What exactly must hold for "beta"? What do gates A–H verify? | theory.md |
+| [three-machine-proof.md](three-machine-proof.md) | What must hold for a build to be independently verifiable? What do gates A–G verify? | theory.md |
 | [spec/conformance/](../spec/conformance/) | How do we prove the Python reader and the JS reader agree? | three-machine-proof |
 
 ## Stratum 4: Formal / Math · *what it actually is* · L1–L0 (`kernel`)
@@ -119,5 +119,4 @@ Not part of the conceptual descent; consult as needed.
 
 | Document | Contents |
 | :-- | :-- |
-| [BACKLOG.md](BACKLOG.md) | Consolidated backlog: unchecked hardening items + exploration items, ordered by leverage. |
-| [TESTS.md](TESTS.md) | Test-suite map: CSE GENESIS / SOLID ALPHA / LIQUID BETA phases and naming. |
+| [TESTS.md](TESTS.md) | Test-suite map: the eight layer suites (L0 kernel through L7 cli), the three-machine spine, and how to run each. |

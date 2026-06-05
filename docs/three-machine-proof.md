@@ -1,11 +1,11 @@
 # Three-Machine Proof
 
-The verification spec for Husks beta acceptance.
+The verification spec for an independently re-realizable Husks build.
 
-## Beta acceptance target
+## What the proof establishes
 
-Husks beta is reached when this workflow passes from a clean checkout
-and from an installed package:
+The proof holds when this workflow passes from a clean checkout and from an
+installed package:
 
 ```text
 Machine 1: same seed design + empty cache + oracle access
@@ -35,22 +35,21 @@ Machine 3 does not receive the shared cache. It receives only the seed
 design and independently realizes a valid build at comparable cost to
 Machine 1.
 
-## Beta definition
+## The properties
 
 ```text
-Beta = seed portability
-     + transactional execution
-     + sealed artifact identity
-     + verified cache reuse
-     + independent re-realization
-     + cost comparability
-     + a user-runnable three-machine acceptance test
-     + a small enough code path that the proof is auditable
+A verifiable build = seed portability
+                   + transactional execution
+                   + sealed artifact identity
+                   + verified cache reuse
+                   + independent re-realization
+                   + cost comparability
+                   + a user-runnable three-machine acceptance test
 ```
 
 ## The gates
 
-Eight gates, A–H. Each names one property that must hold.
+Seven gates, A–G. Each names one property that must hold.
 
 ### Gate A: Seed design portability
 
@@ -128,23 +127,12 @@ Exit criteria:
 
 ### Gate G: Release smoke and three-machine acceptance
 
-The beta proof can be run from a clean checkout or installed package.
+The proof can be run from a clean checkout or an installed package.
 
 Exit criteria:
 - The acceptance script can be copied from docs and run.
 - The CLI produces parseable JSON for every acceptance step.
-- A clean wheel install can run the stub beta proof.
-
-### Gate H: Bloat control and consolidation
-
-Pass beta without letting the codebase accrete a second implementation
-of every beta concept.
-
-Exit criteria:
-- One report contract feeds acceptance comparison.
-- One cache API validates imported residue.
-- One site-input helper defines seed portability.
-- One beta seed is used by docs and tests.
+- A clean wheel install can run the stub proof.
 
 ---
 
@@ -200,7 +188,7 @@ Build-root = f(design, inputs, environment, predicate_result)
 
 ### Three-machine conditional scenario
 
-For the beta three-machine proof, if Machine 1 and Machine 3 take
+For the three-machine proof, if Machine 1 and Machine 3 take
 different branches:
 
 - Machine 1: `predicate=True` -> executes then branch -> output A

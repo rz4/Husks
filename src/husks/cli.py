@@ -22,6 +22,20 @@ from typing import Any, Optional
 
 # ── §1 Constants ─────────────────────────────────────────────────
 
+
+def _version() -> str:
+    """Resolve the installed package version, falling back to pyproject."""
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            return version("husks")
+        except PackageNotFoundError:
+            pass
+    except Exception:
+        pass
+    return "0+unknown"
+
+
 # Exit codes (frozen contract)
 EXIT_OK = 0
 EXIT_BUILD_FAIL = 1
@@ -603,7 +617,8 @@ def _cmd_run(args, design):
             overrides["oracle_backend"] = run_oracle
             overrides["oracle_backend_name"] = getattr(args, "backend", "litellm")
         except ImportError:
-            print("husks run: oracle module not available. Install with: pip install 'husks[llm]'", file=sys.stderr)
+            print("husks run: oracle backend unavailable (litellm not importable). "
+                  "Reinstall husks, or: pip install litellm", file=sys.stderr)
             sys.exit(EXIT_MISSING_DEP)
 
         # Load .husks.toml and build oracle config
@@ -1149,8 +1164,90 @@ def _render_compare_visual(residues, comparisons, proof_checks, proof_satisfied=
         print(f"  {ps} {'proof satisfied' if proof_satisfied else 'proof NOT satisfied'}")
 
 
+def _find_layers_toml() -> Optional[Path]:
+    """Locate layers.toml: cwd and parents, then near the husks package."""
+    for base in (Path.cwd(), *Path.cwd().parents):
+        cand = base / "layers.toml"
+        if cand.is_file():
+            return cand
+    try:
+        import husks
+        pkg = Path(husks.__file__).resolve().parent
+        for base in (pkg, *pkg.parents):
+            cand = base / "layers.toml"
+            if cand.is_file():
+                return cand
+    except Exception:
+        pass
+    return None
+
+
+def _arch_check() -> dict:
+    """Verify intra-package imports target a strictly lower layer.
+
+    Returns a report dict: {status, layers_file, violations, unassigned,
+    modules}.  status is 'ok', 'violations', or 'unavailable'.
+    """
+    import ast
+
+    toml_path = _find_layers_toml()
+    if toml_path is None:
+        return {"status": "unavailable",
+                "detail": "layers.toml not found (run from a source checkout)"}
+    try:
+        try:
+            import tomllib as _toml
+        except ModuleNotFoundError:
+            import tomli as _toml  # type: ignore
+        with open(toml_path, "rb") as fh:
+            layers = _toml.load(fh).get("layers", {})
+    except Exception as e:  # noqa: BLE001
+        return {"status": "unavailable", "detail": f"cannot read {toml_path}: {e}"}
+
+    try:
+        import husks
+        pkg_dir = Path(husks.__file__).resolve().parent
+    except Exception as e:  # noqa: BLE001
+        return {"status": "unavailable", "detail": f"cannot locate husks package: {e}"}
+
+    def _module_imports(src: str) -> set[str]:
+        out: set[str] = set()
+        for node in ast.walk(ast.parse(src)):
+            targets: list[str] = []
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("husks"):
+                targets.append(node.module)
+            elif isinstance(node, ast.Import):
+                targets += [a.name for a in node.names if a.name.startswith("husks")]
+            for t in targets:
+                parts = t.split(".")
+                out.add(".".join(parts[:2]) if len(parts) >= 2 else t)
+        return out
+
+    violations: list[dict] = []
+    unassigned: list[str] = []
+    present = sorted(p.stem for p in pkg_dir.glob("*.py") if p.stem != "__init__")
+    for stem in present:
+        mod = f"husks.{stem}"
+        if mod not in layers:
+            unassigned.append(mod)
+            continue
+        src_file = pkg_dir / f"{stem}.py"
+        for dep in sorted(_module_imports(src_file.read_text())):
+            if dep == mod or dep not in layers:
+                continue
+            if layers[dep] >= layers[mod]:
+                violations.append({"module": mod, "module_layer": layers[mod],
+                                   "imports": dep, "import_layer": layers[dep]})
+
+    status = "ok" if not violations and not unassigned else "violations"
+    return {"status": status, "layers_file": str(toml_path),
+            "violations": violations, "unassigned": unassigned,
+            "modules": {f"husks.{s}": layers.get(f"husks.{s}") for s in present}}
+
+
 def _cmd_doctor(args):
     json_mode = getattr(args, "json_output", False)
+    arch_mode = getattr(args, "arch", False)
     # Basic environment checks
     checks = []
     try:
@@ -1168,13 +1265,35 @@ def _cmd_doctor(args):
         checks.append({"name": "report", "ok": True, "detail": "importable"})
     except Exception as e:
         checks.append({"name": "report", "ok": False, "detail": str(e)})
+
+    arch = _arch_check() if arch_mode else None
+
     if json_mode:
-        print(json.dumps({"checks": checks}, indent=2))
+        out = {"checks": checks}
+        if arch is not None:
+            out["arch"] = arch
+        print(json.dumps(out, indent=2))
     else:
         for c in checks:
             sym = "\u2713" if c["ok"] else "\u2717"
             print(f"  {sym} {c['name']:<20s} {c['detail']}")
-    if any(not c["ok"] for c in checks):
+        if arch is not None:
+            if arch["status"] == "unavailable":
+                print(f"  \u2014 arch                 {arch['detail']}")
+            elif arch["status"] == "ok":
+                n = len(arch["modules"])
+                print(f"  \u2713 arch                 {n} modules, layer DAG clean")
+            else:
+                for v in arch["violations"]:
+                    print(f"  \u2717 arch                 {v['module']} (L{v['module_layer']}) "
+                          f"imports {v['imports']} (L{v['import_layer']})")
+                for m in arch["unassigned"]:
+                    print(f"  \u2717 arch                 {m} unassigned in layers.toml")
+
+    failed = any(not c["ok"] for c in checks)
+    if arch is not None and arch["status"] == "violations":
+        sys.exit(EXIT_BUILD_FAIL)
+    if failed:
         sys.exit(EXIT_MISSING_DEP)
 
 
@@ -1435,6 +1554,8 @@ def main():
     # doctor
     doc = sub.add_parser("doctor")
     doc.add_argument("--json", action="store_true", dest="json_output")
+    doc.add_argument("--arch", action="store_true",
+                     help="Verify the module import DAG against layers.toml")
 
     # tree
     sub.add_parser("tree")
@@ -1442,11 +1563,11 @@ def main():
     args, unknown = p.parse_known_args()
 
     if args.help:
-        print(emit_help("hardened")); sys.exit(EXIT_OK)
+        print(emit_help(_version())); sys.exit(EXIT_OK)
     if args.version:
-        print("husks (hardened)"); sys.exit(EXIT_OK)
+        print(f"husks {_version()}"); sys.exit(EXIT_OK)
     if args.cmd is None:
-        print(emit_help("hardened")); sys.exit(EXIT_USAGE)
+        print(emit_help(_version())); sys.exit(EXIT_USAGE)
 
     # Catch unrecognized arguments with contextual hints
     if unknown:

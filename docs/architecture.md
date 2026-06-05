@@ -15,7 +15,8 @@ src/husks/
   forms.py     L1   Policy identity, recipe-to-CSE, CSE-JSON bijection
   seal.py      L2   Path sandboxing, filesystem ops, seal I/O
   engine.py    L3   Build evaluator, caching, oracle dispatch
-  oracle.py    L4   LLM backend, fuel-bounded kernel, tool sandbox
+  oracle.py    L3   LLM backend, fuel-bounded kernel, tool sandbox
+  config.py    L4   Configuration resolution
   locke.py     L5   Locke compiler (tokenizer, parser, resolver, executor)
   report.py    L6   Reports, manifests, dependency graph rendering
   cli.py       L7   CLI commands, terminal rendering, entry points
@@ -23,16 +24,12 @@ src/husks/
 
 ### Dependency flow
 
-```text
-kernel.py ← forms.py ← seal.py ← engine.py ← oracle.py ← locke.py ← report.py ← cli.py
-   L0          L1         L2         L3           L4          L5          L6         L7
-```
-
-Dependencies point strictly downward: L(n) may only import from
-L(0..n-1).  `kernel.py` imports only the standard library.  No other
-module calls hashlib directly; all cryptographic operations are
-centralized in the kernel.  The machine-checkable version of the layer
-contract is [`../layers.toml`](../layers.toml).
+Every module imports only from strictly lower layers; `engine` and `oracle`
+share L3 and do not import each other. `kernel` imports only the standard
+library. No other module calls `hashlib` directly; all cryptographic
+operations are centralized in the kernel. The machine-checkable version of the
+layer contract is [`../layers.toml`](../layers.toml), enforced by
+`husks doctor --arch`.
 
 ---
 
@@ -418,57 +415,9 @@ dict consumed by all renderers.
 
 ---
 
-## Delta from liquid beta
+## Three-machine proof
 
-The hardened stack (`src/husks/`, 5,762 lines across 8 files) re-realizes
-the liquid beta (~16,000 lines) at 64% overall reduction.
-L0–L6 are functionally equivalent.  L7 is where the cuts are.
-
-### Commands dropped
-
-| Command | Liquid beta | Why dropped |
-|---------|------------|-------------|
-| `init` | Scaffold a new project from templates | Scaffolding is not part of the core build contract |
-
-### Flags dropped from surviving commands
-
-| Command | Flag | What it does |
-|---------|------|-------------|
-| `explain` | `--interactive` | Keyboard-driven cursor navigation |
-| `explain` | `--diff` | Unified diff of sealed vs current artifacts |
-| `explain` | `--seal <subject>` | Show seal material for a rule/artifact/root |
-| `explain` | `--artifact` | Specific artifact to include in diff |
-| `doctor` | `--conformance` | Run external reader conformance gate |
-| `doctor` | `--live` | Check API keys, litellm, ping oracle |
-| `doctor` | `--arch` | Verify module dependency DAG against layers.toml |
-| `doctor` | `--reader` | Reader command for conformance |
-| `compare` | `--diff` | Unified diff of differing generated files |
-| global | `--version-json` | Structured version info (CSE_VERSION, schema) |
-
-### Features dropped or simplified
-
-| Feature | Liquid beta | Hardened |
-|---------|------------|---------|
-| LiveFrameEmitter | ~350 lines, threaded live terminal with per-node state transitions, token/cost counters, log tail windows | Dropped (final results only) |
-| Interactive navigator | Arrow-key pilot loop for explain (cursor, aperture, quit) | Static single-frame rendering |
-| Help animation | Character-by-character diamond typing effect | Static text |
-| Aperture levels 2-3 | Seal digest, recipe digest, input/output hashes, trace logs | Only levels 0-1 (node line + primary output) |
-| Three-machine proof | Full M1/M2/M3 role enforcement, cost tolerance, evidence tracking | Pairwise artifact comparison only |
-| Console abstraction | `Console` class with quiet/color/ANSI management | Inlined `_IS_TTY` check |
-| Subcommand help styling | `_StyledHelpAction`, per-command help sections | Standard argparse |
-
-### What is preserved
-
-All core build operations: `check`, `run`, `verify`, `status`,
-`history`, `compare`, `doctor`, `cache export`, `cache import`.
-`run --reuse-only` for cache-only M2 builds.  Visual output: diamond banner, motif tree,
-state glyphs, footer with token/cost/fuel summary.  JSON output mode on
-every command.  Report assembly and validation (beta-1 schema).  Freshness
-computation, convergence classification, dependency graph rendering.
-
-### Three-machine proof
-
-The hardened CLI supports the full three-machine proof workflow:
+The CLI supports the full three-machine proof workflow:
 M1 fresh build, `cache export`, `cache import` to M2,
 M2 `run --reuse-only`, M3 fresh build, `compare` across all three sites.
 
@@ -485,126 +434,20 @@ JSON mode includes `proof.satisfied` and `proof.checks` with
 
 ## CI Pipeline
 
-Three jobs, replacing the earlier `core-tests` and `beta-acceptance` jobs.
+Three jobs, defined in [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml).
+That file is the source of truth; this is a summary.
 
-| Job | Gate | Trigger | What it proves |
-|-----|------|---------|----------------|
-| **Wheel Smoke** | Install | push, PR | Wheel builds and imports on Python 3.10-3.13 |
-| **Solid Alpha** | Deterministic | push, PR | Full test suite passes with stub oracles |
-| **Liquid Beta** | Live | manual dispatch | Three-machine proof with live LLM oracle |
+| Job | Trigger | What it proves |
+|-----|---------|----------------|
+| **Smoke** | push, PR | The full layer test suite (`tests/`) passes on Python 3.12–3.14 |
+| **Three-Machine Stub** | push, PR | The offline three-machine proof passes (`tests/test_three_machine_stub.py`) |
+| **Live Oracle** | manual dispatch | The three-machine proof passes against a live LLM oracle |
 
-### `.github/workflows/ci.yml`
-
-```yaml
-name: CI
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      trials:
-        description: "Liquid Beta: number of live three-machine trials to run"
-        required: false
-        default: "1"
-
-permissions:
-  contents: read
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  wheel-smoke:
-    name: Wheel Smoke
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.10", "3.11", "3.12", "3.13"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-      - run: |
-          python -m pip install --upgrade pip build
-          python -m build --wheel
-          pip install dist/*.whl pytest
-      - run: python -m pytest tests/test_wheel_smoke.py -v --tb=short
-
-  solid-alpha:
-    name: Solid Alpha
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.10", "3.11", "3.12", "3.13"]
-    env:
-      HUSKS_ENABLE_LIVE_TESTS: ""
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e . pytest
-      - name: Stub three-machine resolution (headline invariant)
-        run: |
-          python -m pytest -m alpha \
-            tests/test_three_machine_proof.py \
-            tests/test_three_machine_cli_acceptance.py \
-            tests/test_beta_three_machine.py \
-            -v --tb=short
-      - name: Full deterministic suite
-        run: |
-          python -m pytest tests/ -m "not beta" \
-            --ignore=tests/test_live_oracle_readiness.py \
-            -v --tb=short
-
-  liquid-beta:
-    name: Liquid Beta (live three-machine)
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    environment: live-oracle
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install (with live oracle extra)
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[llm]" pytest
-      - name: Live three-machine demo
-        continue-on-error: true
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          HUSKS_ENABLE_LIVE_TESTS: "1"
-          HUSKS_LIVE_TRIALS: ${{ github.event.inputs.trials }}
-        run: |
-          python -m pytest -m beta tests/test_live_oracle_readiness.py \
-            -v --tb=short
-```
-
-### Wiring notes
-
-- **Branch protection**: mark every Wheel Smoke and Solid Alpha matrix entry as a required status check. Do **not** require Liquid Beta. The red/green badge reflects deterministic invariants only.
-- **Triggers**: Liquid Beta runs only on `workflow_dispatch`. It never runs on push, PR, or schedule, so it costs an API call only when you click run.
-- **Fork safety**: `workflow_dispatch` can be triggered only by users with write access, and fork PRs cannot read secrets. The optional `environment: live-oracle` adds a manual-approval gate.
-- **`continue-on-error: true`** on the live step: a single live divergence records as a failed step but does not fail the job or turn the repo red.
-- **`HUSKS_ENABLE_LIVE_TESTS: ""`** is set explicitly on Solid Alpha so a stray live test can never execute there even if mismarked.
-
-### Assumptions to confirm before merging
-
-- The install extras (`pip install -e .` for alpha, `".[llm]"` for beta) match the project's actual packaging.
-- The three stub three-machine files named in the headline step are the right set after any rename.
-- `ANTHROPIC_API_KEY` exists as a repo (or `live-oracle` environment) secret.
+The red/green badge reflects deterministic invariants only. The Smoke and
+Three-Machine Stub jobs run on every push and PR and never spend an API call.
+The Live Oracle job runs only on `workflow_dispatch`, reads
+`ANTHROPIC_API_KEY` from the `live-oracle` environment, takes an optional
+`trials` count, and uses `continue-on-error` so a single live divergence
+records as a failed step without turning the repo red. A live oracle's pass
+rate is below 100% by construction, so live results are evidence that
+compounds across runs and models, not a required gate.
