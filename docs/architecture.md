@@ -10,62 +10,35 @@ essays in the source.  For the conceptual argument, see
 ## Module map
 
 ```text
-husks/
-  core.py              CSE codec, content hashing, seals, Merkle DAG
-  build.py             Fuel-bounded build evaluator
-  report.py            Post-build report assembly and rendering
-  manifest.py          Manifest/seal/trial-report reader utilities
-  graph.py             Dependency graph rendering (text, mermaid, dot, json)
-  gate.py              Conformance gate for external CSE readers
-  setup.py             husks doctor --selftest and husks init
-  cli.py               Argparse CLI (11 commands)
-
-  designs/
-    __init__.py         Re-exports from ir, transport, convergence
-    ir.py               Design IR: check, compile, run, from_json
-    transport.py        CSE <-> JSON bijection, flat-design elaboration
-    convergence.py      Post-execution rule history analysis
-
-  oracle/
-    __init__.py         Re-exports live_oracle, set_oracle_model
-    kernel.py           Agentic loop (fuel-bounded LLM + tool dispatch)
-    llm.py              LiteLLM wrapper with cumulative usage tracking
-    tools.py            Sandboxed filesystem tools for oracle execution
-
-  utils/
-    events.py           Structured event stream (BuildTrace)
-    console.py          ANSI terminal renderer (TraceListener)
+src/husks/
+  kernel.py    L0   CSE codec, content hashing, seals, Merkle DAG
+  forms.py     L1   Policy identity, recipe-to-CSE, CSE-JSON bijection
+  seal.py      L2   Path sandboxing, filesystem ops, seal I/O
+  engine.py    L3   Build evaluator, caching, oracle dispatch
+  oracle.py    L4   LLM backend, fuel-bounded kernel, tool sandbox
+  locke.py     L5   Locke compiler (tokenizer, parser, resolver, executor)
+  report.py    L6   Reports, manifests, dependency graph rendering
+  cli.py       L7   CLI commands, terminal rendering, entry points
 ```
 
 ### Dependency flow
 
 ```text
-core.py           ← no internal imports (stdlib only)
-  ↑
-build.py          ← core, utils/events
-  ↑
-designs/ir.py     ← build (node constructors + build entry point)
-designs/transport.py ← core (encode, parse)
-designs/convergence.py ← stdlib only
-  ↑
-oracle/kernel.py  ← oracle/llm, oracle/tools, utils/events
-oracle/llm.py     ← litellm (lazy import)
-oracle/tools.py   ← stdlib only
-  ↑
-cli.py            ← designs/ir, build, report, manifest, graph, gate, setup
-report.py         ← designs/convergence, utils/events
-manifest.py       ← husks.core (content_hash)
-graph.py          ← manifest (optional, for freshness overlay)
+kernel.py ← forms.py ← seal.py ← engine.py ← oracle.py ← locke.py ← report.py ← cli.py
+   L0          L1         L2         L3           L4          L5          L6         L7
 ```
 
-`core.py` imports only the standard library.  No other module calls
-hashlib directly; all cryptographic operations are centralized in core.
+Dependencies point strictly downward: L(n) may only import from
+L(0..n-1).  `kernel.py` imports only the standard library.  No other
+module calls hashlib directly; all cryptographic operations are
+centralized in the kernel.  The machine-checkable version of the layer
+contract is [`../layers.toml`](../layers.toml).
 
 ---
 
 ## Execution model
 
-The evaluator (`build.py`) walks a compiled node tree depth-first.
+The evaluator (`engine.py`) walks a compiled node tree depth-first.
 For each rule node:
 
 1. **Resolve prerequisites** -- recursively evaluate child nodes.
@@ -115,7 +88,7 @@ The build state is a mutable dict threaded through every function:
 
 ## CSE wire format
 
-Defined in `core.py`.  The Canonical S-Expression Encoding is the
+Defined in `kernel.py`.  The Canonical S-Expression Encoding is the
 byte-level form that gets hashed.  It is the only form that matters
 for verification.
 
@@ -192,7 +165,7 @@ build-root: one hash over the entire build.
 
 ## Design IR
 
-Defined in `designs/ir.py`.  A design is a JSON-native dict
+Defined in `locke.py`.  A design is a JSON-native dict
 specifying a build graph.
 
 ### Operations
@@ -245,7 +218,7 @@ ordering is the topological sort of the dependency graph.
 
 ## Transport layer
 
-Defined in `designs/transport.py`.  Two services:
+Defined in `forms.py`.  Two services:
 
 1. **Lossless CSE <-> JSON bijection.**  Round-tripping through JSON
    reproduces the original CSE bytes exactly.
@@ -278,15 +251,13 @@ class OracleBackend(Protocol):
                  recipe: dict, outputs: list[str]) -> dict | None: ...
 ```
 
-Defined in `transport.py` because it describes the contract between
-the permanent specification layer and the volatile execution layer.
 Nothing about the backend's identity participates in the seal.
 
 ---
 
 ## Oracle kernel
 
-Defined in `oracle/kernel.py`.  A fuel-bounded agentic loop:
+Defined in `oracle.py`.  A fuel-bounded agentic loop:
 
 1. `agent()` builds initial context: prompt, tool schemas, fuel.
 2. `step()` calls the LLM, parses the response.
@@ -323,7 +294,7 @@ usage before/after, runs `agent()`, returns usage dict.
 
 ## Tool sandbox
 
-Defined in `oracle/tools.py`.  Four built-in tools:
+Defined in `oracle.py`.  Four built-in tools:
 
 | Tool | Description |
 | :--- | :--- |
@@ -341,71 +312,9 @@ underscores replaced by hyphens.
 
 ---
 
-## Event stream
-
-Defined in `utils/events.py`.  The `BuildTrace` class accumulates
-structured events for a single build invocation.
-
-### Listener protocol
-
-```python
-class TraceListener(Protocol):
-    def notify(self, event: dict[str, Any]) -> None: ...
-```
-
-After each event is recorded, all registered listeners are notified.
-The console renderer (`utils/console.py`) is one such listener.
-
-### Event types
-
-| Event | Additional keys |
-| :--- | :--- |
-| `build_start` | `name`, `fuel`, `site` |
-| `build_end` | `status`, `fuel_left`, `elapsed` |
-| `rule_start` | `rule`, `stale_reason` |
-| `rule_done` | `rule`, `elapsed` |
-| `rule_sealed` | `rule`, `reused_by` |
-| `rule_halted` | `rule`, `reason`, `elapsed` |
-| `oracle_start` | `rule`, `oracle` |
-| `oracle_done` | `rule`, `oracle`, `tokens_in`, `tokens_out`, `cost_usd`, `elapsed` |
-| `tool_call` | `rule`, `tool`, `args` |
-| `tool_result` | `tool`, `result_preview` |
-| `trial_branch` | `rule`, `branch`, `score`, `tokens_in`, `tokens_out`, `cost_usd`, `elapsed` |
-| `trial_note` | `rule`, `message` |
-| `trial_verdict` | `rule`, `winner`, `scores` |
-| `sealed_manifest` | `artifacts` |
-
-Every event dict has at minimum `{"event": str, "ts": float}`.
-
----
-
-## Console renderer
-
-Defined in `utils/console.py`.  Implements `TraceListener` and
-renders events to the terminal with ANSI escapes.
-
-```text
-build_start     ═══ header bar with name, site, fuel, model ═══
-rule_start      ▸ name  (stale: reason)
-rule_done       ✓ name  elapsed
-rule_sealed     ● name  reused by parent
-rule_halted     ✗ name  reason
-oracle_start    → oracle  "prompt preview..."
-oracle_done       tokens · cost · elapsed
-tool_call       → tool  {args}
-trial_branch    ⊢ branch · score · elapsed · cost
-trial_verdict   ⊣ verdict → winner
-build_end       ─── summary ───
-```
-
-ANSI escapes are suppressed when stdout is not a TTY.  The console
-module never modifies event data or build state.
-
----
-
 ## Convergence analysis
 
-Defined in `designs/convergence.py`.  Reads JSONL history logs from
+Defined in `report.py`.  Reads JSONL history logs from
 `.traces/<rule>.history.jsonl` and classifies rule behavior.
 
 ### Classifications
@@ -439,7 +348,7 @@ Each line of `.traces/<rule>.history.jsonl`:
 
 ## Build manifest
 
-Written by `build.py` after a successful build to
+Written by `engine.py` after a successful build to
 `.traces/build.manifest.json`:
 
 ```json
@@ -455,14 +364,14 @@ Written by `build.py` after a successful build to
 }
 ```
 
-Read by `manifest.py` for the `status`, `diff`, and `explain`
+Read by `report.py` for the `status`, `diff`, and `explain`
 commands.
 
 ---
 
 ## Trial report
 
-Written by `build.py` after a trial verdict to
+Written by `engine.py` after a trial verdict to
 `.traces/<rule>.trial.json`:
 
 ```json
@@ -506,6 +415,71 @@ dict consumed by all renderers.
 ●  sealed (reused)
 ✗  failed
 ```
+
+---
+
+## Delta from liquid beta
+
+The hardened stack (`src/husks/`, 5,762 lines across 8 files) re-realizes
+the liquid beta (~16,000 lines) at 64% overall reduction.
+L0–L6 are functionally equivalent.  L7 is where the cuts are.
+
+### Commands dropped
+
+| Command | Liquid beta | Why dropped |
+|---------|------------|-------------|
+| `init` | Scaffold a new project from templates | Scaffolding is not part of the core build contract |
+
+### Flags dropped from surviving commands
+
+| Command | Flag | What it does |
+|---------|------|-------------|
+| `explain` | `--interactive` | Keyboard-driven cursor navigation |
+| `explain` | `--diff` | Unified diff of sealed vs current artifacts |
+| `explain` | `--seal <subject>` | Show seal material for a rule/artifact/root |
+| `explain` | `--artifact` | Specific artifact to include in diff |
+| `doctor` | `--conformance` | Run external reader conformance gate |
+| `doctor` | `--live` | Check API keys, litellm, ping oracle |
+| `doctor` | `--arch` | Verify module dependency DAG against layers.toml |
+| `doctor` | `--reader` | Reader command for conformance |
+| `compare` | `--diff` | Unified diff of differing generated files |
+| global | `--version-json` | Structured version info (CSE_VERSION, schema) |
+
+### Features dropped or simplified
+
+| Feature | Liquid beta | Hardened |
+|---------|------------|---------|
+| LiveFrameEmitter | ~350 lines, threaded live terminal with per-node state transitions, token/cost counters, log tail windows | Dropped — final results only |
+| Interactive navigator | Arrow-key pilot loop for explain (cursor, aperture, quit) | Static single-frame rendering |
+| Help animation | Character-by-character diamond typing effect | Static text |
+| Aperture levels 2-3 | Seal digest, recipe digest, input/output hashes, trace logs | Only levels 0-1 (node line + primary output) |
+| Three-machine proof | Full M1/M2/M3 role enforcement, cost tolerance, evidence tracking | Pairwise artifact comparison only |
+| Console abstraction | `Console` class with quiet/color/ANSI management | Inlined `_IS_TTY` check |
+| Subcommand help styling | `_StyledHelpAction`, per-command help sections | Standard argparse |
+
+### What is preserved
+
+All core build operations: `check`, `run`, `verify`, `status`,
+`history`, `compare`, `doctor`, `cache export`, `cache import`.
+`run --reuse-only` for cache-only M2 builds.  Visual output: diamond banner, motif tree,
+state glyphs, footer with token/cost/fuel summary.  JSON output mode on
+every command.  Report assembly and validation (beta-1 schema).  Freshness
+computation, convergence classification, dependency graph rendering.
+
+### Three-machine proof
+
+The hardened CLI supports the full three-machine proof workflow:
+M1 fresh build, `cache export`, `cache import` to M2,
+M2 `run --reuse-only`, M3 fresh build, `compare` across all three sites.
+
+`compare` with 3 sites renders each site as a verbose status card
+(diamond + DAG + per-node expense), then runs proof checks.
+Proof is satisfied when: (1) husk hash is identical across M1, M2,
+and M3, and (2) root hash is identical between M1 and M2.
+Evidence checks (informational): M1/M3 fired oracles and paid cost,
+M2 zero oracle cost and cache reuse, M1↔M3 outputs equivalent.
+JSON mode includes `proof.satisfied` and `proof.checks` with
+`required` flag on each.
 
 ---
 
