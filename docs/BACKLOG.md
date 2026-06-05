@@ -1,4 +1,4 @@
-# Husks — Backlog
+# Husks Backlog
 
 Consolidated from the hardening roadmap and exploration backlog.
 Items are unchecked work remaining after the hardening pass.
@@ -30,7 +30,7 @@ the hardened source (`kernel.py`, `forms.py`, `seal.py`, `engine.py`,
 
 - [ ] **P11.** Stabilize the callable-action bytecode fallback across Python 3.10–3.13.
 - [ ] **P12.** Add a cross-interpreter seal test: seal a callable action under one Python, verify the root under another.
-- [ ] **P13.** Document and test `inspect.getsource` failure modes — lambdas, REPL-defined functions, decorated callables.
+- [ ] **P13.** Document and test `inspect.getsource` failure modes: lambdas, REPL-defined functions, decorated callables.
 - [ ] **P14.** Make `read_seal` distinguish "absent" from "corrupt." Log corruption.
 - [ ] **P15.** Validate the seal `v` field against known versions instead of truthiness.
 - [ ] **P16.** Hash files by streaming, not `read_bytes()`/`read()`.
@@ -76,10 +76,10 @@ the hardened source (`kernel.py`, `forms.py`, `seal.py`, `engine.py`,
 
 ---
 
-## Transport — CSE↔JSON bijection and elaboration
+## Transport: CSE↔JSON bijection and elaboration
 
 - [ ] **T2.** Bound elaboration recursion depth with an explicit limit.
-- [ ] **T3.** Detect missing producers in `elaborate` — distinguish site input from dangling dependency.
+- [ ] **T3.** Detect missing producers in `elaborate`: distinguish site input from dangling dependency.
 - [ ] **T4.** Make the lossy case explicit: binary atoms are legal in CSE but unrepresentable in JSON.
 - [ ] **T5.** Add a property test for the bijection over arbitrary well-formed CSE.
 - [ ] **T6.** Guard `ast_to_json`/`json_to_ast` against structural underflow.

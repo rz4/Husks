@@ -2,9 +2,9 @@
 
 ## 1. The stance
 
-Husks rests on a deliberate methodological choice, not a claim about cognition: treat a model call as an opaque event and verify only what it leaves behind. Whatever one believes about whether a system "has" intelligence, you cannot inspect the call as it happens — by the time you examine anything, the event is over and what you hold is its residue. Husks takes that posture as far as it will go and builds the rest of the system on it.
+Husks rests on a deliberate methodological choice: treat a model call as an opaque event and verify only what it leaves behind. You cannot inspect the call as it happens. By the time you examine anything, the event is over and what you hold is its residue. Husks takes that posture as far as it will go and builds the rest of the system on it.
 
-Husks takes that literally and refuses to pretend otherwise. An `oracle` is a bounded, nondeterministic recipe whose insides the build never opens. It does not read the model's reasoning. It does not grade the model's confidence. It does not trust the model's account of itself. It checks the bytes left on disk — hashed, sealed, and inspectable from the outside, where you actually are.
+An `oracle` is a bounded, nondeterministic recipe whose insides the build never opens. The build does not read the model's reasoning, grade its confidence, or trust its account of itself. It checks the bytes left on disk, hashed, sealed, and inspectable from the outside.
 
 So every claim the system makes is a claim about residue, and nothing else:
 
@@ -13,7 +13,7 @@ So every claim the system makes is a claim about residue, and nothing else:
 - this artifact is sealed, and here is its hash;
 - the build committed, or it halted, and here is the reason.
 
-The observable unit is the thing left behind. The framework records only what it observed of that residue, so any claim that goes beyond it is visibly yours, not the system's — the system never vouches for the event it did not see.
+The observable unit is the thing left behind. The framework records only what it observed of that residue. Any claim that goes beyond it is visibly yours. The system never vouches for the event it did not see.
 
 ---
 
@@ -21,9 +21,9 @@ The observable unit is the thing left behind. The framework records only what it
 
 An agent loop runs a model until the model decides it is finished. The work and the judgment of the work happen in the same opaque pass, and at the end you are handed a transcript and a final state and asked to trust both. You are trusting the event to grade its own carcass.
 
-A Husk reverses the order. The design is a contract that exists *before* the model touches anything: the whole graph — every input, output, prompt, tool, and fuel bound — written down where you can read it. You review the contract. Then the runtime walks it, fires only what is stale, seals what is fresh, reuses what is already sealed, and prints exactly what happened.
+A Husk reverses the order. The design is a contract that exists *before* the model touches anything: the whole graph, every input, output, prompt, tool, and fuel bound, written down where you can read it. You review the contract. Then the runtime walks it, fires only what is stale, seals what is fresh, reuses what is already sealed, and prints exactly what happened.
 
-The contract precedes the work; it is not reconstructed from logs afterward. Fuel bounds everything — a global budget and a budget per oracle — so there are no unbounded loops to wait out. Sealed residue is never regenerated, which makes reruns nearly free. And nondeterminism has exactly one home: `oracle`. The rest is deterministic structure you can reason about.
+The contract precedes the work. It is not reconstructed from logs afterward. Fuel bounds everything (a global budget and a budget per oracle), so there are no unbounded loops to wait out. Sealed residue is never regenerated, which makes reruns nearly free. Nondeterminism has exactly one home: `oracle`. The rest is deterministic structure you can reason about.
 
 A design is the contract. It becomes a Husk when it is lowered, sealed, and verified.
 
@@ -47,7 +47,7 @@ The target names completion. Reach it and the build commits; fail to and it halt
 
 There are two ways to hold a Husk, and they are not the same kind of thing.
 
-**The transport** is what you author. Locke — a small surface language whose *nesting is the dependency structure*, so the build tree is visible in the source instead of inferred from it. It names the target, the fuel, the rules, and for each oracle its prompt and tools:
+**The transport** is what you author. Locke is a small surface language whose *nesting is the dependency structure*, so the build tree is visible in the source instead of inferred from it. It names the target, the fuel, the rules, and for each oracle its prompt and tools:
 
 ```
 "core-bootstrap" := design
@@ -67,15 +67,15 @@ validate := action [
 ]
 ```
 
-`:=` realizes a value into a name; `:-` composes a child rule into its parent, so reading top-down traces the graph from target to leaves. JSON is still accepted — every tool already speaks it — but it is a flatter dialect of the same thing, the tree left implicit. Either surface lowers deterministically into one AST. The walk that performs the lowering imposes a fixed order on everything, so two designs that mean the same thing produce the same structure — canonicalization happens here, once, where the full graph is still in view.
+`:=` realizes a value into a name; `:-` composes a child rule into its parent, so reading top-down traces the graph from target to leaves. JSON is still accepted (every tool already speaks it), but it is a flatter dialect of the same thing, the tree left implicit. Either surface lowers deterministically into one AST. The walk that performs the lowering imposes a fixed order on everything, so two designs that mean the same thing produce the same structure. Canonicalization happens here, once, where the full graph is still in view.
 
-**The spine** is what survives. Underneath the surface (Locke or JSON) is the Canonical S-expression Encoding — the byte-level form that gets hashed, and the only form that matters for verification or for replay by a reader written long after this engine is gone. CSE is not for authoring. It is netstring atoms — `<length>:<bytes>`, no leading zeros — in fixed positional schemas, with no whitespace, no keywords, and no implementation-defined behavior anywhere. The conformance demo begins:
+**The spine** is what survives. Underneath the surface (Locke or JSON) is the Canonical S-expression Encoding, the byte-level form that gets hashed. CSE is the only form that matters for verification or for replay by a reader written long after this engine is gone. CSE uses netstring atoms (`<length>:<bytes>`, no leading zeros) in fixed positional schemas, with no whitespace, no keywords, and no implementation-defined behavior anywhere. The conformance demo begins:
 
 ```text
 (4:husk1:1(5:build4:demo2:10(4:rule7:combine...)))
 ```
 
-The transport is allowed to change. New input dialects, new conveniences, new languages — all fine, because they regenerate. The spine is frozen and append-only: CSE v1 is fixed forever, and a future v2 never edits it, it sits beside it. The surface is the airport announcement. The s-expression is the document.
+The transport is allowed to change. New input dialects, new conveniences, new languages are all fine, because they regenerate. The spine is frozen and append-only: CSE v1 is fixed forever, and a future v2 never edits it, it sits beside it.
 
 ---
 
@@ -87,28 +87,28 @@ A seal is content, never instrumentation. For each node it is a hash over the re
 seal = SHA256( CSE( (4:seal <version> <recipe-digest> <input-bindings>) ) )
 ```
 
-Note what is **not** in there: the model, the cost, the token counts, the wall-clock time, the name of whatever answered. Those are provenance — a lab notebook beside the specimen — and they are recorded, but they are advisory and they are never sealed. A husk must verify identically whether its oracle ran on a model from 2026 or on something unimaginable a decade later. **The seal records what was asked and what came back. It never records who answered.**
+Note what is **not** in there: the model, the cost, the token counts, the wall-clock time, the name of whatever answered. Those are provenance (a lab notebook beside the specimen) and they are recorded, but they are advisory and never sealed. A husk must verify identically whether its oracle ran on a model from 2026 or on something unimaginable a decade later. **The seal records what was asked and what came back. It never records who answered.**
 
-The seal does not key on the oracle's output, because the output cannot be predicted — that is what makes it an oracle. Sealing freezes the *first* residue an event produced. Rerunning does not re-enter the event; it reuses the husk. The only act that re-fires a sealed oracle is editing its recipe, and editing the recipe is precisely what changes the seal.
+The seal does not key on the oracle's output, because the output cannot be predicted. Sealing freezes the *first* residue an event produced. Rerunning does not re-enter the event; it reuses the husk. The only act that re-fires a sealed oracle is editing its recipe, and editing the recipe is precisely what changes the seal.
 
-A node's Merkle digest hashes its name, seal, output bindings, and children's digests — `(node, name, seal, outputs, children)` — so a build is a Merkle DAG and its root is one hash over the whole thing. A `let`-shared subtree is hashed once, so shared structure is identical by construction — the diamond is one digest, not two that happen to match. Clone a repo and you inherit the sealed residue; the expensive calls are already paid for.
+A node's Merkle digest hashes its name, seal, output bindings, and children's digests (`(node, name, seal, outputs, children)`), so a build is a Merkle DAG and its root is one hash over the whole thing. A `let`-shared subtree is hashed once, so shared structure is identical by construction. Clone a repo and you inherit the sealed residue; the expensive calls are already paid for.
 
-Call a husk *permanent* in this operational sense: its root is reproducible from the bytes and inputs alone, by any conforming reader, with no access to the engine that produced it. That is a property you can test, not a quality you assert — and here is the test the whole design exists to pass. Throw the engine away. A small reader in a language that did not exist when the husk was sealed, given only the bytes and the inputs, must arrive at the same root. The repo ships two independent verification paths — `kernel.py` (the Python permanence layer, `recompute_root`) and `verify.mjs` (a standalone JavaScript reader) — and a set of frozen conformance vectors. They agree on the root. If they ever stopped agreeing, the permanence claim would be false; they don't, so as far as it has been tested, it holds.
+Call a husk *permanent* in this operational sense: its root is reproducible from the bytes and inputs alone, by any conforming reader, with no access to the engine that produced it. That is a property you can test. Throw the engine away. A small reader in a language that did not exist when the husk was sealed, given only the bytes and the inputs, must arrive at the same root. The repo ships two independent verification paths (`kernel.py` via `recompute_root`, and `verify.mjs`, a standalone JavaScript reader) and a set of frozen conformance vectors. They agree on the root. If they ever stopped agreeing, the permanence claim would be false; they don't, so as far as it has been tested, it holds.
 
 ```bash
 node spec/conformance/verify.mjs spec/conformance/demo.husk \
      spec/conformance/demo.site "$(cat spec/conformance/demo.root)"
 ```
 
-A third reader has since joined those two — written from cold by a model that had only the spec, and never the other two. That is the end of this story, and it belongs at the end.
+A third reader has since joined those two, written from cold by a model that had only the spec and never the other two. That is the end of this story, and it belongs at the end.
 
 ---
 
 ## 6. Conformance
 
-Verification is only as strong as what you test it against. The repo ships six frozen conformance vectors — three positive cases that must reproduce their roots, and three malformed fixtures that must be *rejected*, not parsed.
+Verification is only as strong as what you test it against. The repo ships six frozen conformance vectors: three positive cases that must reproduce their roots, and three malformed fixtures that must be *rejected*.
 
-The positive cases are `demo`, `adversarial`, and `unsorted`. The adversarial one is nasty on purpose — filenames and byte patterns that a casual JSON, regex, or whitespace parser will mishandle, because the only reader that survives them is one that honors the length prefix and reads exactly the bytes it is told to. The malformed fixtures — `malformed-leadingzero`, `malformed-trailing`, and `malformed-truncated` — test that the parser rejects structurally invalid input rather than guessing its way past it.
+The positive cases are `demo`, `adversarial`, and `unsorted`. The adversarial one is nasty on purpose: filenames and byte patterns that a casual JSON, regex, or whitespace parser will mishandle, because the only reader that survives them is one that honors the length prefix and reads exactly the bytes it is told to. The malformed fixtures (`malformed-leadingzero`, `malformed-trailing`, and `malformed-truncated`) test that the parser rejects structurally invalid input rather than guessing its way past it.
 
 A reader clears Level 0 when all hold:
 
@@ -126,26 +126,26 @@ Anything less is a reader that works on the easy cases and lies on the hard ones
 
 ## 7. Bootstrap validation
 
-`examples/core-bootstrap/core-bootstrap.locke` turns that test on the framework itself. It has two rules. An `oracle` reads CSE v1 and v2 — and nothing else; no existing reader, no answer key — and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate (`gate.py`, standalone) judges that reader against the six frozen conformance vectors: three positive roots that must match and three malformed inputs that must be rejected. Optionally it cross-checks against the independent JavaScript reader. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
+`examples/core-bootstrap/core-bootstrap.locke` turns that test on the framework itself. It has two rules. An `oracle` reads CSE v1 and v2 (and nothing else: no existing reader, no answer key) and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate (`gate.py`, standalone) judges that reader against the six frozen conformance vectors: three positive roots that must match and three malformed inputs that must be rejected. Optionally it cross-checks against the independent JavaScript reader. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
 
-The shape is the whole thesis in miniature: the oracle produces, the gate verifies, and the gate is not the oracle. A model can write the verifier; it cannot grade its own verifier. The frozen roots do that — and the roots were computed by readers the model never saw. What happened the first time we ran this is at the end of the document, because it is the point of the whole exercise.
+The oracle produces; the gate verifies; the gate is not the oracle. A model can write the verifier, but it cannot grade its own verifier. The frozen roots do that, and the roots were computed by readers the model never saw. What happened the first time we ran this is at the end of the document, because it is the point of the whole exercise.
 
 ---
 
 ## 8. Convergence and extraction
 
-A design is not written once. It is *worked*. You run it, read the trace, perturb the nodes that didn't satisfy, pin the ones that did, and run again. Across revisions this is not tuning a build. It is **program extraction against nondeterminism** — separating the part of a task you have managed to reduce to a deterministic rule from the part that has, so far, resisted that reduction.
+A design is not written once. It is *worked*. You run it, read the trace, perturb the nodes that didn't satisfy, pin the ones that did, and run again. Across revisions this is **program extraction against nondeterminism**: separating the part of a task you have managed to reduce to a deterministic rule from the part that has, so far, resisted that reduction.
 
-An oracle whose output is fixed by its inputs is not an oracle. It is transcription, and transcription is a deterministic `action` you have not extracted yet. The prompt is source code for a function; leaving it as an oracle pays an API call to interpret that function at runtime. The end state of a converged node is to stop being an oracle.
+An oracle whose output is fixed by its inputs is transcription, and transcription is a deterministic `action` you have not extracted yet. The prompt is source code for a function; leaving it as an oracle pays an API call to interpret that function at runtime. The end state of a converged node is to become an action.
 
 `husks history` classifies how a node has moved:
 
-- **Converging** — fuel falling or flat, prompt flat. Honest progress; the node is settling toward its minimal form and may be ready to become an action.
-- **Prompt-loading** — fuel falling, prompt *rising*. The alarm. Falling fuel looks like progress, but a swelling prompt means you are hand-migrating the determined part of the work into the prompt and then paying the oracle to read your own work back. The cost did not leave. It moved from the API bill to your hands.
-- **Stable** — output hashes identical across runs. The specimen is fixed. Make it an action.
-- **Volatile** — no settled trend. Not converged.
+- **Converging**: fuel falling or flat, prompt flat. The node is settling toward its minimal form and may be ready to become an action.
+- **Prompt-loading**: fuel falling, prompt *rising*. Falling fuel looks like progress, but a swelling prompt means you are hand-migrating the determined part of the work into the prompt and then paying the oracle to read your own work back. The cost moved from the API bill to your hands.
+- **Stable**: output hashes identical across runs. The specimen is fixed. Make it an action.
+- **Volatile**: no settled trend.
 
-The fixed point you are working toward is the maximal deterministic skeleton, with the remaining oracle nodes naming the parts that have so far resisted reduction to a deterministic action. That residue is empirical, not metaphysical: it marks what you have not yet extracted, not what is provably impossible to extract. Anything you *can* reduce should become the deterministic operation it was standing in for; what is left is simply where, for now, reduction has stopped.
+The fixed point you are working toward is the maximal deterministic skeleton, with the remaining oracle nodes naming the parts that have so far resisted reduction to a deterministic action. That residue is empirical: it marks what you have not yet extracted. Anything you *can* reduce should become the deterministic operation it was standing in for; what is left is simply where, for now, reduction has stopped.
 
 ---
 
@@ -162,7 +162,7 @@ trial  : (branch₁, …, branchₙ, verdict) → Y      speculative; one residu
 
 Evaluation consumes fuel and terminates by `commit` or `halt`. The language gives uncertainty one explicit form. Everything else is structure.
 
-This is an informal operational account, not a worked-out formal semantics. The reduction relation, a termination argument from the fuel bound, and any soundness statement relating seals to the artifacts they certify are not yet written down. "Calculus" here names the intent and the shape, not a completed formalization — that is work this document does not claim to have done.
+This is an informal operational account. The reduction relation, a termination argument from the fuel bound, and any soundness statement relating seals to the artifacts they certify are not yet written down. "Calculus" here names the intent and the shape, not a completed formalization.
 
 ---
 
@@ -178,7 +178,7 @@ Concrete gaps in what the engine can express or execute today.
 
 4. **No remote or distributed execution.** The site directory is a local filesystem path. The oracle backend, tool sandbox, and seal I/O all assume local disk. There is no mechanism for running rules on different machines or sharing sealed artifacts across builds. Partial mitigation: read-only imports (`"imports"` in a design) allow referencing external files and directories via symlinks, but the external paths must still be on the local filesystem.
 
-5. **No automatic cross-site caching.** Freshness checks compare against `.traces/<rule>.seal` in the current site. Running the same design against a fresh site re-fires every rule. Manual transfer is supported — `husks cache export` and `husks cache import` move sealed residue between sites — but there is no automatic shared cache.
+5. **No automatic cross-site caching.** Freshness checks compare against `.traces/<rule>.seal` in the current site. Running the same design against a fresh site re-fires every rule. Manual transfer is supported (`husks cache export` and `husks cache import` move sealed residue between sites), but there is no automatic shared cache.
 
 6. **Actions can't fail gracefully.** An action rule runs a shell command or Python callable. If it returns a nonzero exit code, the build halts. There is no retry, no fallback, no way to express "try this action, and if it fails, do something else" without `trial`.
 
@@ -188,12 +188,12 @@ Concrete gaps in what the engine can express or execute today.
 
 ## The claim, held to account
 
-A husk has object permanence when its verifier can be produced as residue, the producing event discarded, and the result confirmed by a reader that is not it. The cross-language readers and the frozen root are the first form of that proof. The sharpest form is harder: hand a model nothing but the spec, have it write a CSE reader from cold, and check whether that reader — which has never seen the engine, the shipped readers, or the answer — arrives at the same root hashes the bedrock already holds.
+A husk has object permanence when its verifier can be produced as residue, the producing event discarded, and the result confirmed by a reader that did not produce it. The cross-language readers and the frozen root are the first form of that proof. The sharpest form is harder: hand a model nothing but the spec, have it write a CSE reader from cold, and check whether that reader (which has never seen the engine, the shipped readers, or the answer) arrives at the same root hashes the bedrock already holds.
 
-We ran it. A small, cheap model, given only CSE v1 and v2, wrote a netstring parser, a seal preimage, and a Merkle node digest, and reproduced the frozen roots — `demo` at `9977239d…` and an adversarial fixture, built to break lazy parsers, at `5382838c…`. It rejected the malformed husks and agreed with the independent JavaScript reader. Judged by readers that are not it. Three cents, one call, twenty-five seconds.
+We ran it. A small, cheap model, given only CSE v1 and v2, wrote a netstring parser, a seal preimage, and a Merkle node digest, and reproduced the frozen roots: `demo` at `9977239d…` and an adversarial fixture (built to break lazy parsers) at `5382838c…`. It rejected the malformed husks and agreed with the independent JavaScript reader. Judged by readers that did not produce it. Three cents, one call, twenty-five seconds.
 
-It did not pass on the first run, and that is the part worth reading. The first cold reader disagreed by a definite hash, and the disagreement located a real hole: the spec described how the *elaborator* orders a node's children, and a faithful reader implemented that as a verification rule, which it is not. A second gap surfaced next — whether a digest enters a parent form as a hex string or as raw bytes. Both were holes a careful independent implementer would also have fallen into. We closed them in CSE v2 and ran again, cold. Then it clicked into the bedrock.
+It did not pass on the first run. The first cold reader disagreed by a definite hash, and the disagreement located a real hole: the spec described how the *elaborator* orders a node's children, and a faithful reader implemented that as a verification rule (which it should not have). A second gap surfaced next: whether a digest enters a parent form as a hex string or as raw bytes. Both were holes a careful independent implementer would also have fallen into. We closed them in CSE v2 and ran again, cold. Then it clicked into the bedrock.
 
-That is the whole point of writing a claim so it can be wrong. The format was held to account by something with every reason to disagree, and the disagreement made it more precise rather than less true — two ambiguities in the permanent layer, found and closed, by the act of being checked.
+That is the whole point of writing a claim so it can be wrong. The format was held to account by something with every reason to disagree, and the disagreement made it more precise: two ambiguities in the permanent layer, found and closed, by the act of being checked.
 
 Deeper forms of the test remain: a Husk that emits its own verifier as residue, a Husk that emits the design that builds Husks. Those are not done. The first and sharpest one is.

@@ -224,9 +224,30 @@ class BuildTransaction:
         self.stage_dir = tempfile.mkdtemp(prefix="husks-stage-")
         self.S["stage"] = self.stage_dir
         site = Path(self.S["site"]).resolve()
+        readonly_dirs = {Path(p).resolve() for p in self.S.get("readonly-dirs", [])}
         for item in site.iterdir():
             dst = Path(self.stage_dir) / item.name
             if not dst.exists():
+                # If this symlink targets a readonly dir, copy instead of symlink
+                if item.is_symlink() and readonly_dirs:
+                    target = item.resolve()
+                    if any(target == rd or target.is_relative_to(rd) for rd in readonly_dirs):
+                        if target.is_dir():
+                            shutil.copytree(str(target), str(dst))
+                            # Make the copy read-only
+                            for root, dirs, files in os.walk(str(dst)):
+                                for f in files:
+                                    fp = os.path.join(root, f)
+                                    os.chmod(fp, 0o444)
+                                for d in dirs:
+                                    dp = os.path.join(root, d)
+                                    os.chmod(dp, 0o555)
+                            os.chmod(str(dst), 0o555)
+                            continue
+                        elif target.is_file():
+                            shutil.copy2(str(target), str(dst))
+                            os.chmod(str(dst), 0o444)
+                            continue
                 os.symlink(str(item), str(dst))
         return self
 

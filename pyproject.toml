@@ -25,6 +25,8 @@ packages = ["src/husks"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+testpaths = ["tests"]
+norecursedirs = ["legacy"]
 markers = [
     "slow: Wheel builds or subprocess-heavy tests",
 ]

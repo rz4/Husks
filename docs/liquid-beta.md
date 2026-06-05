@@ -11,10 +11,10 @@ Husks is a deterministic build system for nondeterministic (LLM-powered) work. T
 
 ```bash
 # Check design validity
-husks check core-bootstrap.locke
+husks check <your-design.json>
 
 # Run the build with stub oracle (zero API cost)
-husks run core-bootstrap.locke --site m1 --stub
+husks run <your-design.json> --site m1 --stub
 
 # Verify the .husk artifact
 husks verify m1
@@ -28,9 +28,55 @@ husks status m1
 The core reproduction path. Proves cache reuse (M2) and independent
 re-realization (M3) from the same seed design.
 
+### Stub proof path (automated, zero cost)
+
+Uses a minimal oracle+action design (like the one in `tests/test_three_machine_stub.py`).
+Proves the cache/refire mechanics with deterministic identity — no API key required.
+
 ```bash
-# Machine 1: Original realization with oracle cost
-husks run core-bootstrap.locke --site m1 --stub
+# Machine 1: Original realization
+husks run stub-proof.json --site m1 --stub
+
+# Export cache from M1
+husks cache export m1 cache.tar.gz
+
+# Machine 2: Import cache and reuse at zero cost
+husks cache import cache.tar.gz m2
+husks run stub-proof.json --site m2 --reuse-only
+
+# Machine 3: Independent re-realization
+husks run stub-proof.json --site m3 --stub
+
+# Verify computational equivalence
+husks compare m1 m2 m3
+```
+
+**Expected result (stub path, deterministic identity):**
+```
+── Three-Machine Proof ──
+  ✓ M1↔M2↔M3 husk identical          (required)
+  ✓ M1↔M2 root identical              (required)
+  ✓ M1 fired oracles                   (required)
+  · M1 paid cost                       (evidence)
+  · M2 zero oracle cost                (evidence)
+  ✓ M2 cache reuse                     (required)
+  ✓ M3 fired oracles                   (required)
+  · M3 paid cost                       (evidence)
+  · M1↔M3 outputs equivalent           (evidence)
+
+proof satisfied
+```
+
+### Live proof path (requires API key)
+
+Uses `core-bootstrap.locke` with a real oracle. Proves behavioral equivalence
+through the conformance gate. **Note:** `core-bootstrap.locke --stub` does not
+pass the conformance gate because the stub oracle writes placeholder content
+that the gate rejects. Use a live oracle for core-bootstrap.
+
+```bash
+# Machine 1: Original realization with live oracle
+husks run core-bootstrap.locke --site m1 --model anthropic/claude-haiku-4-5
 
 # Export cache from M1
 husks cache export m1 cache.tar.gz
@@ -39,30 +85,14 @@ husks cache export m1 cache.tar.gz
 husks cache import cache.tar.gz m2
 husks run core-bootstrap.locke --site m2 --reuse-only
 
-# Machine 3: Independent re-realization
-husks run core-bootstrap.locke --site m3 --stub
+# Machine 3: Independent re-realization with live oracle
+husks run core-bootstrap.locke --site m3 --model anthropic/claude-haiku-4-5
 
 # Verify computational equivalence
 husks compare m1 m2 m3
 ```
 
-**Expected result (stub path — deterministic identity):**
-```
-── Three-Machine Proof ──
-  ✓ M1↔M2↔M3 husk identical          (required)
-  ✓ M1↔M2 root identical              (required)
-  · M1 fired oracles                   (evidence)
-  · M1 paid cost                       (evidence)
-  · M2 zero oracle cost                (evidence)
-  · M2 cache reuse                     (evidence)
-  · M3 fired oracles                   (evidence)
-  · M3 paid cost                       (evidence)
-  · M1↔M3 outputs equivalent           (evidence)
-
-proof satisfied
-```
-
-**Expected result (live path — validator-bounded acceptance):**
+**Expected result (live path, validator-bounded acceptance):**
 
 With live oracles, M1 and M3 produce different generated source code
 (non-deterministic), resulting in different roots. Equivalence is proved via
@@ -128,7 +158,7 @@ husks run core-bootstrap.locke --site m1 --stub --json
 
 Recompute the `.husk` root hash from sealed artifacts.
 
-**Purpose:** Proves the `.husk` file is self-verifying — any future reader
+**Purpose:** Proves the `.husk` file is self-verifying. Any future reader
 with SHA-256 and the site files can reproduce the root hash. The engine
 that built it can be discarded.
 
@@ -388,7 +418,7 @@ frozen conformance vectors.
 2. **validate** (action, target)
    - Input: `readers/generated_reader.py`
    - Outputs: `readers/gate-report.txt` (free), `readers/VERIFIED` (exact)
-   - Command: `python3 gate.py` — runs the reader against frozen vectors
+   - Command: `python3 gate.py` (runs the reader against frozen vectors)
    - Actions don't consume fuel
 
 **Design principles:**
@@ -399,7 +429,7 @@ frozen conformance vectors.
 
 ## Stub Oracle Mode
 
-The `--stub` flag uses the default oracle backend — a deterministic
+The `--stub` flag uses the default oracle backend, a deterministic
 stub that writes placeholder content to each declared output:
 
 ```python
@@ -522,7 +552,7 @@ identity**.
 
 With live oracles, M1 and M3 produce different generated source code
 (non-deterministic), resulting in different roots. This is expected and
-correct — Section 4 of the white paper states the seed/cache split prevents
+correct. Section 4 of the white paper states the seed/cache split prevents
 "independent re-realization from being mistaken for deterministic identity."
 Equivalence on the live path is proved via **validator-bounded acceptance**:
 both readers pass the conformance gate and produce identical `VERIFIED`

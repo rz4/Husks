@@ -957,18 +957,22 @@ def _three_machine_checks(residues, comparisons):
     # Root hash must be identical between M1 and M2 (cache determinism).
     root_match = (m1.root is not None and m1.root == m2.root)
     checks.append(("M1\u2194M2 root identical", root_match, True))
-    # ── Evidence checks (informational) ───────────────────────
+    # ── Evidence checks ─────────────────────────────────────────
     m1_oracles = [n for n in m1.nodes if n.kind == "oracle"]
     m2_oracles = [n for n in m2.nodes if n.kind == "oracle"]
     m3_oracles = [n for n in m3.nodes if n.kind == "oracle"]
+    has_oracles = bool(m1_oracles)
     checks.append(("M1 fired oracles",
-                    any(n.state == "fired" and not n.cache for n in m1_oracles) if m1_oracles else False, False))
+                    any(n.state == "fired" and not n.cache for n in m1_oracles) if m1_oracles else False,
+                    has_oracles))
     checks.append(("M1 paid cost", (m1.cost or 0.0) > 0, False))
     checks.append(("M2 zero oracle cost", (m2.cost or 0.0) == 0.0, False))
     checks.append(("M2 cache reuse",
-                    any(n.cache or n.state == "cached" for n in m2_oracles), False))
+                    any(n.cache or n.state == "cached" for n in m2_oracles),
+                    has_oracles))
     checks.append(("M3 fired oracles",
-                    any(n.state == "fired" and not n.cache for n in m3_oracles) if m3_oracles else False, False))
+                    any(n.state == "fired" and not n.cache for n in m3_oracles) if m3_oracles else False,
+                    has_oracles))
     checks.append(("M3 paid cost", (m3.cost or 0.0) > 0, False))
     m1_m3 = next((r for r in comparisons if {r["site_a"], r["site_b"]} == {m1.site, m3.site}), None)
     checks.append(("M1\u2194M3 outputs equivalent", m1_m3["equivalent"] if m1_m3 else False, False))

@@ -484,7 +484,7 @@ class TestCmdCompare:
         assert data["proof"]["satisfied"] is True
         # Required checks have required=True
         required = [c for c in data["proof"]["checks"] if c["required"]]
-        assert len(required) == 2
+        assert len(required) == 5  # 2 invariants + 3 oracle evidence (M1/M2/M3)
         assert all(c["ok"] for c in required)
 
     def test_too_few_sites(self, capsys):

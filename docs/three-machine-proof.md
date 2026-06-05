@@ -296,8 +296,8 @@ receives a plain string list of outputs. Do not overload `outputs`.
 ### Binding acceptance to behavior
 
 The `core-bootstrap` validate rule runs the conformance gate, not just
-`py_compile`. The gate stamps a conformance digest — a SHA-256 of the
-reader's correct outputs on frozen vectors — instead of a constant.
+`py_compile`. The gate stamps a conformance digest (a SHA-256 of the
+reader's correct outputs on frozen vectors) instead of a constant.
 The conformance digest is constant across all *correct* readers,
 because the frozen `.root` values are fixed. A reader that computes a
 wrong root fails the gate before any stamp is written, so it cannot

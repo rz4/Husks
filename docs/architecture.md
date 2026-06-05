@@ -449,7 +449,7 @@ L0–L6 are functionally equivalent.  L7 is where the cuts are.
 
 | Feature | Liquid beta | Hardened |
 |---------|------------|---------|
-| LiveFrameEmitter | ~350 lines, threaded live terminal with per-node state transitions, token/cost counters, log tail windows | Dropped — final results only |
+| LiveFrameEmitter | ~350 lines, threaded live terminal with per-node state transitions, token/cost counters, log tail windows | Dropped (final results only) |
 | Interactive navigator | Arrow-key pilot loop for explain (cursor, aperture, quit) | Static single-frame rendering |
 | Help animation | Character-by-character diamond typing effect | Static text |
 | Aperture levels 2-3 | Seal digest, recipe digest, input/output hashes, trace logs | Only levels 0-1 (node line + primary output) |

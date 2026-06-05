@@ -7,7 +7,7 @@ unbounded agent loop: it writes a build graph, you read the contract before any
 model touches anything, the runtime fires only what is stale, and every claim
 the system makes is a claim about sealed residue you can recompute yourself.
 
-> Install is a single `pip install` from the GitHub URL — no checkout required.
+> Install is a single `pip install` from the GitHub URL. No checkout required.
 > Setup is one command after that: `husks doctor`.
 
 ---
@@ -19,22 +19,22 @@ There are **three** roles, and keeping them separate is the whole point.
 | Role | Who plays it | What it does |
 | :--- | :--- | :--- |
 | **Author** | the Claude Code instance | reads your task, writes `design.locke`, runs the CLI, reports |
-| **Producer** | the husks `oracle` (a litellm call, default `claude-haiku-4-5`) | the one nondeterministic step — generates bytes inside a bounded workspace |
+| **Producer** | the husks `oracle` (a litellm call, default `claude-haiku-4-5`) | the one nondeterministic step: generates bytes inside a bounded workspace |
 | **Verifier** | the deterministic engine + frozen roots | seals, reuses, recomputes hashes; grades neither author nor producer on its say-so |
 
 The author and the producer are **different model calls**. Claude Code writes
 the contract; a separate, fuel-bounded oracle inside the design produces the
-residue. The verifier is not a model at all. A model can write a verifier; it
-cannot grade its own verifier — that separation is what you are setting up.
+residue. The verifier is not a model at all. A model can write a verifier, but
+it cannot grade its own verifier. That separation is what you are setting up.
 
 ---
 
 ## 1. Prerequisites
 
 - **Python >= 3.10**
-- **Node.js** (optional — only for the independent JavaScript reader / gate cross-check)
-- **Claude Code** — `npm install -g @anthropic-ai/claude-code`
-- **An Anthropic API key** — needed only for *live* oracle runs, not for `--stub`
+- **Node.js** (optional, only for the independent JavaScript reader / gate cross-check)
+- **Claude Code**: `npm install -g @anthropic-ai/claude-code`
+- **An Anthropic API key**: needed only for *live* oracle runs, not for `--stub`
 
 ---
 
@@ -50,11 +50,11 @@ pip install "husks[llm] @ git+https://github.com/rz4/Husks.git"
 ```
 
 That's the whole install. The `[llm]` extra pulls in `litellm` for live oracle
-calls. Without it, `check`, `doctor`, and `--stub` runs still work —
+calls. Without it, `check`, `doctor`, and `--stub` runs still work;
 only live oracle execution requires `litellm`. The wheel also ships the
 conformance vectors and the skill.
 
-> **Contributing to Husks itself?** Use an editable checkout instead —
+> **Contributing to Husks itself?** Use an editable checkout instead:
 > `git clone ...` then `pip install -e ".[llm]"`. Both install modes are fully
 > supported; the editable one just lets you hack on the engine in place.
 
@@ -68,7 +68,7 @@ Verify the install and check that dependencies are available:
 husks doctor
 ```
 
-Expected: exit code 0. If anything here is not green, stop — fix the
+Expected: exit code 0. If anything here is not green, stop and fix the
 environment before proceeding.
 
 (`python -m pytest tests/ -q` runs the full suite, but that needs a source
@@ -85,8 +85,8 @@ cp -r "$(python -c 'import husks; print(husks.__path__[0])')/../examples/core-bo
 cd my-project
 ```
 
-Use `husks tree` to see what's in the directory — designs, sites, and source
-files — and confirm every required input is present:
+Use `husks tree` to see what's in the directory (designs, sites, and source
+files) and confirm every required input is present:
 
 ```bash
 husks tree
@@ -105,7 +105,7 @@ Expected output:
 
 The green **✓** next to the design means all of its site inputs exist on
 disk. If any source file were missing you would see a red **✗** with the
-missing paths listed. Fix those before proceeding — the build will fail
+missing paths listed. Fix those before proceeding; the build will fail
 without them.
 
 ---

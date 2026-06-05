@@ -13,7 +13,7 @@ decision.
 ## The Problem
 
 Husks designs were originally authored in JSON.  JSON is verbose and
-structurally flat — every rule is a top-level dict, dependencies are
+structurally flat: every rule is a top-level dict, dependencies are
 inferred from filename matching, shared sub-graphs are implicit.  The
 JSON surface does not make the build tree visible in the source.
 
@@ -26,7 +26,7 @@ no runtime dependency, where the tree structure is expressed by nesting.
 
 ### Step 1: Square-Lisp with `:-`
 
-The first iteration borrowed from Lisp — square brackets, `:-` as the
+The first iteration borrowed from Lisp: square brackets, `:-` as the
 binding operator, `@path` for file inclusion, bare words as atoms:
 
 ```
@@ -44,20 +44,20 @@ generate :- oracle [
 This worked but was essentially JSON with different punctuation.  Three
 problems:
 
-1. `name`, `fuel`, `target` are metadata, not bindings — using the same
+1. `name`, `fuel`, `target` are metadata, not bindings. Using the same
    operator for everything obscured intent.
 2. `@path` was a third mechanism alongside strings and atoms.
 3. Rules were flat.  The tree was still invisible.
 
 ### Step 2: Realization operator `:=`
 
-The insight: build metadata (`name`, `fuel`, `target`) is *realized* —
-it declares something concrete and deterministic.  Rules are
-*compositional* — they wire together to form a tree.  Two different
+The insight: build metadata (`name`, `fuel`, `target`) is *realized*,
+declaring something concrete and deterministic.  Rules are
+*compositional*, wiring together to form a tree.  Two different
 things deserve two different operators.
 
 `:=` became the realization operator.  Value on the left, label on the
-right — the concrete thing *is the* label:
+right. The concrete thing *is the* label:
 
 ```
 "core-bootstrap"  :=  public
@@ -71,15 +71,15 @@ validate := action [...]
 ```
 
 Only the first occurrence of each `:=` keyword is trusted.  Duplicates
-are silently ignored — the first declaration wins.
+are silently ignored; the first declaration wins.
 
-### Step 3: `@` is redundant — atoms are files, strings are data
+### Step 3: `@` is redundant
 
 The `@path` syntax was a separate mechanism to say "read this file."
 But the type system already carries that distinction:
 
-- **Atom** (bare word): `prompts/generate-reader.txt` — a file on disk
-- **String** (quoted): `"Do the thing."` — inline data
+- **Atom** (bare word): `prompts/generate-reader.txt`, a file on disk
+- **String** (quoted): `"Do the thing."`, inline data
 
 Once this clicked, `@` disappeared entirely.  The prompt field became:
 
@@ -93,8 +93,8 @@ No special syntax for file inclusion.  The type *is* the mechanism.
 ### Step 4: Value `:=` label inside blocks
 
 The same realization pattern works inside rule blocks.  The
-deterministic parts of a rule — inputs, outputs, free, exact, run,
-prompt — are concrete declarations:
+deterministic parts of a rule (inputs, outputs, free, exact, run,
+prompt) are concrete declarations:
 
 ```
 validate := action [
@@ -107,10 +107,10 @@ validate := action [
 
 Reading left-to-right: "this list of files *is the* inputs."
 
-### Step 5: Nesting — the tree is the source
+### Step 5: Nesting
 
 The flat rule list meant dependencies were invisible.  Locke makes the
-tree structural — child rules are nested inside their parents:
+tree structural: child rules are nested inside their parents:
 
 ```
 validate := action [
@@ -149,7 +149,7 @@ merge := action [
 ```
 
 `let` introduces a scope where bindings are defined once and visible to
-all siblings — following Lisp's `let` semantics:
+all siblings, following Lisp's `let` semantics:
 
 ```
 merge := action [
