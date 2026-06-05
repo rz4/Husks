@@ -655,6 +655,8 @@ def check(design: Design, *, unsafe: bool = False) -> list[str]:
             for o in outputs:
                 pe = _validate_path(o)
                 if pe: errors.append(f"{tag}: output {pe}")
+                if import_prefixes and any(o == pfx.rstrip("/") or o.startswith(pfx) for pfx in import_prefixes):
+                    errors.append(f"{tag}: output '{o}' is under an import prefix (imported paths are read-only)")
                 if o in produced:
                     fp = output_producers.get(o, "unknown")
                     errors.append(f"{tag}: output '{o}' already produced by rule '{fp}'")

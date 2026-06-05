@@ -1,0 +1,23 @@
+{
+  "name": "stub-proof",
+  "fuel": 10,
+  "target": "validate",
+  "rules": [
+    {
+      "name": "generate",
+      "kind": "oracle",
+      "inputs": [],
+      "outputs": ["output.txt"],
+      "prompt": "Write output.",
+      "tools": ["write-file"],
+      "fuel": 5
+    },
+    {
+      "name": "validate",
+      "kind": "action",
+      "inputs": ["output.txt"],
+      "outputs": ["result.txt"],
+      "run": "cp output.txt result.txt"
+    }
+  ]
+}

@@ -124,11 +124,15 @@ husks check core-bootstrap.locke
 ### Machine 1: original realization
 
 ```bash
-husks run core-bootstrap.locke --site m1 --stub
+husks run examples/stub-proof/stub-proof.json --site m1 --stub
 ```
 
 M1 builds the design with a stub oracle, pays synthetic oracle cost, and
 produces sealed outputs.
+
+**Note:** We use `stub-proof.json` here because `core-bootstrap.locke` requires
+a live oracle — its conformance gate rejects stub-generated placeholder content.
+Use `core-bootstrap.locke` with a real API key for production proofs.
 
 ### Export cache from M1
 
@@ -140,7 +144,7 @@ husks cache export m1 cache.tar.gz
 
 ```bash
 husks cache import cache.tar.gz m2
-husks run core-bootstrap.locke --site m2 --reuse-only
+husks run examples/stub-proof/stub-proof.json --site m2 --reuse-only
 ```
 
 M2 imports M1's cache and runs with `--reuse-only`. It makes zero oracle calls,
@@ -149,7 +153,7 @@ pays zero cost, and materializes the same artifact from verified cached residue.
 ### Machine 3: independent re-realization
 
 ```bash
-husks run core-bootstrap.locke --site m3 --stub
+husks run examples/stub-proof/stub-proof.json --site m3 --stub
 ```
 
 M3 starts with an empty cache and independently builds a valid artifact at

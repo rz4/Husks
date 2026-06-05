@@ -22,9 +22,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = str(REPO_ROOT / "src")
 
-# Design with an oracle rule followed by an action rule.
-# The oracle exercises the stub/cache/refire phenomenon;
-# the action consumes oracle output deterministically.
+STUB_PROOF_PATH = REPO_ROOT / "examples" / "stub-proof" / "stub-proof.json"
+
+# Fallback constant if the example file is missing (e.g. in a partial checkout).
 MINIMAL_DESIGN = """\
 {
   "name": "stub-proof",
@@ -52,6 +52,13 @@ MINIMAL_DESIGN = """\
 """
 
 
+def _load_design() -> str:
+    """Load the stub-proof design, preferring the canonical example file."""
+    if STUB_PROOF_PATH.exists():
+        return STUB_PROOF_PATH.read_text()
+    return MINIMAL_DESIGN
+
+
 def _run_cli(*args, check=True, **kwargs):
     """Run the husks CLI as a subprocess with PYTHONPATH=src."""
     env = {**os.environ, "PYTHONPATH": SRC_DIR}
@@ -72,9 +79,9 @@ def _run_cli(*args, check=True, **kwargs):
 
 @pytest.fixture
 def design_file(tmp_path):
-    """Write a minimal design JSON to a temp file."""
+    """Write the stub-proof design to a temp file."""
     p = tmp_path / "stub-proof.json"
-    p.write_text(MINIMAL_DESIGN)
+    p.write_text(_load_design())
     return str(p)
 
 

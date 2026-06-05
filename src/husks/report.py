@@ -219,13 +219,32 @@ def compare_artifacts(
                 if seal and "outputs" in seal:
                     out.update(seal["outputs"])
         details["outputs_a"], details["outputs_b"] = oa, ob
+
+        # Build equivalence map from manifest rules
+        equiv_map: dict[str, str] = {}
+        for m in (ma, mb):
+            for rule in m.get("rules", []):
+                equiv = rule.get("equivalence", {})
+                if isinstance(equiv, dict):
+                    for path, rel in equiv.items():
+                        # Use the stricter relation if both sites declare different
+                        existing = equiv_map.get(path, rel)
+                        equiv_map[path] = "exact" if existing == "exact" or rel == "exact" else rel
+
+        # Compare hashes with equivalence awareness
+        free_skipped: list[str] = []
         for o in sorted(set(oa) | set(ob)):
             ha, hb = oa.get(o), ob.get(o)
             if ha != hb:
+                relation = equiv_map.get(o, "exact")
+                if relation == "free":
+                    free_skipped.append(o)
+                    continue
                 diffs.append(
                     f"output '{o}' differs: "
                     f"{(ha or 'missing')[:16]}... vs {(hb or 'missing')[:16]}..."
                 )
+        details["free_skipped"] = free_skipped
 
     return {"equivalent": len(diffs) == 0, "differences": diffs, "details": details}
 

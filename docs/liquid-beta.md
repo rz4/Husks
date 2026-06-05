@@ -560,12 +560,16 @@ digests, proving behavioral equivalence without requiring identical source.
 
 ### Can I run without an API key?
 
-Yes. Use `--stub` mode:
+Yes. Use `--stub` mode with the stub-proof example (which has no conformance gate):
 ```bash
-husks run core-bootstrap.locke --site m1 --stub
+husks run examples/stub-proof/stub-proof.json --site m1 --stub
 ```
 
 This uses a deterministic stub oracle with zero API cost.
+
+**Note:** `core-bootstrap.locke --stub` will fail the conformance gate because the
+stub oracle writes placeholder content. Use a live oracle for core-bootstrap, or
+use `examples/stub-proof/stub-proof.json` for zero-cost testing.
 
 ### What's the difference between --stub and live oracles?
 

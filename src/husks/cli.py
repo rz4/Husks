@@ -940,8 +940,9 @@ def _cmd_compare(args):
         print(json.dumps(out, indent=2))
     else:
         _render_compare_visual(residues, results, proof_checks, proof_satisfied)
-    if not all_equiv: sys.exit(EXIT_BUILD_FAIL)
     if proof_checks and not proof_satisfied:
+        sys.exit(EXIT_BUILD_FAIL)
+    if not all_equiv and not (proof_checks and proof_satisfied):
         sys.exit(EXIT_BUILD_FAIL)
 
 
