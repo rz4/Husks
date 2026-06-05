@@ -915,12 +915,25 @@ def _cmd_compare(args):
         residues.append(r)
 
     # Pairwise artifact comparisons.
+    # For three sites (M1, M2, M3):
+    #   M1↔M2 = cache equivalence (strict: all outputs must match)
+    #   M1↔M3, M2↔M3 = independent realization (free outputs may differ)
     all_equiv = True
     results = []
+    is_three = len(sites) == 3
     for i in range(len(sites)):
         for j in range(i + 1, len(sites)):
-            r = compare_artifacts(sites[i], sites[j], check_roots=check_roots, check_hashes=check_hashes)
+            # Cache equivalence: M1↔M2 (indices 0,1). All others are independent realization.
+            is_cache_pair = is_three and i == 0 and j == 1
+            respect_free = is_three and not is_cache_pair
+            ctype = "cache" if is_cache_pair else ("realization" if is_three else "pairwise")
+            r = compare_artifacts(
+                sites[i], sites[j],
+                check_roots=check_roots, check_hashes=check_hashes,
+                respect_free=respect_free,
+            )
             r["site_a"], r["site_b"] = sites[i], sites[j]
+            r["comparison_type"] = ctype
             results.append(r)
             if not r["equivalent"]: all_equiv = False
 
@@ -1005,11 +1018,17 @@ def _render_compare_visual(residues, comparisons, proof_checks, proof_satisfied=
     # Pairwise equivalence checks.
     print(f"  {BOLD}equivalence{RESET}")
     print(sep)
+    _CTYPE_LABEL = {"cache": "cache", "realization": "realization", "pairwise": ""}
     for r in comparisons:
         sa, sb = r["site_a"], r["site_b"]
         sym = f"{GREEN}\u2713{RESET}" if r["equivalent"] else f"{RED}\u2717{RESET}"
-        label = f"{sa} \u2261 {sb}"
+        ctype = r.get("comparison_type", "")
+        suffix = f"  {DIM}({_CTYPE_LABEL.get(ctype, ctype)}){RESET}" if ctype and ctype in _CTYPE_LABEL and _CTYPE_LABEL[ctype] else ""
+        label = f"{sa} \u2261 {sb}{suffix}"
         print(f"  {sym} {label}")
+        free_skipped = r.get("details", {}).get("free_skipped", [])
+        for fs in free_skipped:
+            print(f"    {DIM}{fs} (free, skipped){RESET}")
         for d in r["differences"]:
             print(f"    {DIM}{d}{RESET}")
     print(sep)

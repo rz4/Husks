@@ -179,8 +179,18 @@ def compute_artifact_states(site: str, manifest: dict) -> list[dict[str, Any]]:
 def compare_artifacts(
     site_a: str, site_b: str, *,
     check_roots: bool = True, check_hashes: bool = True,
+    respect_free: bool = False,
 ) -> dict[str, Any]:
-    """Compare two sites for equivalence.  Returns dict with equivalent, differences, details."""
+    """Compare two sites for equivalence.  Returns dict with equivalent, differences, details.
+
+    When respect_free is False (default), all outputs are compared strictly —
+    this is the correct mode for cache equivalence (M1↔M2) where even free
+    outputs must be byte-identical.
+
+    When respect_free is True, outputs declared as 'free' in the design's
+    equivalence metadata are skipped — this is the correct mode for independent
+    realization equivalence (M1↔M3) where free outputs are expected to differ.
+    """
     diffs: list[str] = []
     details: dict[str, Any] = {}
     ma, mb = read_manifest(site_a), read_manifest(site_b)
@@ -231,20 +241,22 @@ def compare_artifacts(
                         existing = equiv_map.get(path, rel)
                         equiv_map[path] = "exact" if existing == "exact" or rel == "exact" else rel
 
-        # Compare hashes with equivalence awareness
+        # Compare hashes — respect_free controls whether free outputs are skipped
         free_skipped: list[str] = []
         for o in sorted(set(oa) | set(ob)):
             ha, hb = oa.get(o), ob.get(o)
             if ha != hb:
-                relation = equiv_map.get(o, "exact")
-                if relation == "free":
-                    free_skipped.append(o)
-                    continue
+                if respect_free:
+                    relation = equiv_map.get(o, "exact")
+                    if relation == "free":
+                        free_skipped.append(o)
+                        continue
                 diffs.append(
                     f"output '{o}' differs: "
                     f"{(ha or 'missing')[:16]}... vs {(hb or 'missing')[:16]}..."
                 )
         details["free_skipped"] = free_skipped
+        details["equiv_map"] = equiv_map
 
     return {"equivalent": len(diffs) == 0, "differences": diffs, "details": details}
 
