@@ -8,9 +8,13 @@ from husks.locke import check, check_categorized, _resolve_targets, show, from_j
 
 def _minimal_design(**overrides):
     d = {
-        "name": "test", "fuel": 10, "target": "w",
-        "rules": [{"name": "w", "kind": "oracle", "outputs": ["out.txt"],
-                    "prompt": "go", "fuel": 8}],
+        "name": "test", "fuel": 10, "target": "root",
+        "rules": [
+            {"name": "w", "kind": "oracle", "outputs": ["out.txt"],
+             "prompt": "go", "fuel": 8},
+            {"name": "root", "kind": "action", "inputs": ["out.txt"],
+             "outputs": ["result.txt"], "run": "cp out.txt result.txt"},
+        ],
     }
     d.update(overrides)
     return d
@@ -23,7 +27,7 @@ class TestCheckValid:
         assert check(_minimal_design()) == []
 
     def test_action_with_run(self):
-        d = _minimal_design(rules=[
+        d = _minimal_design(target="w", rules=[
             {"name": "w", "kind": "action", "outputs": ["out.txt"], "run": "echo hi"}])
         assert check(d) == []
 
@@ -32,13 +36,16 @@ class TestCheckValid:
             {"name": "ok", "kind": "commit", "value": "done"},
             {"name": "fail", "kind": "halt", "reason": "err"},
             {"name": "w", "kind": "oracle", "outputs": ["out.txt"], "prompt": "go", "fuel": 4},
+            {"name": "root", "kind": "action", "inputs": ["out.txt"],
+             "outputs": ["result.txt"], "run": "cp out.txt result.txt"},
         ])
         assert check(d) == []
 
     def test_let_rule(self):
-        d = _minimal_design(target="alias", rules=[
+        d = _minimal_design(target="wrap", rules=[
             {"name": "base", "kind": "oracle", "outputs": ["out.txt"], "prompt": "go", "fuel": 4},
-            {"name": "alias", "kind": "let", "bind": "base"},
+            {"name": "wrap", "kind": "action", "inputs": ["out.txt"],
+             "outputs": ["result.txt"], "run": "cp out.txt result.txt"},
         ])
         assert check(d) == []
 
@@ -48,27 +55,35 @@ class TestCheckValid:
             {"name": "fail", "kind": "halt", "reason": "err"},
             {"name": "gate", "kind": "cond", "predicate": "file-exists:x", "then": "ok", "else": "fail"},
             {"name": "w", "kind": "oracle", "outputs": ["out.txt"], "prompt": "go", "fuel": 4},
-        ], target="w")
+            {"name": "root", "kind": "action", "inputs": ["out.txt"],
+             "outputs": ["result.txt"], "run": "cp out.txt result.txt"},
+        ])
         assert check(d) == []
 
     def test_trial_rule(self):
-        d = _minimal_design(rules=[
+        d = _minimal_design(target="wrap", rules=[
             {"name": "t", "kind": "trial", "outputs": ["out.txt"],
              "branches": [{"kind": "oracle", "prompt": "a", "fuel": 4}]},
-        ], target="t")
+            {"name": "wrap", "kind": "action", "inputs": ["out.txt"],
+             "outputs": ["result.txt"], "run": "cp out.txt result.txt"},
+        ])
         assert check(d) == []
 
     def test_site_inputs_produce(self):
         d = _minimal_design(
             site_inputs={"data.txt": "/tmp/data.txt"},
             rules=[{"name": "w", "kind": "oracle", "outputs": ["out.txt"],
-                     "inputs": ["data.txt"], "prompt": "go", "fuel": 4}])
+                     "inputs": ["data.txt"], "prompt": "go", "fuel": 4},
+                    {"name": "root", "kind": "action", "inputs": ["out.txt"],
+                     "outputs": ["result.txt"], "run": "cp out.txt result.txt"}])
         assert check(d) == []
 
     def test_equivalence_valid(self):
-        d = _minimal_design(rules=[
+        d = _minimal_design(target="wrap", rules=[
             {"name": "w", "kind": "oracle", "outputs": ["a.txt", "b.txt"],
-             "prompt": "go", "fuel": 4, "equivalence": {"a.txt": "free", "b.txt": "exact"}}])
+             "prompt": "go", "fuel": 4, "equivalence": {"a.txt": "free", "b.txt": "exact"}},
+            {"name": "wrap", "kind": "action", "inputs": ["a.txt"],
+             "outputs": ["result.txt"], "run": "cp a.txt result.txt"}])
         assert check(d) == []
 
 

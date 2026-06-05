@@ -1,5 +1,53 @@
 # core-bootstrap.locke -- Generates a CSE reader from the frozen spec.
 #
+# Locke syntax reference
+# ──────────────────────
+#
+# Atoms
+#   Terms are keywords on the right side of :=, declaring what a value means.
+#   Data are numerics, quoted strings, or bare paths on the left side of :=.
+#   Lists are delimited by [].
+#
+# Operators
+#   :=  Declare a term.  value := term
+#   :-  Compose residue.  name :- rule [context]
+#
+# Terms are right-sided by convention so a human scanning the file reads
+# structure before semantics -- the opposite of most languages.
+#
+# Design preamble (each declared once)
+#   := design     Public slug of the experiment.
+#   := fuel       Total budget of oracle steps.
+#   := tolerance  Float pair [min max], acceptable compute drift M1..Mn.
+#   := site       Quarantined directory for the build.
+#                 Bare form:  file := site          (identity mapping)
+#                 List form:  dir  := site [f1 f2]  (prefix mapping: dir/f1, dir/f2)
+#
+# Rules
+#   := action [context]   Deterministic gate.
+#     := inputs   Files the action reads.
+#     := run      Shell command to execute.
+#     := free     Output files without equivalence constraint.
+#     := exact    Output files requiring exact-match verification.
+#
+#   := oracle [context]   Nondeterministic step (LLM call).
+#     := inputs   Files the oracle reads.
+#     := free     Output files without equivalence constraint.
+#     := exact    Output files requiring exact-match verification.
+#     := tools    Tool set available to the oracle.
+#     := fuel     Step budget for this oracle.
+#     := prompt   Instructions for the oracle.
+#
+# The target of a design must be an action (use --unsafe to override).
+#
+# Context blocks may nest rules and use:
+#   cond   Conditional execution gated on a predicate.
+#   let    Bind predecessor rules before subsequent ones.
+#   trial  Verified branch across a matrix of action/oracle calls.
+#
+# External designs can be composed via the husk term.
+
+
 
 #- Design fixture
 "core-bootstrap"       := design
@@ -7,9 +55,11 @@
              [0.5 2.0] := tolerance
 
 #- Site inputs: spec files + standalone gate script
-[CSE-v1.md spec/CSE-v1.md
- CSE-v2.md spec/CSE-v2.md
- gate.py   gate.py] := site-inputs
+gate.py := site
+spec := site [
+  CSE-v1.md
+  CSE-v2.md
+]
 
 #- Deterministic validation gate
 validate := action [

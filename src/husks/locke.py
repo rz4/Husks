@@ -318,7 +318,7 @@ def resolve(ast: list, base_dir: str = ".") -> dict[str, Any]:
 
     for node in ast:
         if isinstance(node, DeclNode):
-            if node.label in seen_decls: continue
+            if node.label in seen_decls and node.label != "site": continue
             seen_decls.add(node.label)
             if node.label in ("public", "design"):
                 design["name"] = node.value
@@ -329,10 +329,22 @@ def resolve(ast: list, base_dir: str = ".") -> dict[str, Any]:
             elif node.label in ("cost-tolerance", "tolerance"):
                 design["cost_tolerance"] = {"ratio": node.value}
             elif node.label == "site":
-                root, imports = node.value
-                root_str = str(root)
-                design["site"] = root_str
-                design["site_inputs"] = {str(f): root_str + str(f) for f in imports}
+                si = design.get("site_inputs", {})
+                if isinstance(node.value, tuple):
+                    root, imports = node.value
+                    root_str = str(root)
+                    if len(imports) == 1:
+                        # Single file: LHS = local name, bracket = source path
+                        si[root_str] = str(imports[0])
+                    else:
+                        # Directory prefix: LHS/file for each file
+                        for f in imports:
+                            si[str(f)] = root_str + "/" + str(f)
+                else:
+                    # Bare site: file := site (identity mapping)
+                    name = str(node.value)
+                    si[name] = name
+                design["site_inputs"] = si
         elif isinstance(node, RuleNode):
             _flatten_rule(node, rules, base_dir)
             if node.is_target and target_name is None:

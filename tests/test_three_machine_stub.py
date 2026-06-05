@@ -85,11 +85,11 @@ def test_three_machine_stub_proof(design_file, tmp_path):
     _run_cli("run", design_file, "--stub", "--site", m1)
 
     # Export M1 cache
-    _run_cli("cache", "export", cache_bundle, "--site", m1)
+    _run_cli("cache", "export", m1, cache_bundle)
 
     # Import cache into M2
     os.makedirs(m2, exist_ok=True)
-    _run_cli("cache", "import", cache_bundle, "--site", m2)
+    _run_cli("cache", "import", cache_bundle, m2)
 
     # M2: reuse-only build (should succeed from cache)
     _run_cli("run", design_file, "--reuse-only", "--site", m2)

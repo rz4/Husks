@@ -182,10 +182,15 @@ class TestLockeEndToEnd:
         src = '''
         "e2e-test" := public
         10 := fuel
-        worker := oracle [
+        worker :- oracle [
             "Write hello to out.txt" := prompt
             4 := fuel
             [out.txt] := outputs
+        ]
+        root := action [
+            [out.txt] := inputs
+            "cp out.txt result.txt" := run
+            [result.txt] := outputs
         ]
         '''
         d = _design_from_locke(src)
@@ -204,11 +209,16 @@ class TestLockeEndToEnd:
             "echo data > dep.txt" := run
             [dep.txt] := outputs
         ]
-        step2 := oracle [
+        step2 :- oracle [
             "Process dep.txt" := prompt
             8 := fuel
             [dep.txt] := inputs
             [out.txt] := outputs
+        ]
+        root := action [
+            [out.txt] := inputs
+            "cp out.txt result.txt" := run
+            [result.txt] := outputs
         ]
         '''
         d = _design_from_locke(src)

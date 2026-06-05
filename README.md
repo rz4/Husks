@@ -53,9 +53,11 @@ husks doctor
              [0.5 2.0] := tolerance
 
 #- Site inputs: spec files + standalone gate script
-[CSE-v1.md spec/CSE-v1.md
- CSE-v2.md spec/CSE-v2.md
- gate.py   gate.py] := site-inputs
+gate.py := site
+spec := site [
+  CSE-v1.md
+  CSE-v2.md
+]
 
 #- Deterministic validation gate
 validate := action [
