@@ -64,8 +64,8 @@ Verify the install and check that dependencies are available:
 husks doctor
 ```
 
-Expected: exit code 0. If anything here is not green, stop and fix the
-environment before proceeding.
+Expected: silent, exit code 0. If anything is wrong, failing checks are
+printed to stderr. Fix those before proceeding.
 
 (`python -m pytest tests/ -q` runs the full suite, but that needs a source
 checkout; `doctor` is the install-level soundness check.)

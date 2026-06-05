@@ -301,11 +301,17 @@ option, and examples of `[oracle.params]` and `[oracle.rules.*]`.
 
 ### `husks doctor`
 
-Diagnose the local environment.
+Diagnose the local environment. Silent on success (exit code 0); only prints
+failing checks to stderr.
+
+**Options:**
+- `--json` - Full JSON report (always printed, including passing checks)
+- `--arch` - Verify module import DAG against `layers.toml`
 
 **Example:**
 ```bash
 husks doctor
+husks doctor --json
 ```
 
 ## Visual Output Format
@@ -581,6 +587,7 @@ base `params` instead of replacing it. A rule can also override the
 ## Environment Variables
 
 - `ANTHROPIC_API_KEY` - Required for live oracle calls (not stub). Reference as `$ANTHROPIC_API_KEY` in `.husks.toml`.
+- `HUSKS_CONFORMANCE_DIR` - Override the conformance vectors directory (defaults to the bundled vectors in the wheel, or `spec/conformance/` in an editable install).
 - `PYTHONPATH` - May be needed if running from source
 
 ## FAQ
@@ -668,7 +675,7 @@ See `examples/` for more designs.
 ## References
 
 - **CSE Specification:** `spec/CSE-v1.md`, `spec/CSE-v2.md`
-- **Conformance Vectors:** `spec/conformance/`
+- **Conformance Vectors:** `spec/conformance/` (bundled into the wheel at `husks/_resources/conformance/`)
 - **Permanence Layer:** `src/husks/kernel.py`
 - **Build Engine:** `src/husks/engine.py`
 - **CLI Source:** `src/husks/cli.py`

@@ -258,7 +258,10 @@ def _node_right_parts(node) -> list[str]:
     if node.cache:
         parts.append("\u26a10")
     elif node.fuel is not None:
-        parts.append(f"\u26a1{node.fuel}")
+        if node.fuel_budget is not None:
+            parts.append(f"\u26a1{node.fuel}/{node.fuel_budget}")
+        else:
+            parts.append(f"\u26a1{node.fuel}")
     return parts
 
 
@@ -499,6 +502,7 @@ def collect_hydrated_residue(S: dict, design: dict):
     # Node events from trace
     node_done = {}
     halt_reasons = {}
+    partial_usage = {}
     for ev in trace_events:
         evt = ev.get("event")
         if evt == "fired":
@@ -508,12 +512,14 @@ def collect_hydrated_residue(S: dict, design: dict):
         elif evt == "rule-halted":
             node_done[ev.get("rule")] = "failed"
             halt_reasons[ev.get("rule")] = ev.get("error", "")
+        elif evt == "partial-usage":
+            partial_usage[ev.get("rule")] = ev
 
     nodes = []
     for rule in rules:
         rname = rule["name"]
         raw_state = node_done.get(rname, "")
-        rule_usage = by_rule.get(rname, {})
+        rule_usage = by_rule.get(rname, {}) or partial_usage.get(rname, {})
         cached = rule_usage.get("cached", False) or raw_state == "reused"
         state = map_trace_state(raw_state, cached=cached, failed=(raw_state == "failed"))
 
@@ -1277,15 +1283,10 @@ def _cmd_doctor(args):
         print(json.dumps(out, indent=2))
     else:
         for c in checks:
-            sym = "\u2713" if c["ok"] else "\u2717"
-            print(f"  {sym} {c['name']:<20s} {c['detail']}")
+            if not c["ok"]:
+                print(f"  \u2717 {c['name']:<20s} {c['detail']}")
         if arch is not None:
-            if arch["status"] == "unavailable":
-                print(f"  \u2014 arch                 {arch['detail']}")
-            elif arch["status"] == "ok":
-                n = len(arch["modules"])
-                print(f"  \u2713 arch                 {n} modules, layer DAG clean")
-            else:
+            if arch["status"] == "violations":
                 for v in arch["violations"]:
                     print(f"  \u2717 arch                 {v['module']} (L{v['module_layer']}) "
                           f"imports {v['imports']} (L{v['import_layer']})")
@@ -1444,7 +1445,7 @@ def _cmd_tree(args):
     if sites or dry_sites:
         for dir_name, manifest in sites:
             status = manifest.get("status", "unknown")
-            root = manifest.get("root", "")
+            root = manifest.get("root") or ""
             root_short = root[:12] + "\u2026" if len(root) > 12 else root
             sc = STATE_COLORS.get(status, DIM)
             print(f"  {BOLD}{dir_name}/{RESET}  {sc}{status}{RESET}  {DIM}{root_short}{RESET}")

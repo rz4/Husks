@@ -98,7 +98,7 @@ the same language.
 | Document | Answers | Read after |
 | :-- | :-- | :-- |
 | [three-machine-proof.md](three-machine-proof.md) | What must hold for a build to be independently verifiable? What do gates A–G verify? | theory.md |
-| [spec/conformance/](../spec/conformance/) | How do we prove the Python reader and the JS reader agree? | three-machine-proof |
+| [spec/conformance/](../spec/conformance/) | How do we prove the Python reader and the JS reader agree? Vectors are bundled into the wheel at `husks/_resources/conformance/`. | three-machine-proof |
 
 ## Stratum 4: Formal / Math · *what it actually is* · L1–L0 (`kernel`)
 

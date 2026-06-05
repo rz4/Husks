@@ -29,6 +29,14 @@ class RealizedCost(TypedDict):
     fuel_steps: int
 
 
+class OracleHaltError(RuntimeError):
+    """Oracle terminated abnormally but partial usage was captured."""
+
+    def __init__(self, msg: str, cost: RealizedCost | None = None):
+        super().__init__(msg)
+        self.cost: RealizedCost | None = cost
+
+
 @runtime_checkable
 class OracleBackend(Protocol):
     """Produce an oracle rule's outputs, bounded by tools and fuel.
@@ -671,29 +679,31 @@ class LiteLLMBackend:
              "site_root": site_root, "readonly_roots": ro_roots},
             fuel=fuel,
         )
-        _raise_unless_stop(result)
 
         snap = tracker.snapshot()
-        return RealizedCost(
+        cost = RealizedCost(
             tokens_in=snap["input_tokens"], tokens_out=snap["output_tokens"],
             cost_usd=snap["cost_usd"], fuel_steps=result.get("fuel_steps", 0),
         )
+        _raise_unless_stop(result, cost)
+        return cost
 
 
-def _raise_unless_stop(result: dict[str, Any]) -> None:
+def _raise_unless_stop(result: dict[str, Any], cost: RealizedCost | None = None) -> None:
     """Raise on non-clean termination.  Only clean stop seals."""
     t = result.get("type")
     if t == "stop":
         return
     if t == "error":
-        raise RuntimeError(f"oracle agent error: {result.get('error', 'unknown')}")
+        raise OracleHaltError(f"oracle agent error: {result.get('error', 'unknown')}", cost)
     if t == "halt":
-        raise RuntimeError("oracle agent ran out of fuel")
+        raise OracleHaltError("oracle agent ran out of fuel", cost)
     if t == "kill":
-        raise RuntimeError("oracle agent interrupted")
+        raise OracleHaltError("oracle agent interrupted", cost)
     if t == "say":
-        raise RuntimeError(f"oracle agent produced text without stopping: {result.get('text', '')[:100]}")
-    raise RuntimeError(f"oracle agent returned unexpected type: {t}")
+        raise OracleHaltError(
+            f"oracle agent produced text without stopping: {result.get('text', '')[:100]}", cost)
+    raise OracleHaltError(f"oracle agent returned unexpected type: {t}", cost)
 
 
 # ── ClaudeCodeBackend ────────────────────────────────────────────
@@ -766,9 +776,9 @@ class ClaudeCodeBackend:
             if saved_cc is not None:
                 os.environ["CLAUDECODE"] = saved_cc
 
-        if gate.exhausted:
-            raise RuntimeError("oracle agent ran out of fuel")
         cost["fuel_steps"] = gate.steps
+        if gate.exhausted:
+            raise OracleHaltError("oracle agent ran out of fuel", cost)
         return cost
 
     async def _run_async(self, prompt: str, system: str, allowed_cc: set[str],

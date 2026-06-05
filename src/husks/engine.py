@@ -706,6 +706,16 @@ def eval_rule(S: Store, node: Node) -> None:
     except Exception as e:
         elapsed_err = time.time() - t0
         S["trace"].append({"event": "rule-halted", "rule": name, "error": str(e)})
+        # Preserve partial usage from oracle halt (tokens, cost)
+        partial = getattr(e, "cost", None)
+        if partial:
+            S["trace"].append({
+                "event": "partial-usage", "rule": name,
+                "input_tokens": partial.get("tokens_in", 0),
+                "output_tokens": partial.get("tokens_out", 0),
+                "cost_usd": partial.get("cost_usd", 0.0),
+                "fuel_consumed": partial.get("fuel_steps", 0),
+            })
         S["trace"].append({"event": "node_done", "name": name, "state": "failed", "elapsed": elapsed_err})
         raise
 

@@ -28,13 +28,11 @@ def _conformance_dir() -> Path:
         if p.exists():
             return p
 
-    # Bundled in wheel
+    # Use the package accessor (handles wheel bundle and editable fallback)
     try:
-        import husks
-        bundled = Path(husks.__file__).resolve().parent / "_resources" / "conformance"
-        if bundled.exists():
-            return bundled
-    except ImportError:
+        from husks._resources import conformance_dir
+        return conformance_dir()
+    except (ImportError, FileNotFoundError):
         pass
 
     # Repo-relative: examples/core-bootstrap -> repo -> spec/conformance

@@ -84,6 +84,10 @@ _validate_husk_path rejects:
 
 ## Conformance vectors
 
+Vectors live in spec/conformance/ in the repo and are bundled into the
+wheel at husks/_resources/conformance/ via force-include. Use
+husks._resources.conformance_dir() for reliable resolution.
+
 All vectors in spec/conformance/ must pass:
   - demo.husk + demo.site -> demo.root
   - unsorted.husk + unsorted.site -> unsorted.root

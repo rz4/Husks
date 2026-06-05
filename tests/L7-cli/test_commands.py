@@ -194,9 +194,7 @@ class TestCmdDoctor:
         args = _make_args(json_output=False, selftest=False)
         _cmd_doctor(args)
         out = capsys.readouterr().out
-        assert "kernel" in out
-        assert "locke" in out
-        assert "report" in out
+        assert out == ""
 
     def test_json(self, capsys):
         args = _make_args(json_output=True, selftest=False)
@@ -771,7 +769,7 @@ class TestMainArgparse:
         monkeypatch.setattr(sys, "argv", ["husks", "doctor"])
         _cmd_doctor(_make_args(json_output=False, selftest=False))
         out = capsys.readouterr().out
-        assert "kernel" in out
+        assert out == ""
 
 
 class TestCliEntry:
