@@ -20,7 +20,7 @@ husks run core-bootstrap.locke --site m1 --stub
 husks verify m1
 
 # Inspect the build residue
-husks status --site m1
+husks status m1
 ```
 
 ## The Three-Machine Proof
@@ -83,7 +83,6 @@ Validate design structure and dependencies.
 **Options:**
 - `--json` - JSON output with validation details
 - `--verbose` - Show full validation report
-- `--site <dir>` - Overlay freshness states from site manifest
 
 **Example:**
 ```bash
@@ -92,9 +91,6 @@ husks check core-bootstrap.locke
 
 # JSON output
 husks check core-bootstrap.locke --json
-
-# Check with site overlay
-husks check core-bootstrap.locke --site m1
 ```
 
 ### `husks run <design>`
@@ -144,12 +140,12 @@ that built it can be discarded.
 husks verify m1
 ```
 
-### `husks status --site <dir>`
+### `husks status <site>`
 
 Inspect a built site's state and freshness.
 
-**Required:**
-- `--site <dir>` - Site directory with manifest and build state
+**Arguments:**
+- `<site>` - Site directory with manifest and build state
 
 **Options:**
 - `--json` - JSON output
@@ -157,23 +153,26 @@ Inspect a built site's state and freshness.
 
 **Example:**
 ```bash
-husks status --site m1
-husks status --site m1 --json
+husks status m1
+husks status m1 --json
 ```
 
-### `husks history --site <dir>`
+### `husks history <site> [rule]`
 
 Show convergence history across runs for a site.
 
-**Required:**
-- `--site <dir>` - Site directory
+**Arguments:**
+- `<site>` - Site directory
+- `[rule]` - Optional rule name to filter
 
 **Options:**
+- `-n <count>` - Number of runs to show (default: 5)
 - `--json` - JSON output
 
 **Example:**
 ```bash
-husks history --site m1
+husks history m1
+husks history m1 generate
 ```
 
 ### `husks compare <sites...>`
@@ -252,38 +251,33 @@ husks doctor
 
 ## Visual Output Format
 
-Husks renders a bounded CSE block:
+Husks renders a diamond card with a motif tree:
 
 ```
-────────────────────────────────────────────────────────────
- core-bootstrap      sealed             ⚡2/20
- cse:core-bootstrap.husk
- site:m1
-────────────────────────────────────────────────────────────
- ■ validate                  action          0.05s
-      out:readers/gate-report.txt@7f6aec
-      out:readers/VERIFIED@e3b0c4
-    └─ ■ generate            oracle          0.01s     $0.0008     ⚡10
-      out:readers/generated_reader.py@09e95b
-────────────────────────────────────────────────────────────
- passes: run
+     ◆    design: core-bootstrap
+    ╱ ╲   state:  sealed
+   ◆ ◆ ◆  husk:   0bb90a01b978767c...
+    ╲ ╱   root:   182e3015da5cc7d4...
+     ◆    site:   M1
+
+  status
+  ───────────────────────────────────────────────────────────────────────────────
+  ■ validate          action                                                 0.1s
+  └─ ■ generate       oracle            15.3kin · 3.1kout · $0.0306 · 25.1s · ⚡3
+  ───────────────────────────────────────────────────────────────────────────────
+  sealed                                15.3kin · 3.1kout · $0.0306 · 25.2s · ⚡4
 ```
 
-### Header (3 lines)
+### Diamond Card
 
-**Line 1:** Name, status, fuel
-- Design name (left-aligned)
-- Status (sealed/failed/stale)
-- Fuel budget (right-aligned): ⚡consumed/total
+The card header shows:
+- `design:` - Design name
+- `state:` - Build state (sealed/checked/failed)
+- `husk:` - CSE husk hash
+- `root:` - Build root hash (green if sealed, red if failed)
+- `site:` - Site directory name
 
-**Line 2:** CSE artifact and root
-- `cse:<filename>` - CSE husk path
-- `root:<hash>` - Build root (if committed)
-
-**Line 3:** Site
-- `site:<name>` - Site directory name
-
-### Node Records
+### Motif Tree
 
 Each node shows:
 - **Glyph:** State indicator
@@ -295,28 +289,11 @@ Each node shows:
 
 - **Name:** Rule name
 - **Kind:** oracle/action/trial
-- **Duration:** Execution time (if measured)
-- **Fuel:** ⚡consumed (oracles only)
-- **Cost:** USD cost (oracles only)
-- **Fuel budget:** ⚡N (oracle budget, right-aligned)
+- Right-aligned metadata: tokens, cost, duration, fuel consumed
 
-### Output Records
+### Summary Line
 
-Each output shows:
-```
-      out:<path>@<hash-prefix>
-```
-- `<path>` - Relative output path
-- `<hash-prefix>` - First 6 chars of SHA-256 hash
-- `??????` if output missing/failed
-
-### Summary
-
-Bottom line shows pass/fail categories:
-```
- passes: run, cache
- failures in run
-```
+Bottom line aggregates totals: tokens, cost, duration, and total fuel steps.
 
 ## JSON Report Schema (beta-1)
 
@@ -332,8 +309,8 @@ The JSON report follows the beta-1 schema:
   "site": "m1",
   "elapsed_s": 0.063,
   "fuel": {
-    "start": 20,
-    "end": 18
+    "start": 5,
+    "end": 4
   },
   "cost": {
     "paid": 0.0008,
@@ -397,58 +374,51 @@ The JSON report follows the beta-1 schema:
 
 The default template demonstrates CSE bootstrapping:
 
-**Goal:** Generate a CSE reader from specs, then validate it compiles.
+**Goal:** Generate a CSE reader from specs, then validate it against
+frozen conformance vectors.
 
 **Rules:**
 
 1. **generate** (oracle)
    - Inputs: `CSE-v1.md`, `CSE-v2.md`
-   - Output: `readers/generated_reader.py`
-   - Prompt: Read CSE specs, implement byte-level CSE reader
+   - Output: `readers/generated_reader.py` (free)
    - Tools: read-file, write-file
-   - Fuel: 10
+   - Fuel: 4
 
-2. **validate** (action)
+2. **validate** (action, target)
    - Input: `readers/generated_reader.py`
-   - Outputs: `readers/gate-report.txt`, `readers/VERIFIED`
-   - Command: Compile reader, write validation proof
-   - Fuel: N/A (actions don't consume fuel)
+   - Outputs: `readers/gate-report.txt` (free), `readers/VERIFIED` (exact)
+   - Command: `python3 gate.py` — runs the reader against frozen vectors
+   - Actions don't consume fuel
 
 **Design principles:**
 - Minimal: 2 rules, 1 oracle, 1 action
-- Self-verifying: Generated code must compile
-- Deterministic: Stub oracle produces reference implementation
-- Portable: Works on any machine with Python 3
+- Self-verifying: the gate checks conformance, not just compilation
+- Deterministic gate: `readers/VERIFIED` carries a conformance digest
+- Portable: works on any machine with Python 3
 
 ## Stub Oracle Mode
 
-The `--stub` flag uses a deterministic oracle backend for testing:
+The `--stub` flag uses the default oracle backend — a deterministic
+stub that writes placeholder content to each declared output:
+
+```python
+def default_oracle_backend(S, rule_name, recipe, outputs):
+    content = f"# oracle output: {rule_name}\n# prompt: {prompt}\n"
+    for o in outputs:
+        write_text(site_path(S, o, write=True), content)
+    return {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0,
+            "fuel_steps": 1, "backend": "stub", "model": "stub"}
+```
 
 **Behavior:**
-- Zero API cost
+- Zero API cost, zero tokens
 - Deterministic outputs (reproducible builds)
-- Reports synthetic token/cost metrics
-- Special handling for core-bootstrap's `generate` rule
-
-**Core-bootstrap stub:**
-```python
-if rule_name == "generate":
-    # Copy reference reader from package resources
-    ref_reader = pkg_root / "_resources" / "bootstrap_reader.py"
-    write_text(output_path, ref_reader.read_text())
-    return {
-        "tokens_in": 840,
-        "tokens_out": 320,
-        "cost_usd": 0.0008,
-        "fuel_steps": 10,
-        "backend": "stub",
-        "model": "stub"
-    }
-```
+- No API keys needed
 
 This enables:
 - **M1/M3 equivalence:** Both use stub, get identical outputs
-- **Zero-cost testing:** No API keys needed
+- **Zero-cost testing:** Full three-machine proof without any API access
 - **Reproducible proofs:** Same inputs → same outputs
 
 ## Cache Mechanics
@@ -528,6 +498,8 @@ Husks uses a unified state model across all commands:
 | 1 | Build failure (halted, failed rules, validation errors) |
 | 2 | Usage error (invalid arguments, missing files) |
 | 3 | Missing dependency (litellm not installed) |
+| 4 | Dirty or stale site (with `--fail-if-dirty` / `--fail-if-stale`) |
+| 5 | Internal error |
 
 ## Environment Variables
 
@@ -615,8 +587,10 @@ See `examples/` for more designs.
 ## References
 
 - **CSE Specification:** `spec/CSE-v1.md`, `spec/CSE-v2.md`
-- **Bootstrap Reader:** `src/husks/_resources/bootstrap_reader.py`
+- **Conformance Vectors:** `spec/conformance/`
+- **Permanence Layer:** `src/husks/kernel.py`
+- **Build Engine:** `src/husks/engine.py`
 - **CLI Source:** `src/husks/cli.py`
 - **Report/Manifest:** `src/husks/report.py`
-- **Build Engine:** `src/husks/engine.py`
-- **Architecture:** [architecture.md](architecture.md)
+- **Locke Parser:** `src/husks/locke.py`
+- **Conformance Gate:** `examples/core-bootstrap/gate.py`

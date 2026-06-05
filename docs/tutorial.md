@@ -103,7 +103,7 @@ Expected output:
     CSE-v2.md
 ```
 
-The green **✓** next to the design means all of its `site-inputs` exist on
+The green **✓** next to the design means all of its site inputs exist on
 disk. If any source file were missing you would see a red **✗** with the
 missing paths listed. Fix those before proceeding — the build will fail
 without them.
@@ -185,9 +185,9 @@ Add `--json` for machine-readable output with `proof.satisfied` and
 ### Inspect individual machines (optional)
 
 ```bash
-husks status --site m1   # M1: paid oracle cost
-husks status --site m2   # M2: cached reuse
-husks status --site m3   # M3: independent realization
+husks status m1   # M1: paid oracle cost
+husks status m2   # M2: cached reuse
+husks status m3   # M3: independent realization
 ```
 
 ---
