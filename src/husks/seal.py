@@ -481,12 +481,22 @@ def write_build_manifest(
     *,
     design_source: str | None = None,
     design_kind: str | None = None,
+    design: dict[str, Any] | None = None,
 ) -> None:
     """Write .traces/build.manifest.json with build status and rule summary."""
     seen: set[str] = set()
     rules: list[dict[str, Any]] = []
     for node in nodes:
         rules.extend(_collect_rules(node, seen))
+
+    # Merge design-level metadata into manifest rules (equivalence, etc.)
+    if design:
+        design_rules = {r["name"]: r for r in design.get("rules", []) if isinstance(r, dict)}
+        for rule in rules:
+            dr = design_rules.get(rule["name"], {})
+            equiv = dr.get("equivalence")
+            if equiv:
+                rule["equivalence"] = equiv
 
     manifest: dict[str, Any] = {
         "schema": "husks.build.manifest.v1",
@@ -501,4 +511,12 @@ def write_build_manifest(
         manifest["design_source"] = design_source
     if design_kind:
         manifest["design_kind"] = design_kind
+    # Preserve cost_tolerance and oracle backend name for compare
+    if design:
+        ct = design.get("cost_tolerance")
+        if ct:
+            manifest["cost_tolerance"] = ct
+    backend_name = S.get("oracle-backend-name")
+    if backend_name:
+        manifest["oracle_backend"] = backend_name
     write_text(site_path(S, ".traces/build.manifest.json"), json.dumps(manifest, indent=2))

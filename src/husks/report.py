@@ -178,18 +178,28 @@ def compute_artifact_states(site: str, manifest: dict) -> list[dict[str, Any]]:
 
 def compare_artifacts(
     site_a: str, site_b: str, *,
-    check_roots: bool = True, check_hashes: bool = True,
+    check_root_equality: bool = True,
+    check_root_validity: bool = True,
+    check_hashes: bool = True,
     respect_free: bool = False,
 ) -> dict[str, Any]:
     """Compare two sites for equivalence.  Returns dict with equivalent, differences, details.
 
-    When respect_free is False (default), all outputs are compared strictly —
-    this is the correct mode for cache equivalence (M1↔M2) where even free
-    outputs must be byte-identical.
-
-    When respect_free is True, outputs declared as 'free' in the design's
-    equivalence metadata are skipped — this is the correct mode for independent
-    realization equivalence (M1↔M3) where free outputs are expected to differ.
+    Parameters
+    ----------
+    check_root_equality : bool
+        Require root hashes to be identical.  True for cache equivalence
+        (M1↔M2), False for independent realization (M1↔M3) where roots
+        are expected to differ when free outputs exist.
+    check_root_validity : bool
+        Verify each site's root by recomputing from the .husk artifact.
+        True for all proof-bearing comparisons.
+    check_hashes : bool
+        Compare per-output sealed hashes.
+    respect_free : bool
+        When True, skip outputs declared 'free' in equivalence metadata.
+        Use for independent realization (M1↔M3).  When False, all outputs
+        are compared strictly (cache equivalence, M1↔M2).
     """
     diffs: list[str] = []
     details: dict[str, Any] = {}
@@ -201,11 +211,14 @@ def compare_artifacts(
     if ma is None or mb is None:
         return {"equivalent": False, "differences": diffs, "details": {}}
 
-    if check_roots:
-        ra, rb = ma.get("root"), mb.get("root")
-        details["root_a"], details["root_b"] = ra, rb
+    ra, rb = ma.get("root"), mb.get("root")
+    details["root_a"], details["root_b"] = ra, rb
+
+    if check_root_equality:
         if ra != rb:
             diffs.append(f"build roots differ: {(ra or '')[:16]}... vs {(rb or '')[:16]}...")
+
+    if check_root_validity:
         for label, m, site in [("A", ma, site_a), ("B", mb, site_b)]:
             name = m.get("name")
             root = m.get("root")
@@ -220,6 +233,10 @@ def compare_artifacts(
                     except Exception as e:
                         details[f"root_{label.lower()}_valid"] = False
                         diffs.append(f"site {label} root verification failed: {e}")
+
+    if check_root_equality or check_root_validity:
+        # Report root convergence as informational (not in diffs)
+        details["roots_match"] = (ra is not None and ra == rb)
 
     if check_hashes:
         oa, ob = {}, {}

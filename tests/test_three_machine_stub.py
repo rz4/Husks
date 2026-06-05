@@ -124,14 +124,49 @@ def test_three_machine_stub_proof(design_file, tmp_path):
         f"Three-machine proof not satisfied: {out['proof']}"
     )
 
-    # Verify oracle-specific evidence checks
-    checks = {c["label"]: c["ok"] for c in out["proof"]["checks"]}
-    assert checks.get("M1 fired oracles") is True, (
-        f"M1 should show fired oracles: {checks}"
+    # Verify required proof checks
+    checks = {c["label"]: c for c in out["proof"]["checks"]}
+    required_labels = [
+        "M1\u2194M2\u2194M3 husk identical",
+        "M1\u2194M2 root identical",
+        "M1 root valid",
+        "M2 root valid",
+        "M3 root valid",
+        "M1 fired oracles",
+        "M2 cache reuse",
+        "M3 fired oracles",
+        "M1\u2194M3 acceptance equivalent",
+    ]
+    for label in required_labels:
+        assert label in checks, f"Missing required check '{label}': {list(checks.keys())}"
+        assert checks[label]["ok"] is True, (
+            f"Required check '{label}' failed: {checks[label]}"
+        )
+        assert checks[label]["required"] is True, (
+            f"Check '{label}' should be required: {checks[label]}"
+        )
+
+    # Verify observational checks exist (not required to pass)
+    observational_labels = [
+        "M1 paid cost",
+        "M2 zero oracle cost",
+        "M3 paid cost",
+        "M1\u2194M3 root convergence",
+    ]
+    for label in observational_labels:
+        assert label in checks, f"Missing observational check '{label}': {list(checks.keys())}"
+        assert checks[label]["required"] is False, (
+            f"Check '{label}' should be observational: {checks[label]}"
+        )
+
+    # Stub runs should NOT have cost/fuel comparability checks (those are live-only)
+    assert "M1\u2194M3 cost comparable" not in checks, (
+        "Stub runs should not include cost comparability check"
     )
-    assert checks.get("M2 cache reuse") is True, (
-        f"M2 should show cache reuse: {checks}"
-    )
-    assert checks.get("M3 fired oracles") is True, (
-        f"M3 should show fired oracles: {checks}"
-    )
+
+    # Verify comparison types in pairwise results
+    comp_types = {(c["site_a"], c["site_b"]): c["comparison_type"]
+                  for c in out["comparisons"]}
+    assert comp_types[(m1, m2)] == "cache"
+    assert comp_types[(m1, m3)] == "realization"
+    assert comp_types[(m2, m3)] == "observational"

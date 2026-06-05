@@ -916,22 +916,37 @@ def _cmd_compare(args):
 
     # Pairwise artifact comparisons.
     # For three sites (M1, M2, M3):
-    #   M1↔M2 = cache equivalence (strict: all outputs must match)
-    #   M1↔M3, M2↔M3 = independent realization (free outputs may differ)
+    #   M1↔M2 = cache equivalence: root equality + all output hashes strict
+    #   M1↔M3 = acceptance equivalence: root validity only, skip free outputs
+    #   M2↔M3 = observational: same params as M1↔M3, not proof-bearing
     all_equiv = True
     results = []
     is_three = len(sites) == 3
     for i in range(len(sites)):
         for j in range(i + 1, len(sites)):
-            # Cache equivalence: M1↔M2 (indices 0,1). All others are independent realization.
-            is_cache_pair = is_three and i == 0 and j == 1
-            respect_free = is_three and not is_cache_pair
-            ctype = "cache" if is_cache_pair else ("realization" if is_three else "pairwise")
-            r = compare_artifacts(
-                sites[i], sites[j],
-                check_roots=check_roots, check_hashes=check_hashes,
-                respect_free=respect_free,
-            )
+            if is_three and i == 0 and j == 1:
+                ctype = "cache"
+                r = compare_artifacts(
+                    sites[i], sites[j],
+                    check_root_equality=check_roots, check_root_validity=check_roots,
+                    check_hashes=check_hashes, respect_free=False,
+                )
+            elif is_three:
+                ctype = "realization" if (i == 0 and j == 2) else "observational"
+                # Independent realization: compare non-free hashes only.
+                # Root validity is checked per-site in _three_machine_checks.
+                r = compare_artifacts(
+                    sites[i], sites[j],
+                    check_root_equality=False, check_root_validity=False,
+                    check_hashes=check_hashes, respect_free=True,
+                )
+            else:
+                ctype = "pairwise"
+                r = compare_artifacts(
+                    sites[i], sites[j],
+                    check_root_equality=check_roots, check_root_validity=check_roots,
+                    check_hashes=check_hashes, respect_free=False,
+                )
             r["site_a"], r["site_b"] = sites[i], sites[j]
             r["comparison_type"] = ctype
             results.append(r)
@@ -962,34 +977,112 @@ def _cmd_compare(args):
 def _three_machine_checks(residues, comparisons):
     """Run three-machine proof checks.  Returns list of (label, passed, required) tuples.
     Proof is satisfied when all required checks pass."""
+    from husks.report import read_manifest
+    from husks.kernel import recompute_root
     m1, m2, m3 = residues
     checks = []  # (label, passed, required)
-    # ── Proof invariants (required) ───────────────────────────
-    # Husk hash must be identical across all three machines.
+
+    # Look up pairwise comparison results by site pair.
+    def _pair(ra, rb):
+        return next((r for r in comparisons
+                     if {r["site_a"], r["site_b"]} == {ra.site, rb.site}), None)
+    m1_m2 = _pair(m1, m2)
+    m1_m3 = _pair(m1, m3)
+
+    # Detect stub vs live: check oracle backend from manifest or history.
+    is_stub = False
+    for site in (m1.site, m3.site):
+        mf = read_manifest(site)
+        if mf and mf.get("oracle_backend") == "stub":
+            is_stub = True
+            break
+    if not is_stub:
+        # Fallback: check if all oracle nodes report zero cost (stub indicator)
+        m1_oracles_pre = [n for n in m1.nodes if n.kind == "oracle"]
+        if m1_oracles_pre and all((n.cost or 0.0) == 0.0 for n in m1_oracles_pre):
+            is_stub = True
+
+    # ── Required: structural invariants ───────────────────────
     husk_match = (m1.husk_hash is not None and m1.husk_hash == m2.husk_hash == m3.husk_hash)
     checks.append(("M1\u2194M2\u2194M3 husk identical", husk_match, True))
-    # Root hash must be identical between M1 and M2 (cache determinism).
+
     root_match = (m1.root is not None and m1.root == m2.root)
     checks.append(("M1\u2194M2 root identical", root_match, True))
-    # ── Evidence checks ─────────────────────────────────────────
+
+    # ── Required: per-site root validity ──────────────────────
+    # Computed independently from pairwise comparisons.
+    for label, res in [("M1", m1), ("M2", m2), ("M3", m3)]:
+        valid = False
+        if res.root and res.site:
+            mf = read_manifest(res.site)
+            if mf:
+                design_name = mf.get("name", "")
+                hp = Path(res.site) / f"{design_name}.husk"
+                if hp.exists():
+                    try:
+                        recomp = recompute_root(hp.read_bytes(), res.site)
+                        valid = (recomp == res.root)
+                    except Exception:
+                        pass
+        checks.append((f"{label} root valid", valid, True))
+
+    # ── Required: oracle evidence ─────────────────────────────
     m1_oracles = [n for n in m1.nodes if n.kind == "oracle"]
     m2_oracles = [n for n in m2.nodes if n.kind == "oracle"]
     m3_oracles = [n for n in m3.nodes if n.kind == "oracle"]
     has_oracles = bool(m1_oracles)
+
     checks.append(("M1 fired oracles",
                     any(n.state == "fired" and not n.cache for n in m1_oracles) if m1_oracles else False,
                     has_oracles))
-    checks.append(("M1 paid cost", (m1.cost or 0.0) > 0, False))
-    checks.append(("M2 zero oracle cost", (m2.cost or 0.0) == 0.0, False))
     checks.append(("M2 cache reuse",
                     any(n.cache or n.state == "cached" for n in m2_oracles),
                     has_oracles))
     checks.append(("M3 fired oracles",
                     any(n.state == "fired" and not n.cache for n in m3_oracles) if m3_oracles else False,
                     has_oracles))
+
+    # ── Required: M1↔M3 acceptance equivalence ───────────────
+    # Independent realization must agree on exact outputs (free outputs skipped).
+    m1_m3_equiv = m1_m3["equivalent"] if m1_m3 else False
+    checks.append(("M1\u2194M3 acceptance equivalent", m1_m3_equiv, True))
+
+    # ── Required (live only): cost/fuel comparability ─────────
+    if not is_stub and has_oracles:
+        # Read cost_tolerance from manifest if available, else default.
+        ct_ratio = [0.5, 2.0]
+        for site in (m1.site,):
+            mf = read_manifest(site)
+            if mf:
+                ct = mf.get("cost_tolerance", {})
+                if isinstance(ct, dict) and "ratio" in ct:
+                    ct_ratio = ct["ratio"]
+                    break
+        c1, c3 = m1.cost or 0.0, m3.cost or 0.0
+        if c1 > 0 and c3 > 0:
+            ratio = c3 / c1
+            cost_ok = ct_ratio[0] <= ratio <= ct_ratio[1]
+        else:
+            cost_ok = True  # Can't compare if one is zero
+        checks.append(("M1\u2194M3 cost comparable", cost_ok, True))
+
+        f1, f3 = m1.fuel_used or 0, m3.fuel_used or 0
+        if f1 > 0 and f3 > 0:
+            fuel_ratio = f3 / f1
+            fuel_ok = ct_ratio[0] <= fuel_ratio <= ct_ratio[1]
+        else:
+            fuel_ok = (f1 == f3)  # Both zero or both nonzero
+        checks.append(("M1\u2194M3 fuel comparable", fuel_ok, True))
+
+    # ── Observational ─────────────────────────────────────────
+    checks.append(("M1 paid cost", (m1.cost or 0.0) > 0, False))
+    checks.append(("M2 zero oracle cost", (m2.cost or 0.0) == 0.0, False))
     checks.append(("M3 paid cost", (m3.cost or 0.0) > 0, False))
-    m1_m3 = next((r for r in comparisons if {r["site_a"], r["site_b"]} == {m1.site, m3.site}), None)
-    checks.append(("M1\u2194M3 outputs equivalent", m1_m3["equivalent"] if m1_m3 else False, False))
+
+    # Root convergence between M1 and M3 is observational only.
+    roots_match = m1_m3.get("details", {}).get("roots_match", False) if m1_m3 else False
+    checks.append(("M1\u2194M3 root convergence", roots_match, False))
+
     return checks
 
 
@@ -1018,7 +1111,7 @@ def _render_compare_visual(residues, comparisons, proof_checks, proof_satisfied=
     # Pairwise equivalence checks.
     print(f"  {BOLD}equivalence{RESET}")
     print(sep)
-    _CTYPE_LABEL = {"cache": "cache", "realization": "realization", "pairwise": ""}
+    _CTYPE_LABEL = {"cache": "cache", "realization": "realization", "observational": "observational", "pairwise": ""}
     for r in comparisons:
         sa, sb = r["site_a"], r["site_b"]
         sym = f"{GREEN}\u2713{RESET}" if r["equivalent"] else f"{RED}\u2717{RESET}"

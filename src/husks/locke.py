@@ -1024,4 +1024,5 @@ def run(design: Design, **overrides: Any) -> dict[str, Any]:
     site = kwargs.get("site")
     if imports and site:
         kwargs["readonly_dirs"] = setup_imports(site, imports)
+    kwargs["design"] = design
     return build(name, fuel, *terminals, **kwargs)

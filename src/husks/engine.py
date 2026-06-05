@@ -1036,7 +1036,8 @@ def build(
             write_bytes_atomic(site_path(S, f"{name}.husk"), husk_bytes)
             write_build_manifest(S, name, nodes,
                                  design_source=kwargs.get("design_source"),
-                                 design_kind=kwargs.get("design_kind"))
+                                 design_kind=kwargs.get("design_kind"),
+                                 design=kwargs.get("design"))
         except Exception as e:
             S["status"] = "halted"
             S["value"] = f"failed to write verification artifacts: {e}"
@@ -1046,7 +1047,8 @@ def build(
         try:
             write_build_manifest(S, name, nodes,
                                  design_source=kwargs.get("design_source"),
-                                 design_kind=kwargs.get("design_kind"))
+                                 design_kind=kwargs.get("design_kind"),
+                                 design=kwargs.get("design"))
         except Exception:
             pass
 
