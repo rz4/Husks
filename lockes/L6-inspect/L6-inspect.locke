@@ -1,0 +1,147 @@
+# L6-inspect.locke -- Contract for the hardened L6 inspect layer.
+#
+# This Locke specifies the invariants that @site/src/report.py must
+# satisfy.  L6 provides manifests, freshness, convergence, dependency
+# graphs, report assembly/rendering/validation, and CLI data models.
+# Named report.py (not inspect.py) to avoid shadowing stdlib inspect.
+
+## Identity
+
+name:    L6-inspect
+layer:   L6
+source:  @site/src/report.py
+tests:   @site/tests/L6-inspect/
+depends: L0-kernel (recompute_root for artifact comparison)
+
+## Dependency constraint
+
+report.py imports kernel (L0) for recompute_root and Python stdlib
+(json, hashlib, pathlib, dataclasses, typing).  No husks.utils imports.
+No ANSI color coupling.  No BuildTrace coupling.
+
+## §1 Schema validation
+
+SUPPORTED_MANIFEST_SCHEMAS: {"husks.build.manifest.v1"}
+SUPPORTED_SEAL_VERSIONS: {1}
+
+validate_manifest_schema(data) -> (bool, str | None)
+  Validates manifest v1: schema, name, root, site, run_id, rules.
+
+validate_seal_schema(data) -> (bool, str | None)
+  Validates seal v1: v, seal, recipe_digest, inputs.
+
+## §2 Manifest I/O
+
+read_manifest(site) -> dict | None
+  Read .traces/build.manifest.json.  None if missing/invalid.
+
+read_seal(site, rule_name) -> dict | None
+  Read .traces/{rule_name}.seal.  None if missing/invalid.
+
+read_trial_report(site, rule_name) -> dict | None
+  Read .traces/{rule_name}.trial.json.  None if missing.
+
+## §3 Freshness
+
+file_hash(path) -> str | None
+  SHA-256 hex of file contents, or None if missing.
+
+compute_rule_state(site, rule, seal) -> (state, reason)
+  States: fresh, stale, missing, dirty.
+
+compute_rule_states(site, manifest) -> list[dict]
+  Per-rule: name, kind, state, reason.
+
+compute_artifact_states(site, manifest) -> list[dict]
+  Per-artifact: path, rule, state, sealed_hash, current_hash.
+
+## §4 Artifact comparison
+
+compare_artifacts(site_a, site_b, check_roots, check_hashes) -> dict
+  Returns: equivalent, differences, details.
+  Uses recompute_root from L0 kernel for root verification.
+
+## §5 History & Convergence
+
+read_history(site, rule_name) -> list[dict]
+  Read JSONL history from .traces/{rule}.history.jsonl.
+
+_trend(values) -> str
+  Classify: 'falling', 'rising', or 'flat'.
+
+convergence_summary(rule_name, site, n=5) -> dict
+  Classification: stable, converging, prompt-loading, volatile, no-data.
+  Trends: fuel_trend, prompt_trend, output_stable.
+
+declared_vs_traced(design, site) -> dict[str, list[str]]
+  Diff declared inputs vs actual traced reads.
+
+## §6 Dependency graph
+
+extract_edges(design) -> (nodes, edges)
+  Infer edges from input/output overlap, cond then/else, let bind.
+
+render_graph(design, fmt, site, root_hash) -> str
+  Formats: text (bordered DAG tree), mermaid, dot, json.
+  Freshness overlay when site provided.
+
+## §7 CLI data models
+
+CliOutput(path, sha256)
+CliTrace(backend, model, config_hash, prompt_hash, input_tokens,
+         output_tokens, elapsed_s, cost_usd, stdout, stderr, cache_source)
+CliNode(name, kind, state, children, fuel, fuel_budget, cost, cache,
+        output_hash, diagnosis, stale_reason, duration, outputs, trace,
+        seal_digest, recipe_digest, input_hashes, output_hashes)
+CliResidue(command, design_name, status, site, cse_path, root, husk_hash,
+           target, fuel_budget, fuel_used, run_count, cost, nodes,
+           passes, fails, error_message)
+
+## §8 State mapping
+
+map_manifest_state(manifest_state) -> str
+  fresh->sealed, else->stale.
+
+map_display_status(status, command) -> str
+  committed->sealed, halted->failed, check+dry->checked.
+
+map_trace_state(trace_event, cached, failed) -> str
+  fired->sealed, reused/cached->cached, failed->failed, else->unrealized.
+
+## §9 Report assembly
+
+assemble(store, events, design, elapsed_s) -> dict
+  Build report from Store + plain event dicts + design IR.
+  Events: node_done, rule_start, rule_halted, artifact.
+  No BuildTrace coupling (accepts list[dict], not trace object).
+  Returns beta-1 schema report.
+
+## §10 Report rendering
+
+render_text(report) -> str
+  Structured text: labels, table, diagnosis.
+
+render_concise(report) -> str
+  One-line-per-rule summary with state symbols.
+
+render_json(report) -> str
+  Pretty-printed JSON (json.dumps with indent=2).
+
+## §11 Report validation
+
+validate_report_schema(report) -> (bool, list[str])
+  Validates beta-1 contract: top-level fields, fuel, cost, delta,
+  nodes (per-node fields, cost, tokens), diagnosis for halted.
+
+## What is NOT in L6
+
+- CLI commands (status, explain, compare, history) — L7
+- ANSI terminal colors and formatting — L7
+- Interactive navigation (cursor, aperture) — L7
+- CLI argument parsing — L7
+- BuildTrace event system — dropped (plain dicts instead)
+- Module-level global state — none
+
+## Verification command
+
+    python -m pytest @site/tests/L6-inspect/ -v --tb=short

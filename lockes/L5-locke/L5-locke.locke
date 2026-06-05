@@ -1,0 +1,126 @@
+# L5-locke.locke -- Contract for the hardened L5 locke layer.
+#
+# This Locke specifies the invariants that @site/src/locke.py must
+# satisfy.  L5 provides the Locke compiler: tokenizer, parser,
+# resolver, validator, executor, I/O, and pretty-printer.
+
+## Identity
+
+name:    L5-locke
+layer:   L5
+source:  @site/src/locke.py
+tests:   @site/tests/L5-locke/
+depends: L0-kernel, L2-seal, L3-engine (deferred imports in executor only)
+
+## Dependency constraint
+
+locke.py tokenizer/parser/resolver/validator sections import ONLY Python stdlib
+(json, os, subprocess, pathlib, typing, inspect).  Executor section defers
+imports of engine (L3) and seal (L2) to function bodies.  No husks.utils imports.
+
+## Surface syntax
+
+Two operators:
+  :=  realization — value on left, label on right
+  :-  composition — name on left, kind + block on right
+
+Grammar:
+  program    = (comment | top_decl | top_rule | top_bind)*
+  top_decl   = expr ':=' DECL_KW
+  top_rule   = IDENT (':=' | ':-') RULE_KW block
+  top_bind   = IDENT ':-' expr
+  block      = '[' block_item* ']'
+  block_item = expr ':=' IDENT | IDENT ':-' RULE_KW block | ':-' 'let' block | IDENT
+  cell       = '[' expr* ']'
+  expr       = cell | atom
+  atom       = STRING | FLOAT | INT | BAREWORD
+
+## §1 Tokenizer
+
+Token types: IDENT, BIND (:-), DECL (:=), LBRACKET, RBRACKET,
+  STRING, INT, FLOAT, BAREWORD, EOF
+
+tokenize(source) -> list[Token]
+  Lexes source into flat token list.  Tracks line/col.
+  Supports single-quoted and triple-quoted strings.
+  Comments start with #.  Bareword chars: alnum + _./-
+
+## §2 Parser
+
+AST node types:
+  DeclNode(label, value) — top-level realization
+  RuleNode(name, kind, decls, children, refs, is_target)
+  LetNode(items) — let scope
+  BindNode(name, expr) — plain binding
+
+parse(tokens) -> list[AST nodes]
+  RULE_KEYWORDS: oracle, action, trial, commit, halt, cond, let
+  DECL_KEYWORDS: public, fuel, site-inputs, cost-tolerance, design, tolerance, site
+
+## §3 Resolver
+
+resolve(ast, base_dir=".") -> Design dict
+  Flattens AST into flat design dict (same shape as from_json).
+  Topologically sorts siblings (producers before consumers, conds last).
+  Trial branches stay inline (not flattened as standalone rules).
+  Prompt atoms resolved as file paths.
+
+from_file(path) -> Design dict
+  Load .locke file, tokenize, parse, resolve.  Sets _source_path.
+
+## §4 Validation
+
+check(design) -> list[str]
+  Validates: name, fuel, rules non-empty, target exists.
+  Per-rule: name safety, kind validity, field allowlists, output uniqueness,
+  input producibility, forward reference detection, circular dependency detection.
+  Kind-specific: oracle needs prompt+fuel, trial needs branches,
+  commit needs value, halt needs reason, let needs bind target,
+  cond needs predicate+then+else with valid refs.
+
+check_categorized(design) -> dict
+  Groups errors into: syntax, names, paths, inputs, outputs, fuel, targets, imports, other.
+
+## §5 Show
+
+show(design) -> str
+  Human-readable design summary with kind markers and dependency info.
+
+## §6 I/O
+
+from_json(path) -> Design: load from JSON, set _source_path
+from_locke(path) -> Design: load from .locke file
+to_json(design, path=None) -> str: serialize to JSON
+normalize_site_inputs(site_inputs, design_source_path) -> dict
+  Resolves relative paths against design directory.  Validates existence.
+
+## §7 Executor (deferred L2/L3 imports)
+
+_resolve_predicate(spec, predicates) -> callable
+  Built-in prefixes: file-exists, file-nonempty, exit-zero.
+  Named predicates looked up in dict.  Callables passed through.
+
+_make_touch_action(outputs) -> callable
+  Creates action writing "ok\n" to missing outputs.
+
+compile_design(design) -> (name, fuel, terminals, kwargs)
+  Lowers design IR to engine node tree.  Handles all 7 rule kinds.
+  Dependency resolution: prior rules whose outputs overlap inputs become children.
+
+setup_imports(site, imports) -> list[str]
+  Creates symlinks via seal.setup_links.
+
+run(design, **overrides) -> Store
+  check -> compile_design -> build.  Normalizes site_inputs.
+  Sets up imports as readonly symlinks.
+
+## What is NOT in L5
+
+- CSE elaboration (transport.elaborate) — not yet hardened
+- compile_bytes pipeline — depends on elaborate
+- husks.utils coupling — removed
+- Module-level global state — none
+
+## Verification command
+
+    python -m pytest @site/tests/L5-locke/ -v --tb=short

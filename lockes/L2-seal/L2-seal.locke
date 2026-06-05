@@ -1,0 +1,140 @@
+# L2-seal.locke -- Contract for the hardened L2 seal layer.
+#
+# This Locke specifies the invariants that @site/src/seal.py must
+# satisfy.  L2 sits on L0 (kernel) + L1 (forms) and provides: path
+# sandboxing, atomic filesystem ops, Store construction, fuel, seal I/O,
+# freshness checking, convergence history, trial reports, and build manifests.
+
+## Identity
+
+name:    L2-seal
+layer:   L2
+source:  @site/src/seal.py
+tests:   @site/tests/L2-seal/
+depends: L0-kernel (@site/src/kernel.py), L1-forms (@site/src/forms.py)
+
+## Dependency constraint
+
+seal.py imports ONLY kernel (L0) + forms (L1) + Python stdlib
+(json, os, tempfile, time, uuid, pathlib, hashlib).
+No engine code.  No node constructors.  No trace coupling.  No third-party packages.
+
+## Type aliases
+
+Store = dict[str, Any]   -- mutable build state dict
+Node  = dict[str, Any]   -- engine node dict (for manifest walking)
+Recipe = dict[str, Any] | None  -- engine recipe (action/oracle/trial/None)
+
+## Stop signal
+
+Stop(kind, value) is a flow-control exception (not an error).
+Raised by burn() on fuel exhaustion.  Caught by L3-engine.
+kind: "halt" | "commit".  value: human-readable reason string.
+
+## Path sandbox
+
+site_path(S, name, write=False) resolves name relative to S["site"].
+Invariants:
+  - ".." components, absolute paths -> ValueError (escape detection).
+  - write=True targets S["stage"] when present, breaks parent symlinks
+    so staged writes create real files.
+  - Read-only dirs (S["readonly-dirs"]) permit external resolution for reads.
+  - write=True always rejects escapes, even with readonly-dirs.
+
+read_path(S, name) = site_path(S, name, write=False).
+write_path(S, name) = site_path(S, name, write=True).
+
+## Atomic filesystem operations
+
+All writes use _atomic_write(p, data): mkstemp in same dir + os.write +
+os.fsync + os.replace.  Crash mid-write leaves original intact.
+
+  write_text(p, s) -- atomic UTF-8 write, creates parents, returns p.
+  write_bytes_atomic(p, data) -- atomic binary write, creates parents, returns p.
+  read_text(p) -- UTF-8 read (raises FileNotFoundError if missing).
+  ensure_dir(p) -- mkdir -p, idempotent, returns p.
+  file_exists(p) -- Path.exists() wrapper.
+  file_sig(p) -- content_hash(bytes) for regular files, ABSENT otherwise.
+
+## Store construction
+
+fresh_store(site, fuel, oracle_backend=None, ...) creates S with keys:
+  site, fuel, status="running", value=None, trace=[], oracle-backend,
+  oracle-backend-name, readonly-dirs, run-id (uuid4), usage.
+
+oracle_backend is Callable | None (not typed as OracleBackend -- that's L4).
+
+## Fuel
+
+burn(S, label) decrements S["fuel"], appends trace event.
+When fuel < 0: sets status="halted", value="fuel exhausted: {label}",
+raises Stop("halt", ...).
+
+## Site inputs
+
+resolve_site_inputs(None|list|dict) -> dict[str,str]:
+  None -> {}.  Dict -> copy.  List -> {basename: path} for absolute,
+  {entry: entry} for relative.
+
+## Import links
+
+setup_links(site, mapping) creates validated symlinks.
+Rejects: dotfiles, path traversal (..), absolute local names,
+missing external paths, wrong-target collisions.
+Returns list of readonly-dir paths for sandbox registration.
+
+## Seal I/O
+
+compute_cse_seal(S, inputs, recipe) -> hex string.
+  Seal = hash(CSE_VERSION, recipe_to_cse(recipe), [(atom(i), file_sig(i)) ...]).
+
+seal_file(S, rule_name) -> path to .traces/{rule_name}.seal.
+read_seal(S, rule_name) -> dict | None (None if absent/corrupt/no version).
+write_seal(S, rule_name, inputs, recipe, outputs=None) -> None.
+  Writes {"v":1, "seal", "recipe_digest", "inputs":{...}, "outputs":{...}}.
+
+## Freshness
+
+freshness_check(S, rule_name, inputs, outputs, recipe) -> str | None.
+  None = fresh (sealed).  str = human-readable staleness reason.
+
+Staleness hierarchy (checked in order):
+  1. Missing output file -> "{name} missing"
+  2. No prior seal -> "no prior build"
+  3. Seal mismatch -> diagnosed as "recipe changed", "{input} changed",
+     "{input} removed", or "dependencies changed"
+  4. Output tampered -> "{output} tampered"
+
+clear_fired_seals(S) removes seal files for rules with "fired" trace events.
+output_hashes(S, outputs) -> list of hex hash strings.
+
+## Convergence history
+
+history_file(S, rule_name) -> .traces/{rule_name}.history.jsonl.
+append_history(S, rule_name, recipe, outputs, *, traced_reads=(), ...) appends
+one JSONL record.  traced_reads is an EXPLICIT parameter -- no hidden global
+state from husks.utils.events.
+
+## Trial reports
+
+write_trial_report(S, rule_name, winner, results, scores, branches_ir, outputs)
+writes .traces/{rule_name}.trial.json with schema "husks.trial.v1".
+
+## Build manifest
+
+write_build_manifest(S, name, nodes, design_source=None, design_kind=None)
+writes .traces/build.manifest.json with schema "husks.build.manifest.v1".
+Walks node tree collecting rule info (handles rule and cond node types).
+
+## What is NOT in L2
+
+- Node constructors (rule(), action(), ...) -- L3-engine
+- eval_node, eval_trial, build orchestration -- L3-engine
+- Cache (cache_get, cache_put) -- L3-engine
+- OracleBackend as typed Protocol -- L4-oracle
+- Locke parser -- L5-locke
+- husks.utils.events trace coupling -- replaced by explicit param
+
+## Verification command
+
+    python -m pytest @site/tests/L2-seal/ -v --tb=short

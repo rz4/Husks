@@ -1,0 +1,254 @@
+# L7-cli.locke -- Contract for the hardened L7 CLI layer.
+#
+# This Locke specifies the invariants that @site/src/cli.py must
+# satisfy.  L7 provides argument parsing, command dispatch, visual
+# rendering (diamond banner, motif tree, footer), JSON output,
+# navigator for explain mode, residue collectors, and the main
+# entry point.
+
+## Identity
+
+name:    L7-cli
+layer:   L7
+source:  @site/src/cli.py
+tests:   @site/tests/L7-cli/
+depends: kernel (L0, recompute_root for verify), seal (L2, fresh_store for cache commands), engine (L3, cache_export, cache_import), locke (L5, from_file, check_categorized, run), report (L6, CLI data models, assemble, render, state mapping, convergence, comparison, manifest I/O)
+
+## Dependency constraint
+
+cli.py imports kernel (L0) for verify, seal (L2) for fresh_store
+in cache commands, engine (L3) for cache_export/cache_import,
+locke (L5) for design loading and execution, report (L6) for data
+models/assembly/rendering/state mapping/comparison/manifest.
+All lower-layer imports are deferred to function bodies (no
+top-level coupling beyond stdlib + argparse).  No husks.utils
+imports.  ANSI codes inlined.  No module-level mutable state
+except _IS_TTY (frozen at import).
+
+## §1 Constants
+
+EXIT_OK = 0, EXIT_BUILD_FAIL = 1, EXIT_USAGE = 2,
+EXIT_MISSING_DEP = 3, EXIT_DIRTY_STALE = 4, EXIT_INTERNAL = 5.
+All distinct.
+
+ANSI codes: DIM, BOLD, RESET, GREEN, YELLOW, RED, CYAN, CLEAR_DOWN.
+Suppressed (empty string) when not TTY.
+
+STATE_GLYPHS: unrealized, sealed, cached, stale, failed, running.
+STATE_COLORS: matching ANSI codes per state.
+
+Diamond art: dry, hydrating, sealed, failed, white.
+Each stage is 5 lines.  _DIAMOND_VIS gives visible widths.
+
+R = 81 (right bound for visual layout).
+
+## §2 Helpers
+
+_visible_len(s) -> int
+  Terminal-column width, strips ANSI escape sequences.
+  Wide chars (CJK) count as 2.
+
+_rpad(left, right, width) -> str
+  ANSI-safe padding between left and right to fill width.
+
+_format_tokens(n) -> str
+  "500" for n < 1000, "2.5k" for n >= 1000.
+
+_truncate_right(text, max_width) -> str
+  Truncates with ellipsis.  Replaces tabs with spaces.
+
+render_banner(stage, right_lines?) -> str
+  5-line morphing diamond with right-aligned metadata.
+  Falls back to hydrating for unknown stage.
+
+cursor_up(n) -> str
+  ANSI cursor-up sequence.
+
+resolve_design(args) -> str
+  Returns design path from args or auto-detects design.locke/design.json.
+  Exits with EXIT_USAGE if not found.
+
+## §3 View renderers
+
+render_output(preamble?, trace?, footer?) -> str
+  Compose CLI output from three optional sections.
+  Trace adds a horizontal separator line.
+
+render_preamble(design_name, display_status, diamond_stage, ...) -> str
+  Logo header + stage header + first divider.
+
+render_motif_tree(nodes, verbose?) -> list[str]
+  Target-rooted tree with right-aligned metadata.
+  Shows state glyph, kind, tokens/cost/elapsed for any node with trace data.
+  Oracle nodes always show expense (zero if no trace).
+  Verbose mode adds outputs, seal digest, backend, stale reason.
+
+render_footer(left_text, right_text) -> str
+  ANSI-safe padded footer line.
+
+## §4 Surface dispatch
+
+STAGE_MAP: check->design, run->build, status->status.
+
+emit_residue(residue, json_mode?, verbose?, quiet?) -> str
+  Quiet returns "".  JSON dispatches to _emit_json.
+  Otherwise dispatches to _emit_visual.
+
+_emit_visual(residue, verbose?) -> str
+  Full visual output: preamble, motif tree, footer.
+
+_diamond_stage(residue) -> str
+  dry for check/dry, hydrating, failed for halted, else sealed.
+
+_footer_left(residue) -> str
+  check->"dry", run+committed->"committed: <root10>",
+  run+halted->"halt: <name>", status->sealed/stale.
+
+_footer_right(residue) -> str
+  run: tokens in/out, cost, elapsed, fuel used/budget.
+  status: tokens in/out, cost, elapsed, fuel (no budget).
+  Both read from node traces.  Empty for non-run/status commands.
+
+_emit_json(residue) -> str
+  JSON with command, name, site, status, root, husk, nodes, etc.
+  Each node includes: name, kind, state, cached (always present),
+  and conditionally: children, fuel, fuel_budget, cost, diagnosis,
+  stale_reason, duration, outputs (path + sha256), tokens (input/output),
+  backend, model.
+
+emit_help(version) -> str
+  Top-level --help with diamond, command groups, exit codes.
+
+## §5 Residue collectors
+
+collect_dry_residue(design) -> CliResidue
+  Check command: all nodes unrealized, deps from input/output overlap.
+  Target rule promoted to first position.
+
+collect_hydrated_residue(S, design) -> CliResidue
+  Run command: maps trace events (fired->sealed, sealed->cached,
+  rule-halted->failed) via map_trace_state.  Computes fuel_used,
+  husk_hash from site, cost from usage tracker.
+
+## §6 Commands
+
+_cmd_check(args, design)
+  Runs check_categorized from L5.  Prints errors or dry residue.
+  Visual output only with --verbose (or --json).
+  Exits EXIT_BUILD_FAIL on failure.
+
+_cmd_run(args, design)
+  Runs locke.run with optional oracle backend.
+  Visual residue output only with --verbose (or --json for report).
+  Exits on halt unless --soft-fail.
+
+_cmd_verify(args)
+  Recomputes root hash via kernel.recompute_root.
+  Finds .husk file in site (auto-detect or --name).
+  Catches husk parse errors and reports as verification failure.
+  Cross-checks manifest: root mismatch and site mismatch
+  are reported as errors.  Missing manifest is an error.
+  Visual output only with --verbose (or --json).
+  Exits EXIT_BUILD_FAIL on any disagreement.
+
+_cmd_status(args)
+  Reads manifest, computes rule states, renders residue.
+  Populates node children from manifest for full DAG tree rendering.
+  Reports husk hash (SHA-256 of {name}.husk) when sealed.
+  Reports total cost, fuel, tokens, and elapsed: reads
+  .traces/report.json first, falls back to summing last entry of
+  each rule's .history.jsonl.  Enriches nodes with CliTrace,
+  duration, cost, and fuel from history entries.
+  Verbose mode shows full DAG with per-node expense summary.
+  Footer shows: {tokens_in}in · {tokens_out}out · $cost · {elapsed}s · ⚡fuel
+  (always shown, even when zero — meaningful for cache-only M2 builds).
+  --fail-if-stale exits EXIT_DIRTY_STALE.
+
+_cmd_history(args)
+  Single rule: flat convergence summary (classification, fuel, prompt, output).
+  All rules: renders as a full status card (diamond banner, motif tree,
+  footer) via _build_site_residue.  The tree replaces cost/token
+  right-parts with convergence metadata: classification label
+  (color-coded), fuel trend arrow (↓↑─), prompt trend arrow,
+  output stability.  Footer shows the same tokens/cost/fuel summary
+  as status.  Stage label is "history".
+
+render_history_tree(nodes, convergence) -> list[str]
+  Like render_motif_tree but with convergence trends on the right
+  instead of tokens/cost.  Uses state glyphs and tree connectors.
+
+_cmd_compare(args)
+  Renders each site as a verbose status card (diamond + DAG + expense),
+  then pairwise artifact equivalence checks with labels.
+  With 3 sites (M1, M2, M3), runs three-machine proof:
+    M1 fired oracles, M1 paid cost,
+    M2 zero oracle cost, M2 zero oracle tokens, M2 cache reuse,
+    M3 fired oracles, M3 paid cost,
+    M1<->M2 root identical, M1<->M3 outputs equivalent,
+    M1<->M3 comparable cost (ratio 0.5-2.0).
+  JSON mode includes proof.satisfied and proof.checks.
+  Exits EXIT_BUILD_FAIL if not equivalent or proof fails.
+
+_build_site_residue(site) -> (CliResidue, manifest) | (None, None)
+  Shared helper: reads manifest, computes rule states, enriches
+  nodes with history trace/duration/cost/fuel.  Used by both
+  _cmd_status and _cmd_compare.
+
+_three_machine_checks(residues, comparisons) -> list[(label, bool, required)]
+  Required: M1<->M2<->M3 husk identical, M1<->M2 root identical.
+  Evidence: M1/M3 fired oracles and paid cost, M2 zero oracle cost
+  and cache reuse, M1<->M3 outputs equivalent.
+  Proof satisfied iff all required checks pass.
+
+_render_compare_visual(residues, comparisons, proof_checks)
+  Renders site cards, equivalence section, and proof section.
+
+_cmd_doctor(args)
+  --selftest runs kernel.selftest.
+  Otherwise checks kernel/locke/report importability.
+
+## §7 Main
+
+main()
+  Argparse setup: check, run, status, history,
+  verify, compare, cache {export,import}, doctor.
+  Global flags: --color, --quiet, --version, --help.
+  Custom help via emit_help.
+
+_cli_entry()
+  Top-level exception handler.  KeyboardInterrupt->130,
+  SystemExit->re-raise, other->EXIT_INTERNAL.
+
+## §8 Cache commands
+
+_cmd_cache_export(args)
+  Validates site exists and path ends .tar.gz.
+  --site defaults to current directory.
+  Creates fresh_store (L2), calls engine.cache_export (L3).
+  Visual output only with --verbose (or --json).
+
+_cmd_cache_import(args)
+  Validates file exists and path ends .tar.gz.
+  --site defaults to current directory.
+  Creates fresh_store (L2), calls engine.cache_import (L3).
+  --no-merge clears existing cache before import.
+  Visual output only with --verbose (or --json).
+
+run --reuse-only
+  Sets cache_reuse_only=True in overrides passed to locke.run.
+  Skips oracle backend loading (no oracle calls needed).
+  Engine raises RuntimeError if any oracle requires execution.
+
+## What is NOT in L7
+
+- LiveFrameEmitter (animated terminal during build) -- dropped
+- Diamond animation for help -- dropped
+- init command (scaffolding) -- dropped
+- Advanced doctor modes (--conformance, --live, --arch) -- dropped
+- husks.utils.console coupling -- ANSI inlined
+- husks.utils.trace coupling -- plain dicts via S["trace"]
+- explain command (navigator with cursor/aperture) -- dropped
+
+## Verification command
+
+    python -m pytest @site/tests/L7-cli/ -v --tb=short

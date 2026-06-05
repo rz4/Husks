@@ -1,0 +1,87 @@
+# L1-forms.locke -- Contract for the hardened L1 forms layer.
+#
+# This Locke specifies the invariants that @site/src/forms.py must
+# satisfy.  L1 sits on L0 (kernel) and provides: CSE<->JSON bijection,
+# flat-design elaboration, recipe identity, and verdict policies.
+
+## Identity
+
+name:    L1-forms
+layer:   L1
+source:  @site/src/forms.py
+tests:   @site/tests/L1-forms/
+depends: L0-kernel (@site/src/kernel.py)
+
+## Dependency constraint
+
+forms.py imports ONLY kernel (L0) + Python stdlib (hashlib, inspect, json).
+No engine code.  No node constructors.  No Store/Site.  No third-party packages.
+
+## CSE<->JSON bijection
+
+For all CSE trees t composed of standard form tags:
+  json_to_ast(ast_to_json(t)) == t
+
+For all canonical wire bytes w (standard forms only):
+  round_trip(w) == w  where round_trip = encode . json_to_ast . ast_to_json . parse
+
+Supported form tags: husk, build, rule, action, oracle, trial,
+commit, halt, cond, let.  Unknown tags raise ValueError.
+
+Note: Extended action forms (with engine-specific atoms beyond the tag)
+do not round-trip through JSON.  The bijection applies to the standard
+form schema only.
+
+## Flat-design elaboration
+
+elaborate(flat_design) converts a flat rule list to a CSE husk tree.
+
+Invariants:
+  - Deterministic: same dependency graph -> same CSE tree regardless
+    of rule ordering in the flat list.
+  - Children ordered by first reference in parent's input list
+    (CSE-v1.md section 7).
+  - Shared producers appear as duplicated subtrees (diamond DAG).
+  - site_inputs do not create child dependencies.
+  - Target defaults to the last rule if not specified.
+  - Fuel is coerced to string atom.
+  - Cycle detection raises ValueError with the cycle path.
+
+Structural kinds (commit, halt, let, cond) produce their respective
+CSE forms directly.  Producing kinds (action, oracle, trial) go
+through _elaborate_recipe.
+
+## Recipe identity
+
+recipe_to_cse(recipe) converts an engine recipe dict to a CSE form
+for seal preimage construction.
+
+Identity scheme v2:
+  - Shell actions: [b"action", cmd.encode()] -- command string is identity.
+  - Callable actions: [b"action", digest.encode()] -- source/bytecode SHA-256.
+  - Oracle: [b"oracle", name, prompt, sorted_tools, fuel]
+  - Trial: [b"trial", verdict_identity, *branches]
+  - None recipe -> NIL
+
+_fn_behavior_digest uses inspect.getsource first, falls back to
+bytecode+constants.  Deterministic across runs for static functions.
+
+_pred_identity returns _husks_pred_spec attribute if present,
+else behavior digest.
+
+## Verdict policies
+
+first_valid(results) -- default verdict: first branch without "error" key.
+Falls back to first result if all branches errored.
+
+verdict_identity(verdict) -- canonical identity bytes:
+  - None / first_valid / DEFAULT_VERDICT -> b"first-valid"
+  - Registered policy name string -> b"first-valid"
+  - Custom string -> encoded bytes
+  - Custom callable -> behavior digest bytes
+
+These participate in seal preimage construction for trial recipes.
+
+## Verification command
+
+    python -m pytest @site/tests/L1-forms/ -v --tb=short

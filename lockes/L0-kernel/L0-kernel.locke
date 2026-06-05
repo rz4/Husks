@@ -1,0 +1,99 @@
+# L0-kernel.locke -- Contract for the hardened L0 kernel layer.
+#
+# This Locke specifies the invariants that @site/src/kernel.py must
+# satisfy.  The kernel is the permanence layer: CSE codec, content-
+# addressed seals, and Merkle DAG verification.
+
+## Identity
+
+name:    L0-kernel
+layer:   L0
+source:  @site/src/kernel.py
+tests:   @site/tests/L0-kernel/
+
+## Zero-dependency constraint
+
+The kernel imports ONLY Python stdlib modules (hashlib, os).
+No sibling imports.  No third-party packages.  No network access.
+This makes the kernel portable to any Python >= 3.10 environment
+without installation.
+
+## CSE codec bijectivity
+
+For all CseValue v:  parse(encode(v)) == v
+For all valid wire bytes w:  encode(parse(w)) == w
+
+The codec is the canonical serialization.  There is exactly one
+wire representation for each value.  Leading zeros in atom lengths
+are rejected.  Trailing data after a complete value is rejected.
+Nesting depth is bounded (_MAX_PARSE_DEPTH = 128).
+Atom length is bounded (_MAX_ATOM_LENGTH = 256 MiB).
+
+## Seal determinism
+
+compute_seal(version, recipe, bindings) is a pure function.
+Same inputs always produce the same hex digest.  Different inputs
+(version, recipe content, binding names, binding hashes, binding
+order) produce different digests.
+
+The seal preimage is: (seal <version> <recipe_digest> (<bindings>...))
+where recipe_digest = SHA-256(encode(recipe_form)).
+
+## Node digest determinism
+
+compute_node_digest(name, seal, output_bindings, child_digests)
+is a pure function.  The node form is:
+  (node <name> <seal> (<output_bindings>...) (<child_digests>...))
+
+Any change to name, seal, outputs, or children changes the digest.
+
+## Merkle DAG verification
+
+recompute_root(husk_bytes, site_dir) parses a .husk file and
+recomputes the build-root digest by walking the tree depth-first,
+bottom-up.  For multi-target builds, per-target roots are sorted
+and hashed together.
+
+verify(husk_bytes, site_dir, expected_root) is the predicate form.
+
+## Pure/I/O separation
+
+_recompute_node(node, hash_file, version) is pure given an injected
+hash_file: Callable[[str], bytes].  The I/O boundary is
+recompute_root, which constructs the filesystem closure via
+_make_hash_file(site_dir).
+
+This separation makes the DAG walk testable without filesystem access.
+
+## Security validations
+
+_validate_rule_name rejects:
+  - Empty names
+  - Path separators (/ and \)
+  - Path traversal (..)
+  - Control characters (0x00-0x1F, 0x7F)
+  - Reserved internal filenames (build.manifest)
+  - Reserved extensions (.seal, .trial, .history)
+
+_validate_husk_path rejects:
+  - Empty paths
+  - Absolute paths
+  - Path traversal (..)
+  - Reserved internal paths (.traces/, .husks/)
+  - .husk file extensions
+
+## Conformance vectors
+
+All vectors in spec/conformance/ must pass:
+  - demo.husk + demo.site -> demo.root
+  - unsorted.husk + unsorted.site -> unsorted.root
+  - adversarial.husk + adversarial.site -> adversarial.root
+
+All malformed vectors must raise ValueError:
+  - malformed-leadingzero.husk (leading zero in atom length)
+  - malformed-truncated.husk (atom truncated)
+  - malformed-trailing.husk (trailing data after valid form)
+
+## Verification command
+
+    python -m pytest @site/tests/L0-kernel/ -v --tb=short

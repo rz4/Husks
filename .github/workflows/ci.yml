@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       trials:
-        description: "Liquid Beta: number of live three-machine trials to run"
+        description: "Live oracle: number of three-machine trials"
         required: false
         default: "1"
 
@@ -20,34 +20,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  wheel-smoke:
-    name: Wheel Smoke
+  smoke:
+    name: Smoke
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.11", "3.12", "3.13"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-      - run: |
-          python -m pip install --upgrade pip build
-          python -m build --wheel
-          pip install dist/*.whl pytest
-      - run: python -m pytest tests/test_SOLID_26_gate_g_wheel_smoke.py -v --tb=short
-
-  solid-alpha:
-    name: Solid Alpha
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.10", "3.11", "3.12", "3.13"]
-    env:
-      HUSKS_ENABLE_LIVE_TESTS: ""   # ensure no live path can be entered
+        python: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -57,22 +36,28 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[llm]" pytest
-      - name: Stub three-machine resolution (headline invariant)
-        run: |
-          python -m pytest \
-            tests/test_LIQUID_69_three_machine_proof.py \
-            tests/test_LIQUID_70_three_machine_cli_acceptance.py \
-            tests/test_LIQUID_68_beta_three_machine.py \
-            -v --tb=short
-      - name: Full deterministic suite
-        run: |
-          python -m pytest tests/ -m "not beta" \
-            --ignore=tests/test_SOLID_50_live_oracle_readiness.py \
-            -v --tb=short
+          pip install pytest litellm
+      - name: Run all layer tests
+        run: python -m pytest tests/ -v --tb=short
 
-  liquid-beta:
-    name: Liquid Beta (live three-machine)
+  three-machine-stub:
+    name: Three-Machine Stub
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest litellm
+      - name: Three-machine stub proof
+        run: python -m pytest tests/test_three_machine_stub.py -v --tb=short
+
+  live-oracle:
+    name: Live Oracle
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: live-oracle
@@ -82,16 +67,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install (with live oracle extra)
+      - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[llm]" pytest
-      - name: Live three-machine demo
+          pip install pytest litellm
+      - name: Live three-machine proof
         continue-on-error: true
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          HUSKS_ENABLE_LIVE_TESTS: "1"
           HUSKS_LIVE_TRIALS: ${{ github.event.inputs.trials }}
-        run: |
-          python -m pytest -m beta tests/test_SOLID_50_live_oracle_readiness.py \
-            -v --tb=short
+        run: python -m pytest tests/ -v --tb=short -k "live"

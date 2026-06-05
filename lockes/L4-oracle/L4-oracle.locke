@@ -1,0 +1,180 @@
+# L4-oracle.locke -- Contract for the hardened L4 oracle layer.
+#
+# This Locke specifies the invariants that @site/src/oracle.py must
+# satisfy.  L4 is invoked by L3 (engine) through the oracle_backend
+# callback and provides: OracleBackend protocol, backend registry,
+# tool sandbox, fuel-bounded agentic kernel, LLM wrapper, usage
+# tracking, and concrete backends (LiteLLM, Claude Code).
+
+## Identity
+
+name:    L4-oracle
+layer:   L4
+source:  @site/src/oracle.py
+tests:   @site/tests/L4-oracle/
+depends: (none -- invoked by L3 through oracle_backend callback)
+
+## Dependency constraint
+
+oracle.py imports ONLY Python stdlib (hashlib, inspect, json, os, signal,
+pathlib, typing) + litellm (lazy, optional) + claude_code_sdk (lazy,
+optional).  No imports from kernel.py, forms.py, seal.py, or engine.py.
+No husks.utils.trace coupling.  No module-level mutable state except
+the backend and tool registries.
+
+## Types
+
+RealizedCost(TypedDict): tokens_in, tokens_out, cost_usd, fuel_steps
+  Provenance only.  None enter the Merkle DAG.
+
+OracleBackend(Protocol): name: str, run(S, rule_name, recipe, outputs, config) -> RealizedCost
+  Must: (1) confine effects to site + readonly roots, (2) permit only
+  recipe tools, (3) stop at recipe fuel, (4) raise on non-clean exit,
+  (5) return RealizedCost.  Must NOT read config from recipe.
+
+## Backend registry
+
+register(backend) -> None: register under backend.name, idempotent
+get_backend(name) -> OracleBackend: lazy-loads litellm/claude-code on first use
+  Unknown name -> KeyError
+
+## Shared scaffolding
+
+DEFAULT_TOOLS = ["read-file", "write-file", "list-dir", "tree"]
+build_system_prompt(site, outputs) -> str: oracle standing orders
+site_of(S) -> Path: resolve stage or site
+readonly_roots_of(S) -> set[Path]: resolve readonly-dirs
+
+## Tool sandbox
+
+MAX_WRITE_SIZE = 10 MB
+MAX_TOOL_TIMEOUT = 30 seconds
+
+sandbox(path, write=, site_root=, readonly_roots=) -> Path
+  Resolves path within sandbox.  Raises ValueError on escape.
+  write=True: site_root only (never readonly_roots).
+  site_root=None: no confinement.
+
+## Tool registry
+
+@tool decorator: registers fn, auto-generates OpenAI function schema
+schemas(names=) -> list: OpenAI tool definitions, filtered by names
+dispatch(name, args, context=, timeout=) -> str
+  Calls tool with SIGALRM timeout.  Returns error string on any exception.
+
+## Built-in tools
+
+read_file(path) -> str: file contents, error on escape/missing/binary/dir
+write_file(path, content) -> "ok": creates parents, rejects oversized/escape
+list_dir(path) -> str: sorted names, one level
+tree(path, depth=3) -> str: recursive listing, skips hidden/__pycache__/escapes
+
+All tools accept site_root/readonly_roots kwargs for explicit sandboxing.
+
+## Usage tracker
+
+UsageTracker: cumulative token/cost tracker, one per build
+  track(response, rule=): accumulate from litellm response
+  snapshot() -> dict: calls, tokens, cost, by_rule, model
+  No module-level default tracker.
+
+## LLM wrapper (lazy litellm)
+
+DEFAULT_MODEL = "anthropic/claude-haiku-4-5-20251001"
+_litellm(): lazy import, raises ModuleNotFoundError with install hint
+
+llm_call(prompt, model=, max_tokens=, system=, tools=, temperature=,
+         tracker=, params=, router=) -> response
+llm_call_messages(messages, model=, ...) -> response
+llm_meta(response) -> dict: model, tokens, finish_reason, cost, text
+
+## Provenance hashing
+
+compute_config_hash(model, max_tokens, temperature=, tools=) -> hex64
+compute_prompt_hash(prompt) -> hex64
+  Deterministic SHA-256.  For provenance, never enters seal.
+
+## Kernel: response parsing
+
+MAX_TOOL_OUTPUT = 8000
+parse_response(r) -> dict: type in {act, acts, stop, say}
+  act: single tool call (tool, args, tool_call_id)
+  acts: parallel tool calls (list of call dicts)
+  stop: model finished (value)
+  say: text without tool call or stop
+
+## Kernel: message building
+
+_build_messages(C) -> list: OpenAI messages from prompt + trace
+  Reconstructs assistant+tool message pairs from trace events.
+  Supports act (single) and acts (parallel) trace entries.
+
+## Kernel: context helpers
+
+_rebind(C, event) -> C': immutable append to trace
+_allowed(C, tool_name) -> bool: check allowlist
+_dispatch_context(C) -> dict: extract site_root/readonly_roots for dispatch
+
+## Kernel: agentic loop
+
+invoke_llm(C) -> dict: call LLM, return parsed response
+step(M, C, fuel) -> dict: iterative loop until stop/halt/error/kill
+  act: check allowlist, dispatch, rebind, burn fuel
+  acts: per-call allowlist+dispatch+fuel, partial halt if exhausted mid-batch
+  say: return immediately
+  stop: return immediately
+  fuel=0: halt
+agent(C, fuel=8, M=None) -> dict: setup tool-defs, delegate to step
+
+## LiteLLMBackend
+
+name = "litellm"
+run(S, rule_name, recipe, outputs, config):
+  1. Resolve config (per_rule override)
+  2. Create UsageTracker, build system prompt
+  3. Call agent() with prompt/tools/system/model/params/router/site_root/readonly_roots
+  4. _raise_unless_stop(result)
+  5. Return RealizedCost from tracker snapshot
+
+## ClaudeCodeBackend
+
+name = "claude-code"
+CC_TOOL_MAP: husk tool -> Claude Code tool mapping
+_Gate: per-invocation interceptor (allowlist + fuel + sandbox)
+  decide(tool_name, tool_input) -> (allow, reason)
+  Checks: allowed set, path confinement, fuel counter
+
+run(S, rule_name, recipe, outputs, config):
+  1. Map husk tools to CC tools (unmapped -> RuntimeError)
+  2. Create _Gate
+  3. Remove CLAUDECODE env var (prevents nested session detection)
+  4. asyncio.run(_run_async(...))
+  5. Check gate.exhausted -> RuntimeError
+  6. Return RealizedCost
+
+_run_async: lazy import claude_code_sdk, query() with can_use_tool interceptor
+
+## Dispatcher
+
+run_oracle(S, rule_name, recipe, outputs) -> RealizedCost
+  Selects backend from S["oracle-backend-name"] (default "litellm").
+  Config from S["oracle-config"].
+
+## Backend-blind sealing invariant
+
+Backend selection and config live in S, never in the recipe.
+Recipe form: (oracle name prompt tools fuel).  No model, provider,
+sampling params, router, or backend name.  Changing backend/config
+does NOT re-fire sealed rules.
+
+## What is NOT in L4
+
+- Node constructors, build evaluator, cache -- L3-engine
+- Seal I/O, path sandboxing for build -- L2-seal
+- CSE codec, content hashing -- L0-kernel
+- Form bijection -- L1-forms
+- husks.utils.trace coupling -- removed (events in kernel context)
+
+## Verification command
+
+    python -m pytest @site/tests/L4-oracle/ -v --tb=short

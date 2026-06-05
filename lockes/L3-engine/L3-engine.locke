@@ -1,0 +1,169 @@
+# L3-engine.locke -- Contract for the hardened L3 engine layer.
+#
+# This Locke specifies the invariants that @site/src/engine.py must
+# satisfy.  L3 sits on L0 (kernel) + L1 (forms) + L2 (seal) and provides:
+# node constructors, build evaluator, deterministic cache, oracle dispatch,
+# trial evaluation, CSE serialization, Merkle root, and build orchestration.
+
+## Identity
+
+name:    L3-engine
+layer:   L3
+source:  @site/src/engine.py
+tests:   @site/tests/L3-engine/
+depends: L0-kernel, L1-forms, L2-seal
+
+## Dependency constraint
+
+engine.py imports ONLY kernel (L0) + forms (L1) + seal (L2) + Python stdlib
+(hashlib, json, os, shutil, tarfile, tempfile, time, uuid, contextlib, pathlib).
+No trace coupling (husks.utils.trace).  No global mutable state.
+All events go into S["trace"].
+
+## Node constructors
+
+rule(*args, name=, inputs=, outputs=, recipe=, run=) -> Node
+  Name may be positional or keyword.  run= creates a shell action.
+  Both run= and recipe= raises TypeError.
+
+action(fn, *args) -> Recipe
+  Args must be _ACTION_ARG_TYPES: (str, int, float, bool, bytes, NoneType).
+  Non-deterministic arg types raise TypeError.
+
+oracle(name=, prompt=, tools=, fuel=8) -> Recipe
+cond(predicate, then_node, else_node) -> Node
+trial(*branches, verdict=None) -> Recipe
+commit(value) -> Node
+halt(reason) -> Node
+
+_make_shell_action(cmd, outputs) creates an action that:
+  - Runs cmd in site dir with 120s timeout
+  - Captures stdout/stderr with non-blocking selectors
+  - Breaks staging symlinks for declared outputs
+  - Guards against symlink-based staging escape
+  - Rolls back live site outputs on failure
+
+## BuildTransaction
+
+Transactional staging with explicit validate + promote:
+  __enter__: create temp dir, set S["stage"], symlink site contents
+  validate_outputs(rule_name, recipe): all outputs must be regular files;
+    oracle outputs must be nonempty; rejects symlinks, dirs, special files
+  promote(): move staged real files to live site with backup/rollback
+  __exit__: clean up staging dir and backups, never suppresses exceptions
+
+## Cache
+
+Deterministic filesystem cache in .cache/.  Oracle/trial recipes only.
+Action recipes and None recipes are never cached.
+
+cache_key(recipe_rd, input_sigs) -> hex64 key
+  Deterministic: sha256(recipe_digest + sorted input name:hash pairs)
+
+cache_get(S, recipe, inputs, declared_outputs=) -> dict | None
+  SINGLE CANONICAL VALIDATION PATH.  Validates:
+  - cache_seal_version == "1.0"
+  - recipe digest match
+  - input signatures match
+  - output names match declared_outputs
+  - content hash match (full SHA-256, not prefix)
+  Returns None on any validation failure.
+
+cache_put(S, recipe, inputs, outputs) -> writes to .cache/{key}/
+cache_put_pending(S, ...) -> writes to .cache/_pending/{key}/
+cache_promote_pending(S) -> int (move pending to servable, GC foreign orphans)
+cache_discard_pending(S) -> remove .cache/_pending/
+
+cache_list(S) -> list of metadata dicts (sorted by created_ts desc)
+cache_clear(S) -> int (count of entries removed)
+cache_export(S, path) -> deterministic .tar.gz with MANIFEST.json
+cache_import(S, path, merge=True) -> int (validated: rejects abs paths,
+  traversal, symlinks, special files, oversized, bad keys, unexpected files)
+
+## Evaluator
+
+eval_node(S, node) dispatches by type:
+  rule -> eval_rule
+  cond -> eval_cond
+  commit -> set status, raise Stop("commit", ...)
+  halt -> set status, raise Stop("halt", ...)
+  unknown -> ValueError
+
+eval_cond(S, node): call predicate(S), dispatch to then/else branch.
+
+eval_rule(S, node): prerequisites -> freshness -> burn -> clean stale ->
+  BuildTransaction(validate+promote) -> seal -> pending cache -> history.
+  Stop exceptions propagate.  Other exceptions append trace and re-raise.
+
+eval_recipe(S, rule_name, recipe, inputs, outputs):
+  action -> call fn(S, *args) with _active_rule tracking
+  oracle -> eval_oracle with cache check
+  trial -> eval_trial with branch voting
+  None -> no-op
+
+## Oracle evaluation
+
+eval_oracle(S, rule_name, recipe, inputs, outputs):
+  1. Cache check (cache_get)
+  2. Cache hit: write cached outputs to staging
+  3. Cache miss + cache-reuse-only: raise RuntimeError
+  4. Cache miss: call oracle_backend(S, rule_name, recipe, outputs)
+  5. Accumulate usage in S["usage"] (total + per-rule)
+  6. Append trace event
+
+default_oracle_backend: stub that writes placeholder outputs.
+  Detects ANSWER: format prompts for structured validator compatibility.
+
+## Trial evaluation
+
+eval_trial(S, rule_name, recipe, outputs):
+  1. For each branch: burn global fuel, copytree to temp, eval_recipe
+  2. Collect text outputs (binary rejected)
+  3. Verdict: recipe["verdict"] or first_valid
+  4. Supports both simple (returns winner dict) and rich ({"winner", "scores"})
+  5. Winner with "error" -> RuntimeError
+  6. Write branch history JSONL for each branch
+  7. Merge winner outputs to staging
+  8. Write trial report JSON
+
+## CSE serialization
+
+node_to_cse(node) -> CseValue: serialize engine node tree to CSE form.
+  Uses _pred_identity for cond predicates, recipe_to_cse for recipes.
+
+compute_build_root(S, node) -> hex64: recursive Merkle digest.
+  Commit/halt: hash(encode(cse_form))
+  Cond: hash(encode([cond, pred_identity, then_digest, else_digest]))
+  Rule: compute_node_digest(name, seal, output_bindings, child_digests)
+
+## Build orchestration
+
+build(*args, name=, fuel=, site=, oracle_backend=, ...) -> Store
+  Name and fuel may be positional or keyword.  Returns final Store.
+
+  1. Parse positional args (str=name, int=fuel, dict=node)
+  2. Stage site_inputs via resolve_site_inputs + setup_links
+  3. Create fresh_store
+  4. Eval all target nodes; catch Stop for commit (continue) and halt (stop)
+  5. Auto-commit if no explicit commit node
+  6. On committed: compute_build_root, write .husk file, write manifest
+  7. On halted: write manifest only (no .husk)
+  8. Pending cache: promote on commit, discard on halt
+  9. Clear fired seals on halt
+
+  Artifact write failure on commit -> demote to halted.
+  No global mutable state (_last_store removed).
+
+## What is NOT in L3
+
+- OracleBackend as typed Protocol -- L4-oracle
+- Real LLM backends (litellm, etc.) -- L4-oracle
+- Locke parser/compiler -- L5-locke
+- husks.utils.trace coupling -- replaced by S["trace"]
+- _last_store global -- removed
+- _staged() deprecated wrapper -- removed
+- _check_declared_outputs() deprecated -- removed
+
+## Verification command
+
+    python -m pytest @site/tests/L3-engine/ -v --tb=short
