@@ -32,7 +32,7 @@ flowchart TD
     classDef formal  fill:#fdeede,stroke:#d4863b,color:#3e2410;
 
     FRONT["README<br/><i>what Husks is, install, the proof</i>"]:::surface
-    TUT["tutorial.md<br/><i>Author / Producer / Verifier roles</i>"]:::surface
+    TUT["tutorial.md<br/><i>install, config, three-machine proof</i>"]:::surface
     CLI["cli.md<br/><i>commands, schema, FAQ</i>"]:::surface
     LOCKE["locke.md<br/><i>surface syntax → CSE</i>"]:::surface
 
@@ -71,7 +71,7 @@ The public face. Friendly, task-oriented, no theory required.
 | Document | Answers | Read after |
 | :-- | :-- | :-- |
 | [`../README.md`](../README.md) | What is Husks? How do I install it and run the proof? | (start here) |
-| [tutorial.md](tutorial.md) | How do I drive it from Claude Code? What are the three roles? | README |
+| [tutorial.md](tutorial.md) | How do I install, configure, and run the three-machine proof? | README |
 | [cli.md](cli.md) | What does each command do? What's the JSON/Locke schema? | tutorial |
 | [locke.md](locke.md) | What is the Locke design language and why does it look like that? | cli |
 

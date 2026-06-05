@@ -182,6 +182,8 @@ but it cannot grade its own output -- that's what the sealed Merkle DAG is for.
 | `husks history <site> [rule]` | Convergence analysis across runs |
 | `husks cache export <site> <file>` | Pack cache for transfer |
 | `husks cache import <file> <site>` | Unpack cache into a site |
+| `husks config show` | Show resolved oracle configuration |
+| `husks config template` | Print annotated `.husks.toml` template |
 | `husks doctor` | Diagnose the local environment |
 
 Every command supports `--json` for machine-readable output.
@@ -191,7 +193,7 @@ Every command supports `--json` for machine-readable output.
 Full docs live in [`docs/`](docs/README.md), organized as a reading DAG from
 surface usage down to the formal wire format:
 
-- [Tutorial](docs/tutorial.md) -- driving Husks from Claude Code
+- [Tutorial](docs/tutorial.md) -- install, configure, and run the three-machine proof
 - [CLI reference](docs/cli.md) -- commands, schema, FAQ
 - [Locke language](docs/locke.md) -- the design surface syntax
 - [Theory](docs/theory.md) -- the residue stance

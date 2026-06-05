@@ -207,11 +207,30 @@ _cmd_doctor(args)
   --selftest runs kernel.selftest.
   Otherwise checks kernel/locke/report importability.
 
+## §6b Config commands
+
+_mask_secrets(d) -> dict
+  Shallow copy with api_key values replaced by "****".
+  Recurses into nested dicts.
+
+_CONFIG_TEMPLATE: str
+  Annotated TOML string with all known keys, defaults, comments
+  explaining each option, and examples of [oracle.params] and
+  [oracle.rules.*].
+
+_cmd_config_show(args)
+  Loads .husks.toml via load_config + oracle_config_from_toml.
+  --rule: resolves per-rule config via _resolve_config from oracle.py.
+  Masks secrets, prints JSON to stdout.
+
+_cmd_config_template(args)
+  Prints _CONFIG_TEMPLATE to stdout.
+
 ## §7 Main
 
 main()
   Argparse setup: check, run, status, history,
-  verify, compare, cache {export,import}, doctor.
+  verify, compare, cache {export,import}, config {show,template}, doctor.
   Global flags: --color, --quiet, --version, --help.
   Custom help via emit_help.
 

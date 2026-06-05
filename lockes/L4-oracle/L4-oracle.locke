@@ -126,11 +126,19 @@ step(M, C, fuel) -> dict: iterative loop until stop/halt/error/kill
   fuel=0: halt
 agent(C, fuel=8, M=None) -> dict: setup tool-defs, delegate to step
 
+## Config resolution
+
+_resolve_config(config, rule_name) -> dict
+  Merges per-rule override over base config.
+  One-level deep merge: if both base and override have a dict value for
+  the same key (e.g. params), the dicts are merged instead of replaced.
+  Scalar overrides still replace.
+
 ## LiteLLMBackend
 
 name = "litellm"
 run(S, rule_name, recipe, outputs, config):
-  1. Resolve config (per_rule override)
+  1. Resolve config (per_rule override with deep merge)
   2. Create UsageTracker, build system prompt
   3. Call agent() with prompt/tools/system/model/params/router/site_root/readonly_roots
   4. _raise_unless_stop(result)
@@ -159,6 +167,9 @@ _run_async: lazy import claude_code_sdk, query() with can_use_tool interceptor
 run_oracle(S, rule_name, recipe, outputs) -> RealizedCost
   Selects backend from S["oracle-backend-name"] (default "litellm").
   Config from S["oracle-config"].
+  Per-rule backend: resolves config for the rule first; if the resolved
+  config contains a "backend" key, that backend is used instead of the
+  global one.
 
 ## Backend-blind sealing invariant
 

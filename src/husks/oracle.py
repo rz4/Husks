@@ -630,9 +630,17 @@ def agent(C: dict[str, Any], *, fuel: int = 8,
 # ── LiteLLMBackend ───────────────────────────────────────────────
 
 def _resolve_config(config: dict[str, Any], rule_name: str) -> dict[str, Any]:
-    """Merge per-rule override over base config."""
+    """Merge per-rule override over base config.
+
+    One-level deep merge: if both base and override have a dict value for the
+    same key (e.g. ``params``), the dicts are merged instead of replaced.
+    """
     override = config.get("per_rule", {}).get(rule_name, {})
-    return {**config, **override}
+    merged = {**config, **override}
+    for key, val in override.items():
+        if isinstance(val, dict) and isinstance(config.get(key), dict):
+            merged[key] = {**config[key], **val}
+    return merged
 
 
 class LiteLLMBackend:
@@ -807,7 +815,13 @@ class ClaudeCodeBackend:
 
 def run_oracle(S: dict[str, Any], rule_name: str,
                recipe: dict[str, Any], outputs: list[str]) -> RealizedCost:
-    """Build-facing entry point.  Selects backend from S["oracle-backend-name"]."""
+    """Build-facing entry point.  Selects backend from S["oracle-backend-name"].
+
+    Per-rule ``backend`` override: if the resolved config for a rule contains a
+    ``backend`` key, that backend is used instead of the global one.
+    """
     name = S.get("oracle-backend-name", "litellm")
     config = dict(S.get("oracle-config", {}))
+    rc = _resolve_config(config, rule_name)
+    name = rc.pop("backend", name)
     return get_backend(name).run(S, rule_name, recipe, outputs, config)

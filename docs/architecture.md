@@ -16,7 +16,7 @@ src/husks/
   seal.py      L2   Path sandboxing, filesystem ops, seal I/O
   engine.py    L3   Build evaluator, caching, oracle dispatch
   oracle.py    L3   LLM backend, fuel-bounded kernel, tool sandbox
-  config.py    L4   Configuration resolution
+  config.py    L4   Configuration resolution, env expansion, validation
   locke.py     L5   Locke compiler (tokenizer, parser, resolver, executor)
   report.py    L6   Reports, manifests, dependency graph rendering
   cli.py       L7   CLI commands, terminal rendering, entry points
@@ -275,6 +275,18 @@ Defined in `oracle.py`.  A fuel-bounded agentic loop:
 | `max-tokens` | `int` | Max output tokens per LLM call |
 | `rule` | `str \| None` | Rule name (for usage tracking) |
 | `trace` | `list[dict]` | Conversation memory (tool calls + results) |
+
+### Config resolution
+
+`_resolve_config(config, rule_name)` merges per-rule overrides onto
+the base config. One-level deep merge: if both base and override have
+a dict value for the same key (e.g. `params`), the dicts are merged
+instead of replaced.
+
+`run_oracle()` checks the resolved config for a `backend` key before
+dispatching. Per-rule backend selection lets a design route expensive
+rules to a different backend (e.g. `claude-code`) while other rules
+use the global default.
 
 ### live_oracle()
 

@@ -267,6 +267,38 @@ Import cache from a tarball into a site.
 husks cache import cache.tar.gz m2
 ```
 
+### `husks config show`
+
+Show the resolved oracle configuration from `.husks.toml`.
+
+**Options:**
+- `--rule <name>` - Show config for a specific rule (applies per-rule overrides and deep merge)
+- `--json` - JSON output (default format is already JSON)
+
+API keys are masked as `****` in the output.
+
+**Examples:**
+```bash
+# Show base oracle config
+husks config show
+
+# Show resolved config for a specific rule
+husks config show --rule expensive_rule
+```
+
+### `husks config template`
+
+Print an annotated `.husks.toml` template to stdout.
+
+**Example:**
+```bash
+# Generate a config file
+husks config template > .husks.toml
+```
+
+The template includes all known keys, defaults, comments explaining each
+option, and examples of `[oracle.params]` and `[oracle.rules.*]`.
+
 ### `husks doctor`
 
 Diagnose the local environment.
@@ -528,9 +560,27 @@ Husks uses a unified state model across all commands:
 | 4 | Dirty or stale site (with `--fail-if-dirty` / `--fail-if-stale`) |
 | 5 | Internal error |
 
+## Configuration
+
+Husks reads oracle configuration from `.husks.toml`, searching upward from
+the working directory. Any string value starting with `$` is expanded from
+`os.environ` (empty string if the variable is not set). This works for all
+keys — `api_key`, `api_base`, values inside `[oracle.params]`, and per-rule
+overrides in `[oracle.rules.*]`.
+
+Generate an annotated template with `husks config template > .husks.toml`.
+Inspect the resolved config with `husks config show`.
+
+Unknown keys and type mismatches produce warnings on stderr (never errors),
+so forward-compatible additions won't break existing configs.
+
+Per-rule overrides use deep merge: a rule's `params` dict merges with the
+base `params` instead of replacing it. A rule can also override the
+`backend` to route specific rules to a different oracle backend.
+
 ## Environment Variables
 
-- `ANTHROPIC_API_KEY` - Required for live oracle calls (not stub)
+- `ANTHROPIC_API_KEY` - Required for live oracle calls (not stub). Reference as `$ANTHROPIC_API_KEY` in `.husks.toml`.
 - `PYTHONPATH` - May be needed if running from source
 
 ## FAQ

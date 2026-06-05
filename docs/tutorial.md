@@ -1,11 +1,10 @@
-# Running Claude Code with Husks
+# Getting Started with Husks
 
-A tutorial for driving the Husks build calculus from a Claude Code instance.
+A hands-on tutorial for ML/AI engineers building PoCs with LLM calls.
 
-By the end you will have Claude Code authoring **designs** instead of running an
-unbounded agent loop: it writes a build graph, you read the contract before any
-model touches anything, the runtime fires only what is stale, and every claim
-the system makes is a claim about sealed residue you can recompute yourself.
+By the end you will have a working build that fires an oracle, seals the
+result into a Merkle DAG, and runs the three-machine proof — all from the
+command line.
 
 > Install is a single `pip install` from the GitHub URL. No checkout required.
 > Setup is one command after that: `husks doctor`.
@@ -18,22 +17,20 @@ There are **three** roles, and keeping them separate is the whole point.
 
 | Role | Who plays it | What it does |
 | :--- | :--- | :--- |
-| **Author** | the Claude Code instance | reads your task, writes `design.locke`, runs the CLI, reports |
+| **Author** | you (or any tool that writes a `.locke` / `.json` design) | reads the task, writes the build graph, sets fuel budgets |
 | **Producer** | the husks `oracle` (a litellm call, default `claude-haiku-4-5`) | the one nondeterministic step: generates bytes inside a bounded workspace |
 | **Verifier** | the deterministic engine + frozen roots | seals, reuses, recomputes hashes; grades neither author nor producer on its say-so |
 
-The author and the producer are **different model calls**. Claude Code writes
-the contract; a separate, fuel-bounded oracle inside the design produces the
-residue. The verifier is not a model at all. A model can write a verifier, but
-it cannot grade its own verifier. That separation is what you are setting up.
+The author and the producer are **different model calls** (or a human and a
+model call). The verifier is not a model at all. A model can write a
+verifier, but it cannot grade its own verifier. That separation is what
+you are setting up.
 
 ---
 
 ## 1. Prerequisites
 
 - **Python >= 3.10**
-- **Node.js** (optional, only for the independent JavaScript reader / gate cross-check)
-- **Claude Code**: `npm install -g @anthropic-ai/claude-code`
 - **An Anthropic API key**: needed only for *live* oracle runs, not for `--stub`
 
 ---
@@ -45,14 +42,13 @@ Into a virtual environment, straight from GitHub:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -U pip                                          # PEP 508 direct refs
+pip install -U pip
 pip install "husks @ git+https://github.com/rz4/Husks.git"
 ```
 
 That's the whole install. `litellm` comes with it and powers live oracle
 calls. `check`, `doctor`, and `--stub` runs need no API key; only live
-oracle execution does. The wheel also ships the conformance vectors and the
-skill.
+oracle execution does.
 
 > **Contributing to Husks itself?** Use an editable checkout instead:
 > `git clone ...` then `pip install -e .`. Both install modes are fully
@@ -110,7 +106,50 @@ without them.
 
 ---
 
-## 5. Run the three-machine proof
+## 5. Configure the oracle (optional)
+
+Create a `.husks.toml` in your project root to configure the oracle
+backend. You can generate an annotated template:
+
+```bash
+husks config template > .husks.toml
+```
+
+Edit it to set your model, API key, and any per-rule overrides:
+
+```toml
+[oracle]
+model = "anthropic/claude-haiku-4-5-20251001"
+api_key = "$ANTHROPIC_API_KEY"    # $ENV_VAR expansion works everywhere
+temperature = 0.7
+
+[oracle.params]
+top_p = 0.95
+
+[oracle.rules.expensive_rule]
+model = "anthropic/claude-sonnet-4-20250514"
+backend = "claude-code"
+
+[oracle.rules.expensive_rule.params]
+temperature = 0.2
+```
+
+Any string starting with `$` is resolved from the environment — this works
+for `api_key`, `api_base`, and any value inside `params` or `rules`.
+
+Verify your resolved config:
+
+```bash
+husks config show
+husks config show --rule expensive_rule
+```
+
+API keys are masked as `****` in the output. DevOps can pipe `--json`
+output into their toolchain.
+
+---
+
+## 6. Run the three-machine proof
 
 This is the core reproduction path. It proves cache reuse (M2) and independent
 re-realization (M3) from the same seed design.
@@ -196,14 +235,30 @@ husks status m3   # M3: independent realization
 
 ---
 
-## 6. Troubleshooting
+## 7. Handing off to DevOps
+
+When you hand a Husks project to another team:
+
+1. **Generate a config template** for them: `husks config template > .husks.toml`
+2. They set environment variables (`$ANTHROPIC_API_KEY`, `$API_BASE`, etc.)
+   and the `$ENV_VAR` references in `.husks.toml` resolve automatically.
+3. **Show resolved config** without exposing secrets: `husks config show`
+4. **Per-rule overrides** let them route expensive rules to a different
+   model or backend without touching the design.
+5. The `.husk` file and `husks verify` give them a self-verifying artifact
+   — no trust in the build machine required.
+
+---
+
+## 8. Troubleshooting
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
 | `pip install "husks @ git+..."` rejects the spec | old pip without PEP 508 direct-reference support | `pip install -U pip`, retry |
-| `AuthenticationError` / 401 from the oracle | no key in env | fill `.env`, then `set -a && source .env` |
-| Claude Code doesn't use Husks | skill not loaded | `claude doctor`; confirm `.claude/skills/husks/SKILL.md` exists; restart session |
-| `check` rejects the design | missing `target`/output, oracle fuel/tools, or undeclared input | read the error; the skill repairs and re-checks |
+| `AuthenticationError` / 401 from the oracle | no key in env | set `api_key = "$ANTHROPIC_API_KEY"` in `.husks.toml`, then `export ANTHROPIC_API_KEY=...` |
+| `husks config show` returns `{}` | no `.husks.toml` found | create one with `husks config template > .husks.toml` |
+| `warning: unknown key` on config load | typo in `.husks.toml` | check spelling against `husks config template` |
+| `check` rejects the design | missing `target`/output, oracle fuel/tools, or undeclared input | read the error; fix the design and re-check |
 | Build halts on "empty or missing output" | an oracle wrote nothing or a 0-byte file | refine the oracle prompt; this guard is working as intended |
 | Design uses `let`/`cond`/`trial` unexpectedly | advanced forms need care | start with `action`+`oracle`; use advanced forms only when needed |
 

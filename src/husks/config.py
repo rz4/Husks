@@ -41,6 +41,65 @@ def _parse_toml(path: Path) -> dict[str, Any]:
         return tomllib.load(f)
 
 
+# ── Environment variable expansion ───────────────────────────────
+
+def _expand_env_vars(value: Any) -> Any:
+    """Recursively walk dicts/lists replacing ``$VAR`` strings from os.environ.
+
+    Only strings whose first character is ``$`` are treated as env references.
+    Missing variables resolve to the empty string.
+    """
+    if isinstance(value, str):
+        if value.startswith("$"):
+            return os.environ.get(value[1:], "")
+        return value
+    if isinstance(value, dict):
+        return {k: _expand_env_vars(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand_env_vars(item) for item in value]
+    return value
+
+
+# ── Config validation ────────────────────────────────────────────
+
+KNOWN_ORACLE_KEYS: dict[str, type | tuple[type, ...]] = {
+    "model": str,
+    "api_key": str,
+    "api_base": str,
+    "timeout": (int, float),
+    "max_retries": int,
+    "temperature": (int, float),
+    "max_tokens": int,
+    "params": dict,
+    "rules": dict,
+    "backend": str,
+}
+
+
+def validate_oracle_config(oracle: dict[str, Any]) -> list[str]:
+    """Check for unknown keys and type mismatches.
+
+    Returns a list of warning strings (empty if config is clean).
+    Warnings only — never raises.
+    """
+    warnings: list[str] = []
+    for key, value in oracle.items():
+        if key not in KNOWN_ORACLE_KEYS:
+            warnings.append(f"unknown key '{key}' in [oracle]")
+            continue
+        expected = KNOWN_ORACLE_KEYS[key]
+        if not isinstance(value, expected):
+            warnings.append(
+                f"[oracle] key '{key}': expected {expected.__name__ if isinstance(expected, type) else expected}, "
+                f"got {type(value).__name__}"
+            )
+    # Range check for temperature
+    temp = oracle.get("temperature")
+    if isinstance(temp, (int, float)) and not (0.0 <= temp <= 2.0):
+        warnings.append(f"[oracle] temperature={temp} is outside the typical 0.0–2.0 range")
+    return warnings
+
+
 def oracle_config_from_toml(cfg: dict[str, Any]) -> dict[str, Any]:
     """Extract and normalize the [oracle] section for LiteLLMBackend.
 
@@ -52,11 +111,13 @@ def oracle_config_from_toml(cfg: dict[str, Any]) -> dict[str, Any]:
 
     oracle = dict(oracle)  # shallow copy
 
-    # Resolve $ENV_VAR in api_key
-    api_key = oracle.get("api_key")
-    if isinstance(api_key, str) and api_key.startswith("$"):
-        env_name = api_key[1:]
-        oracle["api_key"] = os.environ.get(env_name, "")
+    # Expand $ENV_VAR references throughout the entire oracle dict
+    oracle = _expand_env_vars(oracle)
+
+    # Validate and emit warnings to stderr
+    warnings = validate_oracle_config(oracle)
+    for w in warnings:
+        print(f"husks: warning: {w}", file=sys.stderr)
 
     result: dict[str, Any] = {}
 

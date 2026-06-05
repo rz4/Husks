@@ -422,6 +422,8 @@ def emit_help(version: str) -> str:
         _group("inspect"), _cmd("history", "Show convergence across runs"),
         _group("cache"), _cmd("cache export", "Pack cache for transfer"),
         _cmd("cache import", "Unpack cache into site"),
+        _group("config"), _cmd("config show", "Show resolved oracle config"),
+        _cmd("config template", "Print annotated .husks.toml template"),
         _group("diagnostics"), _cmd("doctor", "Diagnose the local environment"),
         _cmd("tree", "Show working directory overview"),
         "", f"  {DIM}--color <mode>   auto \u00b7 always \u00b7 never{RESET}",
@@ -1474,6 +1476,75 @@ def _cmd_tree(args):
             print(f"{indent}{color}{filename}{RESET}")
 
 
+# ── §8b Config commands ───────────────────────────────────────────
+
+def _mask_secrets(d: dict[str, Any]) -> dict[str, Any]:
+    """Return a shallow copy with api_key values replaced by '****'."""
+    out: dict[str, Any] = {}
+    for k, v in d.items():
+        if k == "api_key":
+            out[k] = "****"
+        elif isinstance(v, dict):
+            out[k] = _mask_secrets(v)
+        else:
+            out[k] = v
+    return out
+
+
+_CONFIG_TEMPLATE = """\
+# .husks.toml — Husks oracle configuration
+# Place this file in your project root (or any parent directory).
+# Husks walks upward from the working directory to find it.
+
+[oracle]
+# model = "anthropic/claude-haiku-4-5-20251001"  # LLM model identifier
+# api_key = "$ANTHROPIC_API_KEY"                  # Supports $ENV_VAR expansion
+# api_base = "$CUSTOM_API_BASE"                   # Optional API base URL
+# timeout = 120                                    # Request timeout in seconds
+# max_retries = 2                                  # Retry count on failure
+# temperature = 0.7                                # Sampling temperature (0.0–2.0)
+# max_tokens = 4096                                # Max tokens per response
+# backend = "litellm"                              # Default backend: litellm | claude-code
+
+# [oracle.params]
+# # Extra parameters passed directly to the LLM backend.
+# # These merge with (and override) the top-level keys above.
+# top_p = 0.95
+# seed = 42
+
+# [oracle.rules.expensive_rule]
+# # Per-rule overrides.  Keys here override the base [oracle] config
+# # for the named rule only.  Dict values (like params) are deep-merged.
+# model = "anthropic/claude-opus-4-6"
+# backend = "claude-code"                          # Override backend for this rule
+# max_tokens = 8192
+#
+# [oracle.rules.expensive_rule.params]
+# temperature = 0.2
+"""
+
+
+def _cmd_config_show(args):
+    from husks.config import load_config, oracle_config_from_toml
+    cfg = load_config()
+    oc = oracle_config_from_toml(cfg)
+    if not oc:
+        print("{}")
+        return
+
+    rule = getattr(args, "rule", None)
+    if rule:
+        from husks.oracle import _resolve_config
+        oc = _resolve_config(oc, rule)
+
+    masked = _mask_secrets(oc)
+    print(json.dumps(masked, indent=2))
+
+
+def _cmd_config_template(args):
+    print(_CONFIG_TEMPLATE, end="")
+
+
 # ── §8 Main ─────────────────────────────────────────────────────
 
 def main():
@@ -1551,6 +1622,14 @@ def main():
     ca_imp.add_argument("--verbose", "-v", action="store_true")
     ca_imp.add_argument("--json", action="store_true", dest="json_output")
 
+    # config
+    cfg_p = sub.add_parser("config")
+    cfg_sub = cfg_p.add_subparsers(dest="config_cmd")
+    cfg_show = cfg_sub.add_parser("show")
+    cfg_show.add_argument("--rule", default=None)
+    cfg_show.add_argument("--json", action="store_true", dest="json_output")
+    cfg_sub.add_parser("template")
+
     # doctor
     doc = sub.add_parser("doctor")
     doc.add_argument("--json", action="store_true", dest="json_output")
@@ -1607,6 +1686,13 @@ def main():
         _cmd_verify(args)
     elif args.cmd == "compare":
         _cmd_compare(args)
+    elif args.cmd == "config":
+        if getattr(args, "config_cmd", None) == "show":
+            _cmd_config_show(args)
+        elif getattr(args, "config_cmd", None) == "template":
+            _cmd_config_template(args)
+        else:
+            print("husks config: specify 'show' or 'template'.", file=sys.stderr); sys.exit(EXIT_USAGE)
     elif args.cmd == "cache":
         if getattr(args, "cache_cmd", None) == "export":
             _cmd_cache_export(args)
