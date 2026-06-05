@@ -8,7 +8,7 @@ model touches anything, the runtime fires only what is stale, and every claim
 the system makes is a claim about sealed residue you can recompute yourself.
 
 > Install is a single `pip install` from the GitHub URL — no checkout required.
-> Setup is two commands after that: `husks doctor --selftest` and `husks init`.
+> Setup is one command after that: `husks doctor --selftest`.
 
 ---
 
@@ -50,7 +50,7 @@ pip install "husks[llm] @ git+https://github.com/rz4/Husks.git"
 ```
 
 That's the whole install. The `[llm]` extra pulls in `litellm` for live oracle
-calls. Without it, `check`, `doctor --selftest`, `init`, and `--stub` runs still work —
+calls. Without it, `check`, `doctor --selftest`, and `--stub` runs still work —
 only live oracle execution requires `litellm`. The wheel also ships the
 conformance vectors and the skill.
 
@@ -84,17 +84,16 @@ checkout; `doctor --selftest` is the install-level soundness check.)
 This is the core reproduction path. It proves cache reuse (M2) and independent
 re-realization (M3) from the same seed design.
 
-### Initialize and check
+### Check the design
 
 ```bash
-husks init
 husks check core-bootstrap.locke
 ```
 
 ### Machine 1: original realization
 
 ```bash
-husks run core-bootstrap.locke --site m1 --stub --json > m1.json
+husks run core-bootstrap.locke --site m1 --stub
 ```
 
 M1 builds the design with a stub oracle, pays synthetic oracle cost, and
@@ -109,9 +108,8 @@ husks cache export cache.tar.gz --site m1
 ### Machine 2: cached reuse at zero cost
 
 ```bash
-mkdir m2
 husks cache import cache.tar.gz --site m2
-husks run core-bootstrap.locke --site m2 --reuse-only --json > m2.json
+husks run core-bootstrap.locke --site m2 --reuse-only
 ```
 
 M2 imports M1's cache and runs with `--reuse-only`. It makes zero oracle calls,
@@ -120,7 +118,7 @@ pays zero cost, and materializes the same artifact from verified cached residue.
 ### Machine 3: independent re-realization
 
 ```bash
-husks run core-bootstrap.locke --site m3 --stub --json > m3.json
+husks run core-bootstrap.locke --site m3 --stub
 ```
 
 M3 starts with an empty cache and independently builds a valid artifact at
@@ -129,25 +127,36 @@ comparable cost to M1.
 ### Validate equivalence
 
 ```bash
-husks compare-runs m1.json m2.json m3.json
+husks compare m1 m2 m3
 ```
 
-Expected result (stub path):
+Expected: each site renders as a status card (diamond banner, motif tree,
+per-node expense), followed by the three-machine proof checks:
 
 ```
-M1: oracle_calls=1, cost=$0.000800 (paid oracle cost)
-M2: oracle_calls=0, cost=$0.000000, cache_hits=1 (zero-cost reuse)
-M3: oracle_calls=1, cost=$0.000800 (independent re-realization)
+── Three-Machine Proof ──
+  ✓ M1↔M2↔M3 husk identical          (required)
+  ✓ M1↔M2 root identical              (required)
+  · M1 fired oracles                   (evidence)
+  · M1 paid cost                       (evidence)
+  · M2 zero oracle cost                (evidence)
+  · M2 cache reuse                     (evidence)
+  · M3 fired oracles                   (evidence)
+  · M3 paid cost                       (evidence)
+  · M1↔M3 outputs equivalent           (evidence)
 
-All three: same root (deterministic identity via stub oracle)
+proof satisfied
 ```
+
+Add `--json` for machine-readable output with `proof.satisfied` and
+`proof.checks` fields.
 
 ### Inspect individual machines (optional)
 
 ```bash
-husks explain --site m1 --node generate --aperture 3  # M1: paid oracle cost
-husks explain --site m2 --node generate --aperture 3  # M2: cached reuse
-husks explain --site m3 --node generate --aperture 3  # M3: independent realization
+husks status --site m1   # M1: paid oracle cost
+husks status --site m2   # M2: cached reuse
+husks status --site m3   # M3: independent realization
 ```
 
 ---
@@ -160,7 +169,6 @@ husks explain --site m3 --node generate --aperture 3  # M3: independent realizat
 | `No module named litellm` on a live run | installed without the `[llm]` extra | reinstall with `pip install "husks[llm] @ git+..."` |
 | `AuthenticationError` / 401 from the oracle | no key in env | fill `.env`, then `set -a && source .env` |
 | Claude Code doesn't use Husks | skill not loaded | `claude doctor`; confirm `.claude/skills/husks/SKILL.md` exists; restart session |
-| Skill seems out of date after upgrading Husks | non-editable install copies the skill | `husks init --force` to refresh it |
 | `check` rejects the design | missing `target`/output, oracle fuel/tools, or undeclared input | read the error; the skill repairs and re-checks |
 | Build halts on "empty or missing output" | an oracle wrote nothing or a 0-byte file | refine the oracle prompt; this guard is working as intended |
 | Design uses `let`/`cond`/`trial` unexpectedly | advanced forms need care | start with `action`+`oracle`; use advanced forms only when needed |
