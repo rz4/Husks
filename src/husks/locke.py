@@ -524,7 +524,7 @@ _BUILTIN_PREFIXES = frozenset({"file-exists", "file-nonempty", "exit-zero"})
 
 _ALLOWED_DESIGN_FIELDS = frozenset({
     "name", "fuel", "rules", "target", "targets", "site_inputs", "site",
-    "oracle_backend", "oracle_model", "imports", "predicates",
+    "oracle_backend", "oracle_model", "oracle_config", "imports", "predicates",
     "cost_tolerance", "_source_path",
 })
 
@@ -971,7 +971,8 @@ def compile_design(design: Design) -> tuple[str, int, list[dict], dict[str, Any]
     terminals = [name_to_node[t] for t in targets]
     kwargs: dict[str, Any] = {}
     for k, dk in [("site", "site"), ("oracle_backend", "oracle_backend"),
-                  ("oracle_model", "oracle_model"), ("site_inputs", "site_inputs")]:
+                  ("oracle_model", "oracle_model"), ("oracle_config", "oracle_config"),
+                  ("site_inputs", "site_inputs")]:
         if design.get(dk): kwargs[k] = design[dk]
     return design["name"], design["fuel"], terminals, kwargs
 

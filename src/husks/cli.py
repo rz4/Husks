@@ -572,6 +572,7 @@ def _cmd_check(args, design):
 
 def _cmd_run(args, design):
     from husks.locke import run as locke_run
+    from husks.config import load_config, oracle_config_from_toml
     overrides = {}
     if args.site:
         overrides["site"] = args.site
@@ -582,10 +583,16 @@ def _cmd_run(args, design):
             from husks.oracle import run_oracle
             overrides["oracle_backend"] = run_oracle
             overrides["oracle_backend_name"] = getattr(args, "backend", "litellm")
-            overrides["oracle_model"] = args.model
         except ImportError:
             print("error: oracle module not available", file=sys.stderr)
             sys.exit(EXIT_MISSING_DEP)
+
+        # Load .husks.toml and build oracle config
+        oc = oracle_config_from_toml(load_config())
+        # CLI --model overrides config file (only if not the argparse default)
+        if args.model != "anthropic/claude-haiku-4-5-20251001":
+            oc["model"] = args.model
+        overrides["oracle_config"] = oc
     try:
         S = locke_run(design, **overrides)
     except ValueError as e:

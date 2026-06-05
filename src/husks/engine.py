@@ -925,6 +925,8 @@ def build(
     site: str | None = None,
     oracle_backend: Callable | None = None,
     oracle_backend_name: str = "litellm",
+    oracle_model: str | None = None,
+    oracle_config: dict | None = None,
     readonly_dirs: list[str] | None = None,
     site_inputs: list[str] | dict[str, str] | None = None,
     **kwargs: Any,
@@ -962,6 +964,13 @@ def build(
                     oracle_backend_name=oracle_backend_name, readonly_dirs=readonly_dirs)
     if kwargs.get("cache_reuse_only"):
         S["cache-reuse-only"] = True
+
+    # Inject oracle config into Store
+    oc = dict(oracle_config or {})
+    if oracle_model and "model" not in oc:
+        oc["model"] = oracle_model
+    if oc:
+        S["oracle-config"] = oc
 
     S["trace"].append({"event": "build-start", "name": name, "site": site, "fuel": fuel})
 
