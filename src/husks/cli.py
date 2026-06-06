@@ -16,7 +16,6 @@ import json
 import re
 import sys
 import unicodedata
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -252,7 +251,7 @@ def _node_right_parts(node) -> list[str]:
         cost = node.cost if node.cost is not None else (node.trace.cost_usd if node.trace else 0.0)
         parts += [f"{_format_tokens(ti)}in", f"{_format_tokens(to)}out", f"${cost:.4f}"]
     elif node.kind == "oracle":
-        parts += [f"0in", f"0out", f"${node.cost or 0.0:.4f}"]
+        parts += ["0in", "0out", f"${node.cost or 0.0:.4f}"]
     elapsed = node.duration if node.duration is not None else 0.0
     parts.append(f"{elapsed:.1f}s")
     if node.cache:
@@ -920,7 +919,7 @@ def _cmd_history(args):
 
 
 def _cmd_compare(args):
-    from husks.report import compare_artifacts, read_history
+    from husks.report import compare_artifacts
     sites = args.sites
     if len(sites) < 2:
         print("husks compare: need at least 2 site directories.", file=sys.stderr); sys.exit(EXIT_USAGE)
@@ -1009,7 +1008,7 @@ def _three_machine_checks(residues, comparisons):
     def _pair(ra, rb):
         return next((r for r in comparisons
                      if {r["site_a"], r["site_b"]} == {ra.site, rb.site}), None)
-    m1_m2 = _pair(m1, m2)
+    _m1_m2 = _pair(m1, m2)  # reserved for future proof checks
     m1_m3 = _pair(m1, m3)
 
     # Detect stub vs live: check oracle backend from manifest or history.

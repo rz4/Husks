@@ -1,13 +1,12 @@
 """test_report.py -- Report assembly, rendering, validation, and data models."""
 
 import json
-import pytest
 from husks.report import (
     assemble, render_text, render_concise, render_json,
     validate_report_schema,
     CliOutput, CliTrace, CliNode, CliResidue,
     map_manifest_state, map_display_status, map_trace_state,
-    compare_artifacts, read_manifest,
+    compare_artifacts,
 )
 
 

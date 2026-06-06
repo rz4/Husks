@@ -4,7 +4,6 @@ The staging mirror replaces symlinks that target readonly-dirs with
 read-only copies so shell actions cannot write through to external paths.
 """
 
-import os
 import stat
 from pathlib import Path
 

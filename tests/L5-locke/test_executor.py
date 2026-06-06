@@ -1,10 +1,9 @@
 """test_executor.py -- Executor tests (compile_design, run, predicates)."""
 
-import os
 import pytest
 from husks.locke import (
     compile_design, _resolve_predicate, _make_touch_action,
-    tokenize, parse, resolve, check, run,
+    tokenize, parse, resolve, check,
 )
 
 

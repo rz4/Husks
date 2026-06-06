@@ -10,7 +10,6 @@ from husks.engine import (
     cache_key, cache_dir, cache_get, cache_put, cache_put_pending,
     cache_promote_pending, cache_discard_pending,
     cache_list, cache_clear, cache_export, cache_import,
-    oracle,
 )
 from husks.seal import site_path, write_text, fresh_store
 

@@ -1,7 +1,6 @@
 """test_manifest.py -- Manifest I/O, schema validation, freshness tests."""
 
 import json
-import pytest
 from husks.report import (
     validate_manifest_schema, validate_seal_schema,
     read_manifest, read_seal, read_trial_report,

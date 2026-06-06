@@ -1,7 +1,6 @@
 """test_view.py -- View renderers, surface dispatch, navigator."""
 
 import json
-import pytest
 from husks.cli import (
     render_output, render_preamble, render_motif_tree, render_footer,
     emit_residue, emit_help, _emit_json, _diamond_stage, _footer_left, _footer_right,

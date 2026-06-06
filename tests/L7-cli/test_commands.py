@@ -9,9 +9,9 @@ from husks.cli import (
     _cmd_doctor, _cmd_status, _cmd_history, _cmd_compare, _cmd_verify,
     _cmd_cache_export, _cmd_cache_import,
     main, _cli_entry, resolve_design,
-    EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_MISSING_DEP,
+    EXIT_BUILD_FAIL,
 )
-from husks.report import CliResidue, CliNode
+from husks.report import CliResidue
 from conftest import _write_manifest, _write_seal, _write_history
 
 

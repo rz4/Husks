@@ -1,6 +1,5 @@
 """test_helpers.py -- Constants, helpers, banner rendering."""
 
-import pytest
 from husks.cli import (
     EXIT_OK, EXIT_BUILD_FAIL, EXIT_USAGE, EXIT_MISSING_DEP,
     EXIT_DIRTY_STALE, EXIT_INTERNAL,

@@ -1,6 +1,5 @@
 """test_sandbox.py -- Tool sandbox path confinement tests."""
 
-import os
 import pytest
 from pathlib import Path
 from husks.oracle import sandbox, dispatch, read_file, write_file, list_dir, tree, schemas

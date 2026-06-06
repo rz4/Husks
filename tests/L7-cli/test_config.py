@@ -1,10 +1,7 @@
 """Tests for .husks.toml config loading."""
 
-import os
 import textwrap
-from pathlib import Path
 
-import pytest
 
 from husks.config import (
     load_config,

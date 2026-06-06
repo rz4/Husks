@@ -22,14 +22,13 @@ from husks.kernel import (
     atom, CseValue, compute_node_digest, encode, recipe_digest, CSE_VERSION,
 )
 from husks.forms import (
-    recipe_to_cse, _pred_identity, _fn_behavior_digest,
-    first_valid, VERDICT_POLICIES, DEFAULT_VERDICT,
+    recipe_to_cse, _pred_identity, first_valid, VERDICT_POLICIES,
 )
 from husks.seal import (
     Store, Node, Recipe, Stop,
     site_path, write_text, read_text, ensure_dir, file_exists, file_sig,
     fresh_store, burn, write_seal, write_build_manifest, write_trial_report,
-    compute_cse_seal, output_hashes, freshness_check,
+    compute_cse_seal, freshness_check,
     append_history, history_file, clear_fired_seals,
     write_bytes_atomic, resolve_site_inputs, setup_links,
 )

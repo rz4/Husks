@@ -16,7 +16,7 @@ src/husks/
   seal.py      L2   Path sandboxing, filesystem ops, seal I/O
   engine.py    L3   Build evaluator, caching, oracle dispatch
   oracle.py    L4   LLM backend, fuel-bounded kernel, tool sandbox
-  config.py    --   Configuration resolution, env expansion, validation
+  config.py    L4   Configuration resolution, env expansion, validation
   locke.py     L5   Locke compiler (tokenizer, parser, resolver, executor)
   report.py    L6   Reports, manifests, dependency graph rendering
   cli.py       L7   CLI commands, terminal rendering, entry points
@@ -27,9 +27,10 @@ src/husks/
 Every module imports only from strictly lower layers; `oracle` (L4) is
 invoked by `engine` (L3) through the `oracle_backend` callback but does
 not import engine or any other husks module. `kernel` imports only the
-standard library. `config.py` is a support module with no layer assignment
-and no Locke contract. The machine-checkable version of the layer contract
-is [`../layers.toml`](../layers.toml), enforced by `husks doctor --arch`.
+standard library. `config.py` is a standalone support module at L4
+alongside `oracle`; both have zero husks imports and no Locke contract.
+The machine-checkable version of the layer contract is
+[`../layers.toml`](../layers.toml), enforced by `husks doctor --arch`.
 
 ---
 

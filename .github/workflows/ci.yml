@@ -20,6 +20,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy litellm
+      - name: Ruff
+        run: ruff check src/ tests/ scripts/
+      - name: Mypy
+        run: mypy src/husks/
+
   smoke:
     name: Smoke
     runs-on: ubuntu-latest
@@ -36,9 +54,9 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install pytest litellm
+          pip install pytest pytest-cov litellm
       - name: Run all layer tests
-        run: python -m pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short --cov=husks
 
   three-machine-stub:
     name: Three-Machine Stub

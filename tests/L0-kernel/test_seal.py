@@ -1,6 +1,6 @@
 """Seal tests -- determinism, sensitivity to inputs/recipe/version."""
 
-from husks.kernel import compute_seal, recipe_digest, atom, NIL, CSE_VERSION
+from husks.kernel import compute_seal, recipe_digest, NIL, CSE_VERSION
 
 
 class TestRecipeDigest:

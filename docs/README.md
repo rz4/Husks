@@ -120,3 +120,4 @@ Not part of the conceptual descent; consult as needed.
 | Document | Contents |
 | :-- | :-- |
 | [TESTS.md](TESTS.md) | Test-suite map: the eight layer suites (L0 kernel through L7 cli), the three-machine spine, and how to run each. |
+| [convergence-audit.md](convergence-audit.md) | Convergence audit: discrepancies found and resolved across src, tests, lockes, and docs. |

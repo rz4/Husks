@@ -9,6 +9,20 @@ description = "A small build system for nondeterministic work."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
+authors = [
+    { name = "Rick Zamora" },
+]
+keywords = ["build-system", "nondeterministic", "oracle", "merkle", "verification"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Build Tools",
+]
 dependencies = [
     "tomli>=1.0.0; python_version < '3.11'",
     "litellm",
@@ -16,6 +30,15 @@ dependencies = [
 
 [project.optional-dependencies]
 claude-code = ["claude-code-sdk"]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+]
+
+[project.urls]
+Repository = "https://github.com/rjzamora/Husks"
 
 [project.scripts]
 husks = "husks.cli:main"
@@ -25,6 +48,47 @@ packages = ["src/husks"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "spec/conformance" = "husks/_resources/conformance"
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = [
+    "E501",   # line too long — existing style, not enforced
+    "E701",   # multiple statements on one line (colon) — deliberate style
+    "E702",   # multiple statements on one line (semicolon)
+    "E731",   # lambda assignment
+    "E741",   # ambiguous variable name
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E402", "F841"]   # import order after sys.path; unused vars in assertions
+"scripts/**" = ["E402"]         # sys.path manipulation before imports
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+disallow_untyped_defs = false
+check_untyped_defs = false
+disable_error_code = [
+    "attr-defined",
+    "arg-type",
+    "var-annotated",
+    "return-value",
+    "assignment",
+    "list-item",
+    "union-attr",
+    "call-overload",
+    "misc",
+]
+
+[tool.coverage.run]
+source = ["husks"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

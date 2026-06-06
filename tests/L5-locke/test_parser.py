@@ -1,10 +1,9 @@
 """test_parser.py -- Parser and resolver tests."""
 
-import os
 import pytest
 from husks.locke import (
     tokenize, parse, resolve, from_file,
-    DeclNode, RuleNode, LetNode, BindNode,
+    DeclNode, RuleNode, BindNode,
 )
 
 
@@ -168,7 +167,7 @@ class TestResolve:
     def test_prompt_from_file(self, tmp_path):
         prompt_file = tmp_path / "prompt.txt"
         prompt_file.write_text("Do the thing.")
-        src = f'"test" := public\n5 := fuel\nw := oracle [\n  prompt.txt := prompt\n  4 := fuel\n  [out.txt] := outputs\n]'
+        src = '"test" := public\n5 := fuel\nw := oracle [\n  prompt.txt := prompt\n  4 := fuel\n  [out.txt] := outputs\n]'
         ast = parse(tokenize(src))
         d = resolve(ast, str(tmp_path))
         assert d["rules"][0]["prompt"] == "Do the thing."

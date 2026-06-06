@@ -9,11 +9,12 @@ Produces, under spec/conformance/:
   malformed-leadingzero.husk must be REJECTED by a conformant reader
   malformed-truncated.husk   must be REJECTED by a conformant reader
 
-The root is computed by husks.core — the trusted reader — not by any oracle.
+The root is computed by husks.kernel — the trusted reader — not by any oracle.
 """
-import os, sys
+import os
+import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from husks.core import encode, parse, recompute_root, verify, CSE_VERSION, NIL
+from husks.kernel import encode, parse, recompute_root, verify, CSE_VERSION, NIL
 
 SPEC = os.path.join(os.path.dirname(__file__), "..", "spec", "conformance")
 SITE = os.path.join(SPEC, "adversarial.site")

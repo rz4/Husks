@@ -237,7 +237,7 @@ class _Parser:
         return items
 
     def _parse_block_item(self):
-        t, t2 = self.peek(), self.peek2()
+        t, _t2 = self.peek(), self.peek2()
         if t.type == _TT.BIND:
             self.advance(); kw = self.peek()
             if kw.type == _TT.BAREWORD and kw.value == "let":
@@ -623,7 +623,7 @@ def check(design: Design, *, unsafe: bool = False) -> list[str]:
     rule_outputs_map: dict[str, list[str]] = {}
 
     for r in rules:
-        tag = r.get("name", f"rule[?]")
+        tag = r.get("name", "rule[?]")
         kind = r.get("kind", "")
         if kind in _PRODUCING_KINDS:
             outputs = r.get("outputs", [])

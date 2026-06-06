@@ -21,11 +21,11 @@
 # L2 — Sealing + FS
 "husks.seal" = 2
 
-# L3 — Engine + Oracle
+# L3 — Engine
 "husks.engine" = 3
-"husks.oracle" = 3
 
-# L4 — Config
+# L4 — Oracle + Config
+"husks.oracle" = 4
 "husks.config" = 4
 
 # L5 — Surface language

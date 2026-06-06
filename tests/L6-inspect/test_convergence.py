@@ -1,7 +1,5 @@
 """test_convergence.py -- History I/O, trend analysis, convergence classification."""
 
-import json
-import pytest
 from husks.report import (
     read_history, _trend, convergence_summary, declared_vs_traced,
 )

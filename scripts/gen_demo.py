@@ -7,7 +7,7 @@ Creates:
   spec/conformance/demo.husk    — canonical CSE bytes
   spec/conformance/demo.root    — lowercase hex build-root
 
-This script uses husks.core (the dependency-free reader) to build
+This script uses husks.kernel (the dependency-free reader) to build
 the demo AST and serialize it.
 """
 
@@ -17,12 +17,9 @@ import sys
 # Ensure we can import from src/
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from husks.core import (
-    encode, parse, atom, atom_str, sha256_bytes,
-    content_hash, content_hash_or_absent,
-    compute_seal, compute_node_digest, recipe_digest,
-    recompute_root, verify,
-    NIL, CSE_VERSION, ABSENT,
+from husks.kernel import (
+    encode, parse, recompute_root, verify,
+    NIL, CSE_VERSION,
 )
 
 SPEC_DIR = os.path.join(os.path.dirname(__file__), "..", "spec", "conformance")

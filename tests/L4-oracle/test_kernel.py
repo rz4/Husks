@@ -1,7 +1,6 @@
 """test_kernel.py -- Fuel-bounded agentic loop tests."""
 
 import json
-import pytest
 from husks.oracle import (
     parse_response, _build_messages, _truncate, _rebind, _allowed,
     _dispatch_context, step, agent, MAX_TOOL_OUTPUT,

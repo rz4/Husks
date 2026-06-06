@@ -79,7 +79,7 @@ class TestMultiTargetRoot:
         expected = hashlib.sha256(b"".join(r.encode() for r in sorted(per_roots))).hexdigest()
 
         # Verify recompute_root produces the same thing (via site_dir path that won't find files)
-        import tempfile, os
+        import tempfile
         with tempfile.TemporaryDirectory() as td:
             root = recompute_root(husk_bytes, td)
         assert root == expected

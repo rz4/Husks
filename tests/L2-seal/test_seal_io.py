@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
 
 from husks.seal import (
     write_seal, read_seal, seal_file, freshness_check,

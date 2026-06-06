@@ -1,7 +1,6 @@
 """test_graph.py -- Dependency graph extraction and rendering."""
 
 import json
-import pytest
 from husks.report import extract_edges, render_graph
 
 

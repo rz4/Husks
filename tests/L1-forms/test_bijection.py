@@ -1,7 +1,7 @@
 """test_bijection.py -- CSE<->JSON round-trip for all form types."""
 
 import pytest
-from husks.kernel import encode, parse, NIL
+from husks.kernel import encode, NIL
 from husks.forms import ast_to_json, json_to_ast, to_json_str, from_json_str, round_trip
 
 
@@ -87,7 +87,8 @@ class TestWireRoundTrip:
     @pytest.mark.parametrize("name", ["demo", "adversarial"])
     def test_canonical_vectors_round_trip(self, name):
         """Vectors with only standard form tags round-trip through JSON losslessly."""
-        import importlib, sys, pathlib
+        import importlib
+        import pathlib
         spec = importlib.util.spec_from_file_location(
             "l1_conftest", str(pathlib.Path(__file__).parent / "conftest.py"))
         mod = importlib.util.module_from_spec(spec)

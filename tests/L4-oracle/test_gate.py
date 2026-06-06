@@ -1,10 +1,8 @@
 """test_gate.py -- Claude Code backend gate, usage tracker, provenance tests."""
 
-import pytest
-from pathlib import Path
 from husks.oracle import (
     _Gate, CC_TOOL_MAP, UsageTracker,
-    compute_config_hash, compute_prompt_hash, DEFAULT_MODEL,
+    compute_config_hash, compute_prompt_hash,
 )
 
 
