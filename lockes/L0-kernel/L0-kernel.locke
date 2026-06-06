@@ -13,7 +13,7 @@ tests:   @site/tests/L0-kernel/
 
 ## Zero-dependency constraint
 
-The kernel imports ONLY Python stdlib modules (hashlib, os).
+The kernel imports ONLY Python stdlib modules (hashlib, os, typing).
 No sibling imports.  No third-party packages.  No network access.
 This makes the kernel portable to any Python >= 3.10 environment
 without installation.

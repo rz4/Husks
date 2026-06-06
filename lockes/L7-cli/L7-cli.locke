@@ -3,8 +3,7 @@
 # This Locke specifies the invariants that @site/src/cli.py must
 # satisfy.  L7 provides argument parsing, command dispatch, visual
 # rendering (diamond banner, motif tree, footer), JSON output,
-# navigator for explain mode, residue collectors, and the main
-# entry point.
+# residue collectors, and the main entry point.
 
 ## Identity
 
@@ -205,8 +204,8 @@ _render_compare_visual(residues, comparisons, proof_checks)
   Renders site cards, equivalence section, and proof section.
 
 _cmd_doctor(args)
-  --selftest runs kernel.selftest.
-  Otherwise checks kernel/locke/report importability.
+  Checks kernel/locke/report importability.
+  --arch runs architecture layer validation via _arch_check().
 
 ## §6b Config commands
 

@@ -15,8 +15,8 @@ src/husks/
   forms.py     L1   Policy identity, recipe-to-CSE, CSE-JSON bijection
   seal.py      L2   Path sandboxing, filesystem ops, seal I/O
   engine.py    L3   Build evaluator, caching, oracle dispatch
-  oracle.py    L3   LLM backend, fuel-bounded kernel, tool sandbox
-  config.py    L4   Configuration resolution, env expansion, validation
+  oracle.py    L4   LLM backend, fuel-bounded kernel, tool sandbox
+  config.py    --   Configuration resolution, env expansion, validation
   locke.py     L5   Locke compiler (tokenizer, parser, resolver, executor)
   report.py    L6   Reports, manifests, dependency graph rendering
   cli.py       L7   CLI commands, terminal rendering, entry points
@@ -24,12 +24,12 @@ src/husks/
 
 ### Dependency flow
 
-Every module imports only from strictly lower layers; `engine` and `oracle`
-share L3 and do not import each other. `kernel` imports only the standard
-library. No other module calls `hashlib` directly; all cryptographic
-operations are centralized in the kernel. The machine-checkable version of the
-layer contract is [`../layers.toml`](../layers.toml), enforced by
-`husks doctor --arch`.
+Every module imports only from strictly lower layers; `oracle` (L4) is
+invoked by `engine` (L3) through the `oracle_backend` callback but does
+not import engine or any other husks module. `kernel` imports only the
+standard library. `config.py` is a support module with no layer assignment
+and no Locke contract. The machine-checkable version of the layer contract
+is [`../layers.toml`](../layers.toml), enforced by `husks doctor --arch`.
 
 ---
 
@@ -78,7 +78,7 @@ The build state is a mutable dict threaded through every function:
 | `status` | `str` | `"running"` / `"committed"` / `"halted"` |
 | `value` | `str \| None` | Terminal value or halt reason |
 | `trace` | `list` | Append-only event log (dicts) |
-| `oracle-backend` | `callable \| None` | Oracle dispatch function |
+| `oracle-backend` | `Callable \| None` | Oracle backend instance (L4 OracleBackend protocol) |
 | `run-id` | `str` | UUID for this build invocation |
 
 ---
@@ -172,7 +172,7 @@ specifying a build graph.
 | `check(design)` | Static validation.  Returns `list[str]` of errors (empty = valid). |
 | `check_categorized(design)` | Validation with errors grouped by category. Returns dict with `ok`, `categories`, `errors`. |
 | `show(design)` | Pretty-print compiled graph to stdout. |
-| `compile(design)` | Lower IR to runtime node dicts.  Returns `(name, fuel, terminal_node, kwargs)`. |
+| `compile_design(design)` | Lower IR to runtime node dicts.  Returns `(name, fuel, terminals, kwargs)`. |
 | `run(design)` | End-to-end: check, compile, build.  Returns final Store dict. |
 | `from_json(path)` | Load design from JSON file. Tags with `_source_path`. |
 | `to_json(design, path)` | Serialize design to JSON. |
@@ -244,8 +244,10 @@ Defined in `forms.py`.  Two services:
 
 ```python
 class OracleBackend(Protocol):
-    def __call__(self, S: Store, rule_name: str,
-                 recipe: dict, outputs: list[str]) -> dict | None: ...
+    name: str
+    def run(self, S: dict[str, Any], rule_name: str,
+            recipe: dict[str, Any], outputs: list[str],
+            config: dict[str, Any]) -> RealizedCost: ...
 ```
 
 Nothing about the backend's identity participates in the seal.
@@ -287,17 +289,6 @@ instead of replaced.
 dispatching. Per-rule backend selection lets a design route expensive
 rules to a different backend (e.g. `claude-code`) while other rules
 use the global default.
-
-### live_oracle()
-
-Adapts the kernel to the build's oracle backend signature:
-
-```python
-def live_oracle(S, rule_name, recipe, outputs) -> dict
-```
-
-Sets site root for sandboxing, constructs system prompt, snapshots
-usage before/after, runs `agent()`, returns usage dict.
 
 ---
 
@@ -357,7 +348,7 @@ Each line of `.traces/<rule>.history.jsonl`:
 
 ## Build manifest
 
-Written by `engine.py` after a successful build to
+Written by `seal.py` (called from `engine.py`) after a successful build to
 `.traces/build.manifest.json`:
 
 ```json
@@ -373,14 +364,14 @@ Written by `engine.py` after a successful build to
 }
 ```
 
-Read by `report.py` for the `status`, `diff`, and `explain`
+Read by `report.py` for the `status`, `compare`, and `history`
 commands.
 
 ---
 
 ## Trial report
 
-Written by `engine.py` after a trial verdict to
+Written by `seal.py` (called from `engine.py`) after a trial verdict to
 `.traces/<rule>.trial.json`:
 
 ```json
@@ -394,8 +385,8 @@ Written by `engine.py` after a trial verdict to
       "kind": "str",
       "selected": "bool",
       "elapsed_ms": "float",
-      "cost_usd": "float",
-      "outputs": [{"path": "str", "hash": "str"}],
+      "cost_usd": "float | null",
+      "outputs": {"<output_name>": "<hex content hash>"},
       "score": "float | null"
     }
   ]

@@ -58,7 +58,8 @@ os.fsync + os.replace.  Crash mid-write leaves original intact.
 
 ## Store construction
 
-fresh_store(site, fuel, oracle_backend=None, ...) creates S with keys:
+fresh_store(site, fuel, *, oracle_backend=None, oracle_backend_name="litellm",
+readonly_dirs=None) creates S with keys:
   site, fuel, status="running", value=None, trace=[], oracle-backend,
   oracle-backend-name, readonly-dirs, run-id (uuid4), usage.
 

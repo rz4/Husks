@@ -5,7 +5,7 @@ exercises one layer of `src/husks/`, plus a small set of cross-layer
 integration tests at the top level. The legacy pre-consolidation suite is kept
 out of the run (`norecursedirs = ["legacy"]`).
 
-765 tests, all deterministic, run in a few seconds with stub oracles.
+777 tests, all deterministic, run in a few seconds with stub oracles.
 
 ## Layer suites
 
@@ -15,10 +15,10 @@ out of the run (`norecursedirs = ["legacy"]`).
 | `tests/L1-forms/` | L1 forms | 70 | Recipe identity, elaboration, CSE↔JSON bijection |
 | `tests/L2-seal/` | L2 seal | 84 | Path sandboxing, filesystem ops, seal I/O, store |
 | `tests/L3-engine/` | L3 engine | 81 | Build evaluator, caching, node eval |
-| `tests/L4-oracle/` | L3 oracle | 94 | Backend, fuel-bounded kernel, tool sandbox, gate |
+| `tests/L4-oracle/` | L4 oracle | 94 | Backend, fuel-bounded kernel, tool sandbox, gate |
 | `tests/L5-locke/` | L5 locke | 106 | Tokenizer, parser, validation, executor |
 | `tests/L6-inspect/` | L6 report | 96 | Convergence, dependency graph, manifest, report |
-| `tests/L7-cli/` | L7 cli | 138 | Command dispatch, config, helpers, rendering |
+| `tests/L7-cli/` | L7 cli | 150 | Command dispatch, config, helpers, rendering |
 
 ## Cross-layer integration
 

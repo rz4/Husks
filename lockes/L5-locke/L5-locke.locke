@@ -15,7 +15,7 @@ depends: L0-kernel, L2-seal, L3-engine (deferred imports in executor only)
 ## Dependency constraint
 
 locke.py tokenizer/parser/resolver/validator sections import ONLY Python stdlib
-(json, os, subprocess, pathlib, typing, inspect).  Executor section defers
+(json, os, subprocess, pathlib, typing).  Executor section defers
 imports of engine (L3) and seal (L2) to function bodies.  No husks.utils imports.
 
 ## Surface syntax

@@ -89,13 +89,12 @@ render_graph(design, fmt, site, root_hash) -> str
 
 CliOutput(path, sha256)
 CliTrace(backend, model, config_hash, prompt_hash, input_tokens,
-         output_tokens, elapsed_s, cost_usd, stdout, stderr, cache_source)
+         output_tokens, elapsed_s, cost_usd, cache_source)
 CliNode(name, kind, state, children, fuel, fuel_budget, cost, cache,
-        output_hash, diagnosis, stale_reason, duration, outputs, trace,
-        seal_digest, recipe_digest, input_hashes, output_hashes)
+        diagnosis, stale_reason, duration, outputs, trace)
 CliResidue(command, design_name, status, site, cse_path, root, husk_hash,
-           target, fuel_budget, fuel_used, run_count, cost, nodes,
-           passes, fails, error_message)
+           target, fuel_budget, fuel_used, cost, nodes,
+           passes, fails, error_message, site_inputs)
 
 ## §8 State mapping
 

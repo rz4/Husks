@@ -27,6 +27,10 @@ the backend and tool registries.
 RealizedCost(TypedDict): tokens_in, tokens_out, cost_usd, fuel_steps
   Provenance only.  None enter the Merkle DAG.
 
+OracleHaltError(RuntimeError): raised when an oracle terminates abnormally
+  but partial usage was captured.  Carries an optional RealizedCost via
+  self.cost attribute.
+
 OracleBackend(Protocol): name: str, run(S, rule_name, recipe, outputs, config) -> RealizedCost
   Must: (1) confine effects to site + readonly roots, (2) permit only
   recipe tools, (3) stop at recipe fuel, (4) raise on non-clean exit,

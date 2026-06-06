@@ -16,7 +16,7 @@ depends: L0-kernel, L1-forms, L2-seal
 ## Dependency constraint
 
 engine.py imports ONLY kernel (L0) + forms (L1) + seal (L2) + Python stdlib
-(hashlib, json, os, shutil, tarfile, tempfile, time, uuid, contextlib, pathlib).
+(hashlib, json, os, shutil, tarfile, tempfile, time, uuid, pathlib, typing).
 No trace coupling (husks.utils.trace).  No global mutable state.
 All events go into S["trace"].
 
