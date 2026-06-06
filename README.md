@@ -47,11 +47,11 @@ husks doctor
 **1. Write a design** in [Locke](docs/locke.md) or JSON:
 
 ```
-# core-bootstrap.locke -- Generates a CSE reader from the frozen spec.
+# kernel-bootstrap.locke -- Generates a CSE reader from the frozen spec.
 #
 
 #- Design fixture
-"core-bootstrap"       := design
+"kernel-bootstrap"       := design
                     5  := fuel
              [0.5 2.0] := tolerance
 
@@ -90,13 +90,13 @@ validate := action [
 **2. Check the design** (no model calls, validates structure):
 
 ```bash
-husks check core-bootstrap.locke
+husks check kernel-bootstrap.locke
 ```
 
 **3. Run the build** (fires the oracle, seals the result):
 
 ```bash
-husks run core-bootstrap.locke --site ./M1 --model anthropic/claude-haiku-4-5-20251001
+husks run kernel-bootstrap.locke --site ./M1 --model anthropic/claude-haiku-4-5-20251001
 ```
 
 **4. Inspect the site:**
@@ -111,13 +111,13 @@ husks verify ./M1
 ```bash
 husks cache export M1 cache.tar.gz
 husks cache import cache.tar.gz M2
-husks run core-bootstrap.locke --site ./M2 --reuse-only
-husks run core-bootstrap.locke --site ./M3
+husks run kernel-bootstrap.locke --site ./M2 --reuse-only
+husks run kernel-bootstrap.locke --site ./M3
 husks compare M1 M2 M3
 ```
 
 ```
-     ◆    design: core-bootstrap
+     ◆    design: kernel-bootstrap
     ╱ ╲   state:  sealed
    ◆ ◆ ◆  husk:   0bb90a01b978767c...
     ╲ ╱   root:   182e3015da5cc7d4...

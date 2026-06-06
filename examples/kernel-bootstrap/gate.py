@@ -35,7 +35,7 @@ def _conformance_dir() -> Path:
     except (ImportError, FileNotFoundError):
         pass
 
-    # Repo-relative: examples/core-bootstrap -> repo -> spec/conformance
+    # Repo-relative: examples/kernel-bootstrap -> repo -> spec/conformance
     here = Path(__file__).resolve().parent
     candidate = here.parent.parent / "spec" / "conformance"
     if candidate.exists():

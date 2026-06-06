@@ -30,7 +30,7 @@ The first iteration borrowed from Lisp: square brackets, `:-` as the
 binding operator, `@path` for file inclusion, bare words as atoms:
 
 ```
-name     :- "core-bootstrap"
+name     :- "kernel-bootstrap"
 fuel     :- 20
 target   :- "validate"
 
@@ -60,7 +60,7 @@ things deserve two different operators.
 right. The concrete thing *is the* label:
 
 ```
-"core-bootstrap"  :=  public
+"kernel-bootstrap"  :=  public
 20                :=  fuel
 ```
 
@@ -227,7 +227,7 @@ Top-level declarations:
 
 | Form | Example |
 |------|---------|
-| Build name | `"core-bootstrap" := design` (synonym: `public`) |
+| Build name | `"kernel-bootstrap" := design` (synonym: `public`) |
 | Fuel budget | `20 := fuel` |
 | Site inputs (bare) | `gate.py := site` (identity mapping) |
 | Site inputs (dir) | `spec := site [CSE-v1.md CSE-v2.md]` (prefix: `spec/`) |
@@ -274,6 +274,6 @@ CseValue tree
 
 ## Invariant
 
-`core-bootstrap.locke` is the canonical design source.  The JSON surface
+`kernel-bootstrap.locke` is the canonical design source.  The JSON surface
 is still accepted but is no longer shipped as a parallel fixture.
 The Locke parser and resolver are tested in `tests/L5-locke/`.

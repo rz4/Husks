@@ -105,7 +105,7 @@ _footer_left(residue) -> str
   run+halted->"halt: <name>", status->sealed/stale.
 
 _footer_right(residue) -> str
-  run: tokens in/out, cost, elapsed, fuel used/budget.
+  run: tokens in/out, cost, elapsed, fuel used/budget (unified global pool).
   status: tokens in/out, cost, elapsed, fuel (no budget).
   Both read from node traces.  Empty for non-run/status commands.
 
@@ -127,7 +127,8 @@ collect_dry_residue(design) -> CliResidue
 
 collect_hydrated_residue(S, design) -> CliResidue
   Run command: maps trace events (fired->sealed, sealed->cached,
-  rule-halted->failed) via map_trace_state.  Computes fuel_used,
+  rule-halted->failed) via map_trace_state.  Computes fuel_used
+  (total global fuel consumed across all rules and oracle steps),
   husk_hash from site, cost from usage tracker.
 
 ## §6 Commands

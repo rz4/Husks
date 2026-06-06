@@ -40,5 +40,5 @@
 # ── Special modules ───────────────────────────────────────────────
 
 [isolated]
-# The gate is now a standalone script (examples/core-bootstrap/gate.py)
+# The gate is now a standalone script (examples/kernel-bootstrap/gate.py)
 # with zero husks dependencies.

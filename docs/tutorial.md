@@ -17,7 +17,7 @@ There are **three** roles, and keeping them separate is the whole point.
 
 | Role | Who plays it | What it does |
 | :--- | :--- | :--- |
-| **Author** | you (or any tool that writes a `.locke` / `.json` design) | reads the task, writes the build graph, sets fuel budgets |
+| **Author** | you (or any tool that writes a `.locke` / `.json` design) | reads the task, writes the build graph, sets the global fuel budget and per-oracle fuel caps |
 | **Producer** | the husks `oracle` (a litellm call, default `claude-haiku-4-5`) | the one nondeterministic step: generates bytes inside a bounded workspace |
 | **Verifier** | the deterministic engine + frozen roots | seals, reuses, recomputes hashes; grades neither author nor producer on its say-so |
 
@@ -74,10 +74,10 @@ checkout; `doctor` is the install-level soundness check.)
 
 ## 4. Copy the example design and check your workspace
 
-Copy the bundled `core-bootstrap` example into a fresh working directory:
+Copy the bundled `kernel-bootstrap` example into a fresh working directory:
 
 ```bash
-cp -r "$(python -c 'import husks; print(husks.__path__[0])')/../examples/core-bootstrap" my-project
+cp -r "$(python -c 'import husks; print(husks.__path__[0])')/../examples/kernel-bootstrap" my-project
 cd my-project
 ```
 
@@ -91,7 +91,7 @@ husks tree
 Expected output:
 
 ```
-  core-bootstrap.locke  ✓
+  kernel-bootstrap.locke  ✓
 
   gate.py
   spec/
@@ -157,7 +157,7 @@ re-realization (M3) from the same seed design.
 ### Check the design
 
 ```bash
-husks check core-bootstrap.locke
+husks check kernel-bootstrap.locke
 ```
 
 ### Machine 1: original realization
@@ -169,9 +169,9 @@ husks run examples/stub-proof/stub-proof.json --site m1 --stub
 M1 builds the design with a stub oracle, pays synthetic oracle cost, and
 produces sealed outputs.
 
-**Note:** We use `stub-proof.json` here because `core-bootstrap.locke` requires
+**Note:** We use `stub-proof.json` here because `kernel-bootstrap.locke` requires
 a live oracle — its conformance gate rejects stub-generated placeholder content.
-Use `core-bootstrap.locke` with a real API key for production proofs.
+Use `kernel-bootstrap.locke` with a real API key for production proofs.
 
 ### Export cache from M1
 

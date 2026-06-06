@@ -650,8 +650,9 @@ def eval_rule(S: Store, node: Node) -> None:
         S["trace"].append({"event": "node_done", "name": name, "state": "reused", "elapsed": 0.0})
         return
 
-    # 3. Fire
-    burn(S, name)
+    # 3. Fire (oracles handle their own fuel via post-hoc burn in eval_oracle)
+    if recipe is None or recipe.get("type") != "oracle":
+        burn(S, name)
     # Clean stale outputs
     for o in outputs:
         op = Path(site_path(S, o))
@@ -709,6 +710,13 @@ def eval_rule(S: Store, node: Node) -> None:
         # Preserve partial usage from oracle halt (tokens, cost)
         partial = getattr(e, "cost", None)
         if partial:
+            # Post-hoc burn for partial oracle fuel (skipped by eval_oracle due to exception)
+            partial_fuel = partial.get("fuel_steps", 0)
+            if partial_fuel > 0 and recipe is not None and recipe.get("type") == "oracle":
+                for i in range(partial_fuel):
+                    if S["fuel"] <= 0:
+                        break
+                    burn(S, f"{name}:partial-step-{i+1}")
             S["trace"].append({
                 "event": "partial-usage", "rule": name,
                 "input_tokens": partial.get("tokens_in", 0),
@@ -764,8 +772,22 @@ def eval_oracle(
     S: Store, rule_name: str, recipe: dict[str, Any],
     inputs: list[str], outputs: list[str],
 ) -> dict[str, Any]:
-    """Evaluate oracle recipe with cache check.  Returns usage dict."""
+    """Evaluate oracle recipe with cache check.  Returns usage dict.
+
+    Unified fuel model: oracle tool calls consume from the global build fuel.
+    Per-rule ``fuel`` is a cap (maximum tool calls for that rule), not a
+    separate pool.  The effective fuel passed to the backend is capped at
+    ``min(recipe["fuel"], S["fuel"])``.  After the backend returns, the
+    actual ``fuel_steps`` are burned from global fuel via post-hoc burn.
+    """
     t0 = time.time()
+
+    # Cap effective fuel at min(recipe fuel, remaining global fuel)
+    rule_fuel = recipe.get("fuel", 8)
+    effective_fuel = min(rule_fuel, S["fuel"])
+    if effective_fuel <= 0:
+        raise RuntimeError(f"oracle '{rule_name}' requires fuel but build fuel is exhausted")
+    effective_recipe = {**recipe, "fuel": effective_fuel}
 
     # Cache check
     cached = (cache_get(S, recipe, inputs, declared_outputs=outputs)
@@ -780,7 +802,7 @@ def eval_oracle(
             raise RuntimeError(
                 f"oracle '{rule_name}' requires execution but cache-reuse-only mode is enabled")
         backend = S.get("oracle-backend") or default_oracle_backend
-        u = backend(S, rule_name, recipe, outputs) or {}
+        u = backend(S, rule_name, effective_recipe, outputs) or {}
 
     # Accumulate usage
     cost = u.get("cost_usd", 0.0)
@@ -809,6 +831,10 @@ def eval_oracle(
         if k in u and ru[k] is None:
             ru[k] = u[k]
 
+    # Post-hoc burn: consume fuel_steps from global fuel
+    for i in range(fuel_steps):
+        burn(S, f"{rule_name}:step-{i+1}")
+
     elapsed = time.time() - t0
     S["trace"].append({
         "event": "oracle", "rule": rule_name, "cached": is_cached,
@@ -834,7 +860,6 @@ def eval_trial(
         if S["fuel"] <= 0:
             break
         bname = branch.get("name") or f"branch-{len(results)}"
-        burn(S, f"{rule_name}:{bname}")
         tmp = tempfile.mkdtemp(prefix=f"trial-{bname}-")
         t0 = time.time()
         try:
@@ -857,6 +882,11 @@ def eval_trial(
             else:
                 bfuel, bcost = 1, BS["usage"]["total_cost_usd"]
                 bti, bto = BS["usage"]["total_input_tokens"], BS["usage"]["total_output_tokens"]
+            # Post-hoc burn: sync branch fuel consumption back to parent
+            for i in range(bfuel):
+                if S["fuel"] <= 0:
+                    break
+                burn(S, f"{rule_name}:{bname}:step-{i+1}")
             results.append({
                 "name": bname, "outputs": out_data, "elapsed": elapsed,
                 "tokens_in": bti, "tokens_out": bto, "cost_usd": bcost, "fuel_steps": bfuel,

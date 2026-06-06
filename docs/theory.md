@@ -23,7 +23,7 @@ An agent loop runs a model until the model decides it is finished. The work and 
 
 A Husk reverses the order. The design is a contract that exists *before* the model touches anything: the whole graph, every input, output, prompt, tool, and fuel bound, written down where you can read it. You review the contract. Then the runtime walks it, fires only what is stale, seals what is fresh, reuses what is already sealed, and prints exactly what happened.
 
-The contract precedes the work. It is not reconstructed from logs afterward. Fuel bounds everything (a global budget and a budget per oracle), so there are no unbounded loops to wait out. Sealed residue is never regenerated, which makes reruns nearly free. Nondeterminism has exactly one home: `oracle`. The rest is deterministic structure you can reason about.
+The contract precedes the work. It is not reconstructed from logs afterward. Fuel bounds everything: a single global budget, with each oracle capped at a declared maximum share of it. Oracle tool calls consume from the global pool, so there are no unbounded loops to wait out and the total cost is visible in one number. Sealed residue is never regenerated, which makes reruns nearly free. Nondeterminism has exactly one home: `oracle`. The rest is deterministic structure you can reason about.
 
 A design is the contract. It becomes a Husk when it is lowered, sealed, and verified.
 
@@ -31,7 +31,7 @@ A design is the contract. It becomes a Husk when it is lowered, sealed, and veri
 
 ## 3. Execution model
 
-The graph owns control flow. Each rule declares its inputs and outputs up front. Each recipe runs in a bounded workspace. Each oracle gets an explicit tool allowlist and its own local fuel. As it walks, the runtime records reads, writes, hashes, cost, timing, what was stale and why, what was reused, and how it ended.
+The graph owns control flow. Each rule declares its inputs and outputs up front. Each recipe runs in a bounded workspace. Each oracle gets an explicit tool allowlist and a fuel cap — the maximum number of tool calls it may make, drawn from the build's single global fuel pool. As it walks, the runtime records reads, writes, hashes, cost, timing, what was stale and why, what was reused, and how it ended.
 
 A build moves through artifacts, in one direction:
 
@@ -50,7 +50,7 @@ There are two ways to hold a Husk, and they are not the same kind of thing.
 **The transport** is what you author. Locke is a small surface language whose *nesting is the dependency structure*, so the build tree is visible in the source instead of inferred from it. It names the target, the fuel, the rules, and for each oracle its prompt and tools:
 
 ```
-"core-bootstrap" := design
+"kernel-bootstrap" := design
 5                := fuel
 
 validate := action [
@@ -126,7 +126,7 @@ Anything less is a reader that works on the easy cases and lies on the hard ones
 
 ## 7. Bootstrap validation
 
-`examples/core-bootstrap/core-bootstrap.locke` turns that test on the framework itself. It has two rules. An `oracle` reads CSE v1 and v2 (and nothing else: no existing reader, no answer key) and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate (`gate.py`, standalone) judges that reader against the six frozen conformance vectors: three positive roots that must match and three malformed inputs that must be rejected. Optionally it cross-checks against the independent JavaScript reader. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
+`examples/kernel-bootstrap/kernel-bootstrap.locke` turns that test on the framework itself. It has two rules. An `oracle` reads CSE v1 and v2 (and nothing else: no existing reader, no answer key) and writes a dependency-free Python reader to `readers/generated_reader.py`. Then a deterministic gate (`gate.py`, standalone) judges that reader against the six frozen conformance vectors: three positive roots that must match and three malformed inputs that must be rejected. Optionally it cross-checks against the independent JavaScript reader. Pass, and the gate writes `readers/VERIFIED`. Fail, and the build halts with the reason.
 
 The oracle produces; the gate verifies; the gate is not the oracle. A model can write the verifier, but it cannot grade its own verifier. The frozen roots do that, and the roots were computed by readers the model never saw. What happened the first time we ran this is at the end of the document, because it is the point of the whole exercise.
 
@@ -160,7 +160,7 @@ oracle : (prompt, tools, fuel, X) ⇝ Y            nondeterministic, bounded
 trial  : (branch₁, …, branchₙ, verdict) → Y      speculative; one residue survives
 ```
 
-Evaluation consumes fuel and terminates by `commit` or `halt`. The language gives uncertainty one explicit form. Everything else is structure.
+Evaluation consumes fuel from a single global pool and terminates by `commit` or `halt`. Per-oracle fuel is a cap, not a separate pool: an oracle may use up to its declared fuel, but every step it takes is drawn from the build's global budget. The language gives uncertainty one explicit form. Everything else is structure.
 
 This is an informal operational account. The reduction relation, a termination argument from the fuel bound, and any soundness statement relating seals to the artifacts they certify are not yet written down. "Calculus" here names the intent and the shape, not a completed formalization.
 

@@ -764,6 +764,21 @@ def check(design: Design, *, unsafe: bool = False) -> list[str]:
                     errors.append(
                         f"target '{t}' is an oracle — root must be an action "
                         f"(use --unsafe to override)")
+
+    # Unified fuel model: warn if sum of oracle fuel caps exceeds global fuel
+    if fuel is not None and isinstance(fuel, (int, float)) and fuel > 0:
+        import warnings
+        oracle_fuel_sum = sum(
+            r.get("fuel", 0)
+            for r in rules if r.get("kind") == "oracle"
+        )
+        if oracle_fuel_sum > fuel:
+            warnings.warn(
+                f"sum of oracle fuel caps ({oracle_fuel_sum}) exceeds "
+                f"design fuel budget ({fuel}); not all oracles can run "
+                f"at full capacity in a single build",
+                stacklevel=2,
+            )
     return errors
 
 

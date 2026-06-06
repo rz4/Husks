@@ -1,4 +1,4 @@
-# core-bootstrap.locke -- Generates a CSE reader from the frozen spec.
+# kernel-bootstrap.locke -- Generates a CSE reader from the frozen spec.
 #
 # Locke syntax reference
 # ──────────────────────
@@ -17,7 +17,7 @@
 #
 # Design preamble (each declared once, first occurrence wins)
 #   := design     Public slug of the experiment (synonym: public).
-#   := fuel       Total build budget -- maximum oracle invocations.
+#   := fuel       Total build budget -- global fuel pool for all steps.
 #   := tolerance  Float pair [min max], acceptable compute drift M1..Mn.
 #   := site       Declare site inputs from the design directory.
 #                 Bare form:  file := site          (identity mapping)
@@ -35,7 +35,7 @@
 #     := free     Output files without equivalence constraint.
 #     := exact    Output files requiring exact-match verification.
 #     := tools    Tool set available to the oracle.
-#     := fuel     Step budget for this oracle.
+#     := fuel     Fuel cap for this oracle (max steps from global pool).
 #     := prompt   Instructions for the oracle.
 #
 # The target of a design must be an action (use --unsafe to override).
@@ -50,7 +50,7 @@
 
 
 #- Design fixture
-"core-bootstrap"       := design
+"kernel-bootstrap"       := design
                     5  := fuel
              [0.5 2.0] := tolerance
 

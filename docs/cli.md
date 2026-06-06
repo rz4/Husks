@@ -66,24 +66,24 @@ proof satisfied
 
 ### Live proof path (requires API key)
 
-Uses `core-bootstrap.locke` with a real oracle. Proves behavioral equivalence
-through the conformance gate. **Note:** `core-bootstrap.locke --stub` does not
+Uses `kernel-bootstrap.locke` with a real oracle. Proves behavioral equivalence
+through the conformance gate. **Note:** `kernel-bootstrap.locke --stub` does not
 pass the conformance gate because the stub oracle writes placeholder content
-that the gate rejects. Use a live oracle for core-bootstrap.
+that the gate rejects. Use a live oracle for kernel-bootstrap.
 
 ```bash
 # Machine 1: Original realization with live oracle
-husks run core-bootstrap.locke --site m1 --model anthropic/claude-haiku-4-5
+husks run kernel-bootstrap.locke --site m1 --model anthropic/claude-haiku-4-5
 
 # Export cache from M1
 husks cache export m1 cache.tar.gz
 
 # Machine 2: Import cache and reuse at zero cost
 husks cache import cache.tar.gz m2
-husks run core-bootstrap.locke --site m2 --reuse-only
+husks run kernel-bootstrap.locke --site m2 --reuse-only
 
 # Machine 3: Independent re-realization with live oracle
-husks run core-bootstrap.locke --site m3 --model anthropic/claude-haiku-4-5
+husks run kernel-bootstrap.locke --site m3 --model anthropic/claude-haiku-4-5
 
 # Verify computational equivalence
 husks compare m1 m2 m3
@@ -114,10 +114,10 @@ Validate design structure and dependencies.
 **Example:**
 ```bash
 # Silent validation
-husks check core-bootstrap.locke
+husks check kernel-bootstrap.locke
 
 # JSON output
-husks check core-bootstrap.locke --json
+husks check kernel-bootstrap.locke --json
 ```
 
 ### `husks run <design>`
@@ -139,16 +139,16 @@ Execute a build design, running oracles and actions.
 **Examples:**
 ```bash
 # Run with stub oracle
-husks run core-bootstrap.locke --site m1 --stub
+husks run kernel-bootstrap.locke --site m1 --stub
 
 # Run with live oracle
-husks run core-bootstrap.locke --site m1 --model anthropic/claude-haiku-4-5
+husks run kernel-bootstrap.locke --site m1 --model anthropic/claude-haiku-4-5
 
 # Cache-only run (M2 scenario)
-husks run core-bootstrap.locke --site m2 --reuse-only
+husks run kernel-bootstrap.locke --site m2 --reuse-only
 
 # JSON output
-husks run core-bootstrap.locke --site m1 --stub --json
+husks run kernel-bootstrap.locke --site m1 --stub --json
 ```
 
 ### `husks verify <site>`
@@ -319,7 +319,7 @@ husks doctor --json
 Husks renders a diamond card with a motif tree:
 
 ```
-     ◆    design: core-bootstrap
+     ◆    design: kernel-bootstrap
     ╱ ╲   state:  sealed
    ◆ ◆ ◆  husk:   0bb90a01b978767c...
     ╲ ╱   root:   182e3015da5cc7d4...
@@ -354,11 +354,11 @@ Each node shows:
 
 - **Name:** Rule name
 - **Kind:** oracle/action/trial
-- Right-aligned metadata: tokens, cost, duration, fuel consumed
+- Right-aligned metadata: tokens, cost, duration, fuel consumed (from global pool)
 
 ### Summary Line
 
-Bottom line aggregates totals: tokens, cost, duration, and total fuel steps.
+Bottom line aggregates totals: tokens, cost, duration, and total fuel steps consumed from the global pool.
 
 ## JSON Report Schema (beta-1)
 
@@ -370,7 +370,7 @@ The JSON report follows the beta-1 schema:
   "status": "committed",
   "root": "<64-char-hex>",
   "run_id": "<uuid>",
-  "build": "core-bootstrap",
+  "build": "kernel-bootstrap",
   "site": "m1",
   "elapsed_s": 0.063,
   "fuel": {
@@ -448,13 +448,13 @@ frozen conformance vectors.
    - Inputs: `CSE-v1.md`, `CSE-v2.md`
    - Output: `readers/generated_reader.py` (free)
    - Tools: read-file, write-file
-   - Fuel: 4
+   - Fuel: 4 (cap — up to 4 of the global 5 steps)
 
 2. **validate** (action, target)
    - Input: `readers/generated_reader.py`
    - Outputs: `readers/gate-report.txt` (free), `readers/VERIFIED` (exact)
    - Command: `python3 gate.py` (runs the reader against frozen vectors)
-   - Actions don't consume fuel
+   - Actions consume 1 global fuel step (the action fire itself)
 
 **Design principles:**
 - Minimal: 2 rules, 1 oracle, 1 action
@@ -621,8 +621,8 @@ husks run examples/stub-proof/stub-proof.json --site m1 --stub
 
 This uses a deterministic stub oracle with zero API cost.
 
-**Note:** `core-bootstrap.locke --stub` will fail the conformance gate because the
-stub oracle writes placeholder content. Use a live oracle for core-bootstrap, or
+**Note:** `kernel-bootstrap.locke --stub` will fail the conformance gate because the
+stub oracle writes placeholder content. Use a live oracle for kernel-bootstrap, or
 use `examples/stub-proof/stub-proof.json` for zero-cost testing.
 
 ### What's the difference between --stub and live oracles?
@@ -635,7 +635,7 @@ use `examples/stub-proof/stub-proof.json` for zero-cost testing.
 | Use Case | Testing, proofs | Production builds |
 | Outputs | Reference implementation | LLM-generated |
 
-### Can I use my own design instead of core-bootstrap?
+### Can I use my own design instead of kernel-bootstrap?
 
 Yes. Create a `.locke` or `.json` design:
 
@@ -681,4 +681,4 @@ See `examples/` for more designs.
 - **CLI Source:** `src/husks/cli.py`
 - **Report/Manifest:** `src/husks/report.py`
 - **Locke Parser:** `src/husks/locke.py`
-- **Conformance Gate:** `examples/core-bootstrap/gate.py`
+- **Conformance Gate:** `examples/kernel-bootstrap/gate.py`

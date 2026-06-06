@@ -254,7 +254,7 @@ An observational `convergence` block never flips `equivalent`:
 ### Declaring equivalence in the seed design
 
 An optional per-rule `equivalence` map keyed by output path. Unlisted
-outputs default to `exact`. Example for `core-bootstrap`:
+outputs default to `exact`. Example for `kernel-bootstrap`:
 
 ```json
 {
@@ -283,7 +283,7 @@ receives a plain string list of outputs. Do not overload `outputs`.
 
 ### Binding acceptance to behavior
 
-The `core-bootstrap` validate rule runs the conformance gate, not just
+The `kernel-bootstrap` validate rule runs the conformance gate, not just
 `py_compile`. The gate stamps a conformance digest (a SHA-256 of the
 reader's correct outputs on frozen vectors) instead of a constant.
 The conformance digest is constant across all *correct* readers,
