@@ -38,8 +38,65 @@ jobs:
       - name: Mypy
         run: mypy src/husks/
 
-  smoke:
-    name: Smoke
+  alpha:
+    name: "Alpha (solid) · ${{ matrix.python }}"
+    needs: [lint]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest litellm
+      - name: Alpha tests (L0–L4)
+        run: >
+          python -m pytest
+          tests/L0-kernel/
+          tests/L1-forms/
+          tests/L2-seal/
+          tests/L3-engine/
+          tests/L4-oracle/
+          -v --tb=short
+
+  beta-stub:
+    name: "Beta stub (liquid) · ${{ matrix.python }}"
+    needs: [alpha]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest litellm
+      - name: Beta stub tests (L5–L6 + integration)
+        run: >
+          python -m pytest
+          tests/L5-locke/
+          tests/L6-inspect/
+          tests/test_three_machine_stub.py
+          tests/test_staging_sandbox.py
+          tests/test_import_output_rejection.py
+          -v --tb=short
+
+  gamma:
+    name: "Gamma (gas) · ${{ matrix.python }}"
+    needs: [beta-stub]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -55,28 +112,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-cov litellm
-      - name: Run all layer tests
-        run: python -m pytest tests/ -v --tb=short --cov=husks
+      - name: Gamma tests (L7–L8) + coverage
+        run: >
+          python -m pytest
+          tests/L7-cli/
+          tests/L8-pilot/
+          -v --tb=short --cov=husks
 
-  three-machine-stub:
-    name: Three-Machine Stub
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install pytest litellm
-      - name: Three-machine stub proof
-        run: python -m pytest tests/test_three_machine_stub.py -v --tb=short
-
-  live-oracle:
-    name: Live Oracle
+  beta-live:
+    name: Beta live (live oracle)
     if: github.event_name == 'workflow_dispatch'
+    needs: [beta-stub]
     runs-on: ubuntu-latest
     environment: live-oracle
     steps:
