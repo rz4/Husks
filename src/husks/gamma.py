@@ -94,7 +94,6 @@ def condense(
     from husks.seal import fresh_store
     from husks.report import (
         build_site_residue, compare_artifacts, three_machine_checks,
-        read_manifest,
     )
     from husks.forms import _pred_identity
 

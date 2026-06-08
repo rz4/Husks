@@ -1,8 +1,6 @@
 """Tests for sandbox_env() and sandboxed action subprocess execution."""
 
-import os
-import pytest
-from husks.engine import sandbox_env, build, rule, action, _make_shell_action
+from husks.engine import sandbox_env, build, rule
 
 
 class TestSandboxEnvStripsNetworkVars:

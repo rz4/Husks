@@ -169,7 +169,6 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
 
             selector.close()
             returncode = proc.wait()
-            stdout_text = "".join(out_buf)
             stderr_text = "".join(err_buf)
 
             # Guard: detect symlinks created by command to bypass staging

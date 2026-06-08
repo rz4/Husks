@@ -8,11 +8,12 @@ Tests cover:
 """
 
 import json
+import os
 import subprocess
 import sys
-import pytest
-from pathlib import Path
-from io import StringIO
+
+# Ensure subprocess can find the husks package even when not pip-installed
+_SRC_DIR = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, "src")
 
 
 def _write_design(tmp_path, *, action_cmd="echo ok > out.txt",
@@ -41,11 +42,15 @@ def _write_design(tmp_path, *, action_cmd="echo ok > out.txt",
 
 def _run_husks(*args):
     """Run husks CLI via subprocess and return CompletedProcess."""
+    env = os.environ.copy()
+    # Prepend src/ so the subprocess can import husks without pip install
+    env["PYTHONPATH"] = os.path.abspath(_SRC_DIR) + os.pathsep + env.get("PYTHONPATH", "")
     return subprocess.run(
         [sys.executable, "-c",
          "from husks.cli import _cli_entry; _cli_entry()"] + list(args),
         capture_output=True, text=True,
         timeout=120,
+        env=env,
     )
 
 

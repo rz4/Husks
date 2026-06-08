@@ -8,7 +8,6 @@ P.d  Failed condensation returns to vapor, retry works
 P.e  Ratchet proposes action rules, filters to accepted outputs
 """
 
-import pytest
 from pathlib import Path
 
 

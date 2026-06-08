@@ -6,7 +6,6 @@ D.b  Evaporate: discard transcript, persist replayable graph
 D.c  Cold topological replay from condensate alone
 """
 
-import pytest
 from pathlib import Path
 
 

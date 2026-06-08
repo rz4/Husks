@@ -9,8 +9,6 @@ Tests cover:
 """
 
 import json
-import hashlib
-import pytest
 from pathlib import Path
 
 

@@ -10,9 +10,6 @@ These are the definition of correct for the gamma gate.
 5. Transcript never in seal
 """
 
-import json
-import hashlib
-import pytest
 from pathlib import Path
 
 
