@@ -31,3 +31,9 @@ def _write_action(name, content):
         write_text(site_path(S, name, write=True), content)
     _action._husks_cmd = f"write-{name}"
     return _action
+
+
+@pytest.fixture
+def write_action():
+    """Expose _write_action factory as a fixture."""
+    return _write_action

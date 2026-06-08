@@ -10,23 +10,22 @@ from husks.engine import (
     node_to_cse, compute_build_root,
 )
 from husks.seal import site_path, write_text
-from conftest import _write_action
 
 
 # ── build() orchestration ────────────────────────────────────────
 
 class TestBuild:
-    def test_simple_action_build(self, tmp_path):
+    def test_simple_action_build(self, tmp_path, write_action):
         site = str(tmp_path / "site")
-        n = rule("writer", recipe=action(_write_action("out.txt", "hello")),
+        n = rule("writer", recipe=action(write_action("out.txt", "hello")),
                  outputs=["out.txt"])
         S = build("test-build", 5, n, site=site)
         assert S["status"] == "committed"
         assert Path(site, "out.txt").read_text() == "hello"
 
-    def test_auto_commit(self, tmp_path):
+    def test_auto_commit(self, tmp_path, write_action):
         site = str(tmp_path / "site")
-        n = rule("writer", recipe=action(_write_action("o.txt", "x")), outputs=["o.txt"])
+        n = rule("writer", recipe=action(write_action("o.txt", "x")), outputs=["o.txt"])
         S = build("b", 5, n, site=site)
         assert S["status"] == "committed"
         assert S["value"] == "ok"
@@ -43,12 +42,12 @@ class TestBuild:
         assert S["status"] == "halted"
         assert S["value"] == "failed"
 
-    def test_fuel_exhaustion_halts(self, tmp_path):
+    def test_fuel_exhaustion_halts(self, tmp_path, write_action):
         """Build halts when fuel runs out."""
         site = str(tmp_path / "site")
         # Chain two rules with fuel=1 -- second should exhaust
-        child = rule("r1", recipe=action(_write_action("a.txt", "a")), outputs=["a.txt"])
-        parent = rule("r2", child, recipe=action(_write_action("b.txt", "b")),
+        child = rule("r1", recipe=action(write_action("a.txt", "a")), outputs=["a.txt"])
+        parent = rule("r2", child, recipe=action(write_action("b.txt", "b")),
                        inputs=["a.txt"], outputs=["b.txt"])
         S = build("b", 1, parent, site=site)
         assert S["status"] == "halted"
@@ -67,9 +66,9 @@ class TestBuild:
         with pytest.raises(TypeError, match="missing required"):
             build(name="b", site=str(tmp_path))
 
-    def test_husk_file_written_on_commit(self, tmp_path):
+    def test_husk_file_written_on_commit(self, tmp_path, write_action):
         site = str(tmp_path / "site")
-        n = rule("r", recipe=action(_write_action("o.txt", "x")), outputs=["o.txt"])
+        n = rule("r", recipe=action(write_action("o.txt", "x")), outputs=["o.txt"])
         S = build("myb", 5, n, site=site)
         assert S["status"] == "committed"
         assert Path(site, "myb.husk").exists()
@@ -79,16 +78,16 @@ class TestBuild:
         S = build("myb", 5, halt("fail"), site=site)
         assert not Path(site, "myb.husk").exists()
 
-    def test_build_root_computed(self, tmp_path):
+    def test_build_root_computed(self, tmp_path, write_action):
         site = str(tmp_path / "site")
-        n = rule("r", recipe=action(_write_action("o.txt", "x")), outputs=["o.txt"])
+        n = rule("r", recipe=action(write_action("o.txt", "x")), outputs=["o.txt"])
         S = build("b", 5, n, site=site)
         assert S.get("build-root") is not None
         assert len(S["build-root"]) == 64
 
-    def test_manifest_on_commit(self, tmp_path):
+    def test_manifest_on_commit(self, tmp_path, write_action):
         site = str(tmp_path / "site")
-        n = rule("r", recipe=action(_write_action("o.txt", "x")), outputs=["o.txt"])
+        n = rule("r", recipe=action(write_action("o.txt", "x")), outputs=["o.txt"])
         S = build("b", 5, n, site=site)
         manifest_path = Path(site, ".traces", "build.manifest.json")
         assert manifest_path.exists()

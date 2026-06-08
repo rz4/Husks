@@ -8,7 +8,6 @@ from husks.engine import (
     BuildTransaction, default_oracle_backend,
 )
 from husks.seal import Stop, site_path, write_text, file_exists
-from conftest import _write_action
 
 
 # ── eval_node dispatch ───────────────────────────────────────────
@@ -57,9 +56,9 @@ class TestEvalCond:
 # ── eval_rule ────────────────────────────────────────────────────
 
 class TestEvalRule:
-    def test_action_fires_and_seals(self, tmp_store):
+    def test_action_fires_and_seals(self, tmp_store, write_action):
         """First eval fires (stale), second eval is sealed (fresh)."""
-        n = rule("writer", recipe=action(_write_action("out.txt", "hello")),
+        n = rule("writer", recipe=action(write_action("out.txt", "hello")),
                  outputs=["out.txt"])
         eval_node(tmp_store, n)
         # Output written
@@ -73,18 +72,18 @@ class TestEvalRule:
         sealed = [e for e in tmp_store["trace"] if e.get("event") == "sealed"]
         assert len(sealed) == 1
 
-    def test_prerequisites_evaluated_first(self, tmp_store):
-        child = rule("child", recipe=action(_write_action("dep.txt", "dep")),
+    def test_prerequisites_evaluated_first(self, tmp_store, write_action):
+        child = rule("child", recipe=action(write_action("dep.txt", "dep")),
                       outputs=["dep.txt"])
-        parent = rule("parent", child, recipe=action(_write_action("out.txt", "result")),
+        parent = rule("parent", child, recipe=action(write_action("out.txt", "result")),
                        inputs=["dep.txt"], outputs=["out.txt"])
         eval_node(tmp_store, parent)
         assert file_exists(site_path(tmp_store, "dep.txt"))
         assert file_exists(site_path(tmp_store, "out.txt"))
 
-    def test_fuel_consumed(self, tmp_store):
+    def test_fuel_consumed(self, tmp_store, write_action):
         initial_fuel = tmp_store["fuel"]
-        n = rule("r", recipe=action(_write_action("o.txt", "x")), outputs=["o.txt"])
+        n = rule("r", recipe=action(write_action("o.txt", "x")), outputs=["o.txt"])
         eval_node(tmp_store, n)
         assert tmp_store["fuel"] < initial_fuel
 
