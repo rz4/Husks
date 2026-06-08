@@ -1,12 +1,12 @@
 # layers.toml — Module layer assignment
 #
 # This file defines the DAG structure of the Husks codebase.
-# - Every module is assigned a single layer index (0..7)
+# - Every module is assigned a single layer index (0..8)
 # - Imports must target a strictly lower layer
 # - The import linter (husks doctor --arch) enforces this contract
 #
-# Indices match the L0..L7 descent in docs/README.md: a reader enters at
-# the L7 surface (cli) and descends toward the L0 kernel, following the
+# Indices match the L0..L8 descent in docs/README.md: a reader enters at
+# the L8 surface (cli) and descends toward the L0 kernel, following the
 # same arrows the code's imports point down.
 
 # ── Layer assignments ─────────────────────────────────────────────
@@ -34,8 +34,13 @@
 # L6 — Inspection
 "husks.report" = 6
 
-# L7 — CLI
-"husks.cli" = 7
+# L7 — Condensation
+"husks.gamma" = 7
+"husks.tracer" = 7
+
+# L8 — CLI + Pilot
+"husks.pilot" = 8
+"husks.cli" = 8
 
 # ── Special modules ───────────────────────────────────────────────
 

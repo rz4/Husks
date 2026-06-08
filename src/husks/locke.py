@@ -47,7 +47,7 @@ _DECL_KEYWORDS = frozenset({
 })
 _BLOCK_LABELS = frozenset({
     "inputs", "outputs", "free", "exact", "prompt", "tools", "fuel", "run",
-    "value", "reason", "predicate", "then", "else",
+    "value", "reason", "predicate", "then", "else", "verdict",
 })
 
 
@@ -541,8 +541,8 @@ _ALLOWED_DESIGN_FIELDS = frozenset({
 })
 
 _ALLOWED_RULE_FIELDS = {
-    "action": frozenset({"name", "kind", "inputs", "outputs", "run", "action_fn", "equivalence", "children"}),
-    "oracle": frozenset({"name", "kind", "inputs", "outputs", "prompt", "tools", "fuel", "equivalence", "children"}),
+    "action": frozenset({"name", "kind", "inputs", "outputs", "run", "action_fn", "equivalence", "children", "network", "clock"}),
+    "oracle": frozenset({"name", "kind", "inputs", "outputs", "prompt", "tools", "fuel", "equivalence", "children", "verdict"}),
     "trial": frozenset({"name", "kind", "inputs", "outputs", "branches", "verdict"}),
     "commit": frozenset({"name", "kind", "value"}),
     "halt": frozenset({"name", "kind", "reason"}),
@@ -685,6 +685,9 @@ def check(design: Design, *, unsafe: bool = False) -> list[str]:
         if kind == "oracle":
             if r.get("fuel", 0) <= 0: errors.append(f"{tag}: oracle rule has no fuel")
             if not r.get("prompt"): errors.append(f"{tag}: oracle rule has no prompt")
+            verdict = r.get("verdict")
+            if verdict is not None and not callable(verdict) and not isinstance(verdict, str):
+                errors.append(f"{tag}: verdict must be a callable or a policy name string")
         elif kind == "trial":
             if not r.get("branches"): errors.append(f"{tag}: trial has no branches")
             verdict = r.get("verdict")

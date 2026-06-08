@@ -234,9 +234,8 @@ def compare_artifacts(
                         details[f"root_{label.lower()}_valid"] = False
                         diffs.append(f"site {label} root verification failed: {e}")
 
-    if check_root_equality or check_root_validity:
-        # Report root convergence as informational (not in diffs)
-        details["roots_match"] = (ra is not None and ra == rb)
+    # Always report root convergence as informational (not in diffs)
+    details["roots_match"] = (ra is not None and ra == rb)
 
     if check_hashes:
         oa, ob = {}, {}
@@ -982,3 +981,200 @@ def validate_report_schema(report: dict) -> tuple[bool, list[str]]:
                 if f not in report["diagnosis"]:
                     errors.append(f"diagnosis.{f} missing")
     return len(errors) == 0, errors
+
+
+# ── §12 Site residue builder ─────────────────────────────────────
+
+def build_site_residue(site: str):
+    """Build a CliResidue for a site from its manifest and history.
+
+    Returns (residue, manifest) or (None, None).
+    """
+    import hashlib as _hl
+
+    manifest = read_manifest(site)
+    if not manifest:
+        return None, None
+    states = compute_rule_states(site, manifest)
+    rule_children = {r["name"]: r.get("children", []) for r in manifest.get("rules", [])}
+    nodes = [CliNode(name=s["name"], kind=s["kind"],
+                     state=map_manifest_state(s["state"]),
+                     stale_reason=s["reason"],
+                     children=rule_children.get(s["name"], [])) for s in states]
+    has_stale = any(n.state == "stale" for n in nodes)
+
+    husk_hash = None
+    design_name = manifest.get("name", "?")
+    hp = Path(site) / f"{design_name}.husk"
+    if hp.is_file():
+        husk_hash = _hl.sha256(hp.read_bytes()).hexdigest()
+
+    total_cost, fuel_used = 0.0, 0
+    report_path = Path(site) / ".traces" / "report.json"
+    if report_path.is_file():
+        try:
+            rdata = json.loads(report_path.read_text())
+            total_cost = rdata.get("cost", {}).get("paid", 0.0) or 0.0
+            fobj = rdata.get("fuel", {})
+            fuel_used = (fobj.get("start", 0) or 0) - (fobj.get("end", 0) or 0)
+        except Exception:
+            pass
+    use_history_totals = (total_cost == 0.0 and fuel_used == 0)
+    node_map = {n.name: n for n in nodes}
+    for rule in manifest.get("rules", []):
+        entries = read_history(site, rule["name"])
+        if not entries:
+            continue
+        last = entries[-1]
+        if use_history_totals:
+            total_cost += last.get("cost_usd") or 0.0
+            fuel_used += last.get("fuel_consumed") or 0
+        n = node_map.get(rule["name"])
+        if n:
+            n.trace = CliTrace(
+                input_tokens=last.get("tokens_in") or 0,
+                output_tokens=last.get("tokens_out") or 0,
+                cost_usd=last.get("cost_usd") or 0.0,
+                elapsed_s=last.get("elapsed_s"))
+            n.duration = last.get("elapsed_s")
+            if n.kind == "oracle":
+                n.cost = last.get("cost_usd") or 0.0
+                n.fuel = last.get("fuel_consumed") or 0
+                if last.get("cached"):
+                    n.cache = True
+                    n.state = "cached"
+                elif n.fuel > 0:
+                    n.state = "fired"
+
+    residue = CliResidue(
+        command="status", design_name=design_name,
+        status="stale" if has_stale else "sealed", site=site,
+        root=manifest.get("root"), husk_hash=husk_hash,
+        cost=total_cost, fuel_used=fuel_used, nodes=nodes,
+        passes=[] if has_stale else ["site"], fails=["site"] if has_stale else [])
+    return residue, manifest
+
+
+# ── §13 Three-machine proof checks ──────────────────────────────
+
+def three_machine_checks(residues, comparisons, acceptance_anchor=None):
+    """Run three-machine proof checks.
+
+    Returns list of (label, passed, required) tuples.
+    Proof is satisfied when all required checks pass.
+    """
+    m1, m2, m3 = residues
+    checks = []  # (label, passed, required)
+
+    # Look up pairwise comparison results by site pair.
+    def _pair(ra, rb):
+        return next((r for r in comparisons
+                     if {r["site_a"], r["site_b"]} == {ra.site, rb.site}), None)
+    _m1_m2 = _pair(m1, m2)  # reserved for future proof checks
+    m1_m3 = _pair(m1, m3)
+
+    # Detect stub vs live: check oracle backend from manifest or history.
+    is_stub = False
+    for site in (m1.site, m3.site):
+        mf = read_manifest(site)
+        if mf and mf.get("oracle_backend") == "stub":
+            is_stub = True
+            break
+    if not is_stub:
+        # Fallback: check if all oracle nodes report zero cost (stub indicator)
+        m1_oracles_pre = [n for n in m1.nodes if n.kind == "oracle"]
+        if m1_oracles_pre and all((n.cost or 0.0) == 0.0 for n in m1_oracles_pre):
+            is_stub = True
+
+    # ── Required: structural invariants ───────────────────────
+    husk_match = (m1.husk_hash is not None and m1.husk_hash == m2.husk_hash == m3.husk_hash)
+    checks.append(("M1\u2194M2\u2194M3 husk identical", husk_match, True))
+
+    root_match = (m1.root is not None and m1.root == m2.root)
+    checks.append(("M1\u2194M2 root identical", root_match, True))
+
+    # ── Required: per-site root validity ──────────────────────
+    for label, res in [("M1", m1), ("M2", m2), ("M3", m3)]:
+        valid = False
+        if res.root and res.site:
+            mf = read_manifest(res.site)
+            if mf:
+                design_name = mf.get("name", "")
+                hp = Path(res.site) / f"{design_name}.husk"
+                if hp.exists():
+                    try:
+                        recomp = recompute_root(hp.read_bytes(), res.site)
+                        valid = (recomp == res.root)
+                    except Exception:
+                        pass
+        checks.append((f"{label} root valid", valid, True))
+
+    # ── Required: oracle evidence ─────────────────────────────
+    m1_oracles = [n for n in m1.nodes if n.kind == "oracle"]
+    m2_oracles = [n for n in m2.nodes if n.kind == "oracle"]
+    m3_oracles = [n for n in m3.nodes if n.kind == "oracle"]
+    has_oracles = bool(m1_oracles)
+
+    checks.append(("M1 fired oracles",
+                    any(n.state == "fired" and not n.cache for n in m1_oracles) if m1_oracles else False,
+                    has_oracles))
+    checks.append(("M2 cache reuse",
+                    any(n.cache or n.state == "cached" for n in m2_oracles),
+                    has_oracles))
+    checks.append(("M3 fired oracles",
+                    any(n.state == "fired" and not n.cache for n in m3_oracles) if m3_oracles else False,
+                    has_oracles))
+
+    # ── Required: M1↔M3 acceptance equivalence ───────────────
+    m1_m3_equiv = m1_m3["equivalent"] if m1_m3 else False
+    checks.append(("M1\u2194M3 acceptance equivalent", m1_m3_equiv, True))
+
+    # ── Required (condense only): acceptance anchor ────────────
+    if acceptance_anchor:
+        m1_outputs = m1_m3.get("details", {}).get("outputs_a", {}) if m1_m3 else {}
+        anchor_ok = True
+        for out_path, accepted_hash in acceptance_anchor.items():
+            cold_hash = m1_outputs.get(out_path)
+            if cold_hash != accepted_hash:
+                anchor_ok = False
+                break
+        checks.append(("M1 matches acceptance anchor", anchor_ok, True))
+
+    # ── Required (live only): cost/fuel comparability ─────────
+    if not is_stub and has_oracles:
+        ct_ratio = [0.5, 2.0]
+        for site in (m1.site,):
+            mf = read_manifest(site)
+            if mf:
+                ct = mf.get("cost_tolerance", {})
+                if isinstance(ct, dict) and "ratio" in ct:
+                    ct_ratio = ct["ratio"]
+                    break
+        c1, c3 = m1.cost or 0.0, m3.cost or 0.0
+        if c1 > 0 and c3 > 0:
+            ratio = c3 / c1
+            cost_ok = ct_ratio[0] <= ratio <= ct_ratio[1]
+        else:
+            cost_ok = True
+        checks.append(("M1\u2194M3 cost comparable", cost_ok, True))
+
+        f1, f3 = m1.fuel_used or 0, m3.fuel_used or 0
+        if f1 > 0 and f3 > 0:
+            fuel_ratio = f3 / f1
+            fuel_ok = ct_ratio[0] <= fuel_ratio <= ct_ratio[1]
+        else:
+            fuel_ok = (f1 == f3)
+        checks.append(("M1\u2194M3 fuel comparable", fuel_ok, True))
+
+    # ── Observational ─────────────────────────────────────────
+    checks.append(("M1 paid cost", (m1.cost or 0.0) > 0, False))
+    checks.append(("M2 zero oracle cost", (m2.cost or 0.0) == 0.0, False))
+    checks.append(("M3 paid cost", (m3.cost or 0.0) > 0, False))
+
+    # Root convergence
+    roots_match = m1_m3.get("details", {}).get("roots_match", False) if m1_m3 else False
+    has_free = bool(m1_m3.get("details", {}).get("free_skipped", [])) if m1_m3 else False
+    deterministic = not has_oracles and not has_free
+    checks.append(("M1\u2194M3 root convergence", roots_match, deterministic))
+
+    return checks

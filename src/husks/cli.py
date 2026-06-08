@@ -421,6 +421,7 @@ def emit_help(version: str) -> str:
         _cmd("status", "Inspect site state"),
         _group("verify"), _cmd("verify", "Recompute .husk root hash in a site"),
         _cmd("compare", "Equivalence across sites"),
+        _cmd("condense", "Run condensation gate on a design"),
         _group("inspect"), _cmd("history", "Show convergence across runs"),
         _group("cache"), _cmd("cache export", "Pack cache for transfer"),
         _cmd("cache import", "Unpack cache into site"),
@@ -729,70 +730,8 @@ def _cmd_verify(args):
 
 def _build_site_residue(site: str):
     """Build a CliResidue for a site from its manifest and history.  Returns (residue, manifest) or None."""
-    import hashlib as _hl
-    from husks.report import (read_manifest, compute_rule_states, CliResidue, CliNode,
-                        CliTrace as _CliTrace, read_history, map_manifest_state)
-    manifest = read_manifest(site)
-    if not manifest:
-        return None, None
-    states = compute_rule_states(site, manifest)
-    rule_children = {r["name"]: r.get("children", []) for r in manifest.get("rules", [])}
-    nodes = [CliNode(name=s["name"], kind=s["kind"],
-                     state=map_manifest_state(s["state"]),
-                     stale_reason=s["reason"],
-                     children=rule_children.get(s["name"], [])) for s in states]
-    has_stale = any(n.state == "stale" for n in nodes)
-
-    husk_hash = None
-    design_name = manifest.get("name", "?")
-    hp = Path(site) / f"{design_name}.husk"
-    if hp.is_file():
-        husk_hash = _hl.sha256(hp.read_bytes()).hexdigest()
-
-    total_cost, fuel_used = 0.0, 0
-    report_path = Path(site) / ".traces" / "report.json"
-    if report_path.is_file():
-        try:
-            rdata = json.loads(report_path.read_text())
-            total_cost = rdata.get("cost", {}).get("paid", 0.0) or 0.0
-            fobj = rdata.get("fuel", {})
-            fuel_used = (fobj.get("start", 0) or 0) - (fobj.get("end", 0) or 0)
-        except Exception:
-            pass
-    use_history_totals = (total_cost == 0.0 and fuel_used == 0)
-    node_map = {n.name: n for n in nodes}
-    for rule in manifest.get("rules", []):
-        entries = read_history(site, rule["name"])
-        if not entries:
-            continue
-        last = entries[-1]
-        if use_history_totals:
-            total_cost += last.get("cost_usd") or 0.0
-            fuel_used += last.get("fuel_consumed") or 0
-        n = node_map.get(rule["name"])
-        if n:
-            n.trace = _CliTrace(
-                input_tokens=last.get("tokens_in") or 0,
-                output_tokens=last.get("tokens_out") or 0,
-                cost_usd=last.get("cost_usd") or 0.0,
-                elapsed_s=last.get("elapsed_s"))
-            n.duration = last.get("elapsed_s")
-            if n.kind == "oracle":
-                n.cost = last.get("cost_usd") or 0.0
-                n.fuel = last.get("fuel_consumed") or 0
-                if last.get("cached"):
-                    n.cache = True
-                    n.state = "cached"
-                elif n.fuel > 0:
-                    n.state = "fired"
-
-    residue = CliResidue(
-        command="status", design_name=design_name,
-        status="stale" if has_stale else "sealed", site=site,
-        root=manifest.get("root"), husk_hash=husk_hash,
-        cost=total_cost, fuel_used=fuel_used, nodes=nodes,
-        passes=[] if has_stale else ["site"], fails=["site"] if has_stale else [])
-    return residue, manifest
+    from husks.report import build_site_residue
+    return build_site_residue(site)
 
 
 def _cmd_status(args):
@@ -996,116 +935,10 @@ def _cmd_compare(args):
         sys.exit(EXIT_BUILD_FAIL)
 
 
-def _three_machine_checks(residues, comparisons):
-    """Run three-machine proof checks.  Returns list of (label, passed, required) tuples.
-    Proof is satisfied when all required checks pass."""
-    from husks.report import read_manifest
-    from husks.kernel import recompute_root
-    m1, m2, m3 = residues
-    checks = []  # (label, passed, required)
-
-    # Look up pairwise comparison results by site pair.
-    def _pair(ra, rb):
-        return next((r for r in comparisons
-                     if {r["site_a"], r["site_b"]} == {ra.site, rb.site}), None)
-    _m1_m2 = _pair(m1, m2)  # reserved for future proof checks
-    m1_m3 = _pair(m1, m3)
-
-    # Detect stub vs live: check oracle backend from manifest or history.
-    is_stub = False
-    for site in (m1.site, m3.site):
-        mf = read_manifest(site)
-        if mf and mf.get("oracle_backend") == "stub":
-            is_stub = True
-            break
-    if not is_stub:
-        # Fallback: check if all oracle nodes report zero cost (stub indicator)
-        m1_oracles_pre = [n for n in m1.nodes if n.kind == "oracle"]
-        if m1_oracles_pre and all((n.cost or 0.0) == 0.0 for n in m1_oracles_pre):
-            is_stub = True
-
-    # ── Required: structural invariants ───────────────────────
-    husk_match = (m1.husk_hash is not None and m1.husk_hash == m2.husk_hash == m3.husk_hash)
-    checks.append(("M1\u2194M2\u2194M3 husk identical", husk_match, True))
-
-    root_match = (m1.root is not None and m1.root == m2.root)
-    checks.append(("M1\u2194M2 root identical", root_match, True))
-
-    # ── Required: per-site root validity ──────────────────────
-    # Computed independently from pairwise comparisons.
-    for label, res in [("M1", m1), ("M2", m2), ("M3", m3)]:
-        valid = False
-        if res.root and res.site:
-            mf = read_manifest(res.site)
-            if mf:
-                design_name = mf.get("name", "")
-                hp = Path(res.site) / f"{design_name}.husk"
-                if hp.exists():
-                    try:
-                        recomp = recompute_root(hp.read_bytes(), res.site)
-                        valid = (recomp == res.root)
-                    except Exception:
-                        pass
-        checks.append((f"{label} root valid", valid, True))
-
-    # ── Required: oracle evidence ─────────────────────────────
-    m1_oracles = [n for n in m1.nodes if n.kind == "oracle"]
-    m2_oracles = [n for n in m2.nodes if n.kind == "oracle"]
-    m3_oracles = [n for n in m3.nodes if n.kind == "oracle"]
-    has_oracles = bool(m1_oracles)
-
-    checks.append(("M1 fired oracles",
-                    any(n.state == "fired" and not n.cache for n in m1_oracles) if m1_oracles else False,
-                    has_oracles))
-    checks.append(("M2 cache reuse",
-                    any(n.cache or n.state == "cached" for n in m2_oracles),
-                    has_oracles))
-    checks.append(("M3 fired oracles",
-                    any(n.state == "fired" and not n.cache for n in m3_oracles) if m3_oracles else False,
-                    has_oracles))
-
-    # ── Required: M1↔M3 acceptance equivalence ───────────────
-    # Independent realization must agree on exact outputs (free outputs skipped).
-    m1_m3_equiv = m1_m3["equivalent"] if m1_m3 else False
-    checks.append(("M1\u2194M3 acceptance equivalent", m1_m3_equiv, True))
-
-    # ── Required (live only): cost/fuel comparability ─────────
-    if not is_stub and has_oracles:
-        # Read cost_tolerance from manifest if available, else default.
-        ct_ratio = [0.5, 2.0]
-        for site in (m1.site,):
-            mf = read_manifest(site)
-            if mf:
-                ct = mf.get("cost_tolerance", {})
-                if isinstance(ct, dict) and "ratio" in ct:
-                    ct_ratio = ct["ratio"]
-                    break
-        c1, c3 = m1.cost or 0.0, m3.cost or 0.0
-        if c1 > 0 and c3 > 0:
-            ratio = c3 / c1
-            cost_ok = ct_ratio[0] <= ratio <= ct_ratio[1]
-        else:
-            cost_ok = True  # Can't compare if one is zero
-        checks.append(("M1\u2194M3 cost comparable", cost_ok, True))
-
-        f1, f3 = m1.fuel_used or 0, m3.fuel_used or 0
-        if f1 > 0 and f3 > 0:
-            fuel_ratio = f3 / f1
-            fuel_ok = ct_ratio[0] <= fuel_ratio <= ct_ratio[1]
-        else:
-            fuel_ok = (f1 == f3)  # Both zero or both nonzero
-        checks.append(("M1\u2194M3 fuel comparable", fuel_ok, True))
-
-    # ── Observational ─────────────────────────────────────────
-    checks.append(("M1 paid cost", (m1.cost or 0.0) > 0, False))
-    checks.append(("M2 zero oracle cost", (m2.cost or 0.0) == 0.0, False))
-    checks.append(("M3 paid cost", (m3.cost or 0.0) > 0, False))
-
-    # Root convergence between M1 and M3 is observational only.
-    roots_match = m1_m3.get("details", {}).get("roots_match", False) if m1_m3 else False
-    checks.append(("M1\u2194M3 root convergence", roots_match, False))
-
-    return checks
+def _three_machine_checks(residues, comparisons, acceptance_anchor=None):
+    """Run three-machine proof checks.  Delegates to report.three_machine_checks."""
+    from husks.report import three_machine_checks
+    return three_machine_checks(residues, comparisons, acceptance_anchor=acceptance_anchor)
 
 
 def _render_compare_visual(residues, comparisons, proof_checks, proof_satisfied=True):
@@ -1338,7 +1171,75 @@ def _cmd_cache_import(args):
     sys.exit(EXIT_OK)
 
 
-# ── §8a Tree command ─────────────────────────────────────────────
+# ── §8a Condense command ──────────────────────────────────────────
+
+def _cmd_condense(args, design):
+    from husks.gamma import condense
+    from husks.config import load_config, oracle_config_from_toml
+
+    # Parse --accept values: "out=file" pairs
+    accepted: dict[str, str] = {}
+    for spec in args.accept:
+        if "=" not in spec:
+            print(f"husks condense: --accept value must be out=file, got: {spec}", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+        out_path, file_path = spec.split("=", 1)
+        fp = Path(file_path)
+        if not fp.is_file():
+            print(f"husks condense: accepted file not found: {file_path}", file=sys.stderr)
+            sys.exit(EXIT_USAGE)
+        accepted[out_path] = str(fp.resolve())
+
+    overrides: dict = {}
+    if args.site:
+        overrides["site"] = args.site
+    overrides["stub"] = args.stub
+
+    if not args.stub:
+        try:
+            from husks.oracle import run_oracle
+            overrides["oracle_backend"] = run_oracle
+            overrides["oracle_backend_name"] = getattr(args, "backend", "litellm")
+        except ImportError:
+            print("husks condense: oracle backend unavailable (litellm not importable). "
+                  "Reinstall husks, or: pip install litellm", file=sys.stderr)
+            sys.exit(EXIT_MISSING_DEP)
+        oc = oracle_config_from_toml(load_config())
+        if args.model != "anthropic/claude-haiku-4-5-20251001":
+            oc["model"] = args.model
+        overrides["oracle_config"] = oc
+
+    result = condense(design, accepted, **overrides)
+
+    if getattr(args, "json_output", False):
+        json_out = {
+            "verdict": result["verdict"],
+            "site": result["site"],
+            "acceptance_anchor": result["acceptance_anchor"],
+            "checks": [{"label": c[0], "ok": c[1], "required": c[2]}
+                       for c in result["checks"]],
+            "errors": result["errors"],
+        }
+        print(json.dumps(json_out, indent=2))
+    else:
+        verdict = result["verdict"]
+        v_color = GREEN if verdict == "CONDENSE" else RED
+        print(f"\n  {BOLD}{v_color}{verdict}{RESET}")
+        if result["checks"]:
+            for label, passed, required in result["checks"]:
+                sym = f"{GREEN}\u2713{RESET}" if passed else f"{RED}\u2717{RESET}"
+                req = "" if required else f" {DIM}(evidence){RESET}"
+                print(f"  {sym} {label}{req}")
+        if result["errors"]:
+            for err in result["errors"]:
+                print(f"  {RED}{err}{RESET}")
+        if result["site"]:
+            print(f"\n  {DIM}site: {result['site']}{RESET}")
+
+    sys.exit(EXIT_OK if result["verdict"] == "CONDENSE" else EXIT_BUILD_FAIL)
+
+
+# ── §8b Tree command ─────────────────────────────────────────────
 
 def _cmd_tree(args):
     """Show working directory overview: designs, sites, native files."""
@@ -1578,6 +1479,18 @@ def main():
     r_out.add_argument("--json", action="store_true", dest="json_output")
     r.add_argument("--report-json", metavar="PATH")
 
+    # condense
+    co = sub.add_parser("condense")
+    co.add_argument("design", nargs="?", default=None)
+    co.add_argument("--accept", action="append", default=[], metavar="out=file")
+    co.add_argument("--site")
+    co.add_argument("--model", default="anthropic/claude-haiku-4-5-20251001")
+    co.add_argument("--stub", action="store_true")
+    co.add_argument("--backend", choices=["litellm", "claude-code"], default="litellm")
+    co_out = co.add_mutually_exclusive_group()
+    co_out.add_argument("--verbose", "-v", action="store_true")
+    co_out.add_argument("--json", action="store_true", dest="json_output")
+
     # status
     st = sub.add_parser("status")
     st.add_argument("site")
@@ -1660,7 +1573,7 @@ def main():
         sys.exit(EXIT_USAGE)
 
     # Design-loading commands
-    if args.cmd in ("check", "run"):
+    if args.cmd in ("check", "run", "condense"):
         design_path = resolve_design(args)
         args.design = design_path
         try:
@@ -1678,6 +1591,8 @@ def main():
             if not args.site:
                 args.site = f"/tmp/husks-{design.get('name', 'unnamed')}"
             _cmd_run(args, design)
+        elif args.cmd == "condense":
+            _cmd_condense(args, design)
     elif args.cmd == "status":
         _cmd_status(args)
     elif args.cmd == "history":

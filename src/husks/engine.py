@@ -33,6 +33,24 @@ from husks.seal import (
     write_bytes_atomic, resolve_site_inputs, setup_links,
 )
 
+# ── Sandbox env ──────────────────────────────────────────────────
+
+_SANDBOX_STRIP = frozenset({
+    "http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY",
+    "ALL_PROXY", "all_proxy", "no_proxy", "NO_PROXY",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE",
+    "NODE_EXTRA_CA_CERTS",
+})
+
+
+def sandbox_env() -> dict[str, str]:
+    """Build a restricted env dict for sandboxed action subprocesses."""
+    env = {k: v for k, v in os.environ.items() if k not in _SANDBOX_STRIP}
+    env["HUSKS_SANDBOX"] = "1"
+    env["SOURCE_DATE_EPOCH"] = "0"
+    return env
+
+
 # ── Action arg types ─────────────────────────────────────────────
 
 _ACTION_ARG_TYPES = (str, int, float, bool, bytes, type(None))
@@ -113,6 +131,7 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
             proc = _sp.Popen(
                 cmd, shell=True, cwd=site,
                 stdout=_sp.PIPE, stderr=_sp.PIPE, text=True, bufsize=1,
+                env=sandbox_env() if S.get("sandbox") else None,
             )
             out_buf: list[str] = []
             err_buf: list[str] = []
@@ -163,11 +182,6 @@ def _make_shell_action(cmd: str, outputs: list[str] | None = None):
                             f"shell command created symlink for output '{o}' "
                             f"(staging isolation violation): {cmd}"
                         )
-            if _outputs and not Path(site_path(S, _outputs[0], write=True)).exists():
-                content = stdout_text
-                if returncode != 0:
-                    content += f"\n--- STDERR (exit {returncode}) ---\n{stderr_text}"
-                write_text(site_path(S, _outputs[0], write=True), content)
             if returncode != 0:
                 raise RuntimeError(f"command failed (exit {returncode}): {cmd}\n{stderr_text}")
         except Exception:
@@ -988,6 +1002,7 @@ def build(
     oracle_config: dict | None = None,
     readonly_dirs: list[str] | None = None,
     site_inputs: list[str] | dict[str, str] | None = None,
+    sandbox: bool = False,
     **kwargs: Any,
 ) -> Store:
     """Execute a build.  Name/fuel may be positional or keyword.  Returns final Store."""
@@ -1021,6 +1036,8 @@ def build(
 
     S = fresh_store(site, fuel, oracle_backend=oracle_backend,
                     oracle_backend_name=oracle_backend_name, readonly_dirs=readonly_dirs)
+    if sandbox:
+        S["sandbox"] = True
     if kwargs.get("cache_reuse_only"):
         S["cache-reuse-only"] = True
 
